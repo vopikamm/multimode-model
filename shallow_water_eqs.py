@@ -44,7 +44,8 @@ class Grid:
 
     def __post_init__(self) -> None:
         """
-        Second __init__ function deriving parameters of the grid, necessary for looping with periodic boundary conditions.
+        Second __init__ function deriving parameters of the grid,
+        necessary for looping with periodic boundary conditions.
         """
         self.dx      = abs(self.x[1,0]-self.x[0,0])
         self.dy      = abs(self.y[0,1]-self.y[0,0])
@@ -67,49 +68,75 @@ class State:
     eta: np.array                  #surface displacement
 
 #@jit
-def zonal_pressure_gradient(state: State, grid: Grid, i: int, j: int) -> float:
+def zonal_pressure_gradient(state: State, grid: Grid) -> np.array:
     """
     Computes the zonal pressure gradient with centered differencs in the longitude.
     Periodic boundary conditions are applied with a wrapper index.
     """
-    d_eta_dx = (state.eta[grid.wrap_x[i+1],j] - state.eta[i,j]) / grid.dx
+    d_eta_dx = np.zeros(state.eta.shape)
+
+    for i in grid.index_x:
+        for j in grid.index_y:
+            d_eta_dx[i,j] = (state.eta[grid.wrap_x[i+1],j] - state.eta[i,j]) / grid.dx
+
     return(d_eta_dx)
 
 #@jit
-def meridional_pressure_gradient(state: State, grid: Grid, i: int, j: int) -> float:
+def meridional_pressure_gradient(state: State, grid: Grid) -> np.array:
     """
     Computes the meridional pressure gradient with centered differencs in the latitude.
     Periodic boundary conditions are applied with a wrapper index.
     """
-    d_eta_dy = (state.eta[i,grid.wrap_y[j+1]] - state.eta[i,j]) / grid.dy
+    d_eta_dy = np.zeros(state.eta.shape)
+
+    for i in grid.index_x:
+        for j in grid.index_y:
+            d_eta_dy[i,j] = (state.eta[i,grid.wrap_y[j+1]] - state.eta[i,j]) / grid.dy
+
     return(d_eta_dy)
 
 #@jit
-def horizontal_divergence(state: State, grid: Grid, i: int, j: int) -> float:
+def horizontal_divergence(state: State, grid: Grid) -> np.array:
     """
     Computes the horizontal divergence with centered differences in space.
     """
-    divergence = params.H*((state.v[i,j] - state.v[i,j-1]) / grid.dy +
-                  (state.u[i,j] - state.u[i-1,j]) / grid.dx )
+    divergence = np.zeros(state.v.shape)
+
+    for i in grid.index_x:
+        for j in grid.index_y:
+            divergence[i,j] = params.H*((state.v[i,j] - state.v[i,j-1]) / grid.dy +
+                             (state.u[i,j] - state.u[i-1,j]) / grid.dx )
+
     return(divergence)
 
 #@jit
-def v_on_u_grid(state: State, grid: Grid, i: int, j:int) -> float:
+def v_on_u_grid(state: State, grid: Grid) -> np.array:
     """
     Computes the four-point averaged v used for evaluations on the u grid.
     Periodic boundary conditions are applied with a wrapper index.
     """
-    v = (state.v[i-1,j]+state.v[i,j]+state.v[i,grid.wrap_y[j+1]]+state.v[i-1,grid.wrap_y[j+1]])/4
+    v = np.zeros(state.v.shape)
+
+    for i in grid.index_x:
+        for j in grid.index_y:
+            v[i,j] = (state.v[i,j-1]+state.v[i,j]+state.v[grid.wrap_x[i+1],j] +
+                      state.v[grid.wrap_x[i+1],j-1])/4
+
     return(v)
 
 #@jit
-def u_on_v_grid(state: State, grid: Grid, i: int, j:int) -> float:
+def u_on_v_grid(state: State, grid: Grid) -> np.array:
     """
     Computes the four-point averaged u used for evaluations on the v grid.
     Periodic boundary conditions are applied with a wrapper index.
     """
-    v = (state.v[i,j-1]+state.v[i,j]+state.v[grid.wrap_x[i+1],j]+state.v[grid.wrap_x[i+1],j-1])/4
-    return(v)
+    u = np.zeros(state.u.shape)
+
+    for i in grid.index_x:
+        for j in grid.index_y:
+            u[i,j] = (state.u[i-1,j]+state.u[i,j]+state.u[i,grid.wrap_y[j+1]] +
+                      state.u[i-1,grid.wrap_y[j+1]])/4
+    return(u)
 
 #@jit
 def adams_bashford3(RHS_state_0: State, RHS_state_1: State, state_2: State, RHS: Callable[[State, Parameters],State], grid: Grid, params: Parameters) -> Tuple[State,State]:
@@ -151,15 +178,10 @@ def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
     Simple set of linearised shallow water equations. The equations are evaluated on a C-grid.
     Output is a state type variable collecting u_t, v_t, eta_t, forming the right-hand-side needed for any time stepping scheme.
     """
-    u_t   = np.zeros(grid.x.shape)
-    v_t   = np.copy(u_t)
-    eta_t = np.copy(u_t)
 
-    for i in grid.index_x:
-        for j in grid.index_y:
-            u_t[i,j]    = params.f*v_on_u_grid(state, grid, i, j) - params.g*zonal_pressure_gradient(state, grid, i, j)
-            v_t[i,j]    = - params.f*u_on_v_grid(state, grid, i, j) - params.g*meridional_pressure_gradient(state, grid, i, j)
-            eta_t[i,j]  = - params.H*horizontal_divergence(state, grid, i, j)
+    u_t    = params.f*v_on_u_grid(state, grid) - params.g*zonal_pressure_gradient(state, grid)
+    v_t    = - params.f*u_on_v_grid(state, grid) - params.g*meridional_pressure_gradient(state, grid)
+    eta_t  = - params.H*horizontal_divergence(state, grid)
 
     RHS_state = State(u = u_t, v = v_t, eta = eta_t)
     return(RHS_state)
