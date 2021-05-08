@@ -1,6 +1,6 @@
 import numpy as np
 import timeit
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Union, List
 from numba import jit
 from dataclasses import dataclass, field
 from matplotlib import pyplot as plt
@@ -138,39 +138,63 @@ def u_on_v_grid(state: State, grid: Grid) -> np.array:
                       state.u[i-1,grid.wrap_y[j+1]])/4
     return(u)
 
-#@jit
-def adams_bashford3(RHS_state_0: State, RHS_state_1: State, state_2: State, RHS: Callable[[State, Parameters],State], grid: Grid, params: Parameters) -> Tuple[State,State]:
+
+def Euler(state_0: State, RHS_state: List[State], params: Parameters) -> State:
     """
-    Three-level Adams-Bashford scheme used for the time integration. Three previous states necessary.
-    The function evaluation of the first two states are already known and are passed directly.
+    Simple Euler scheme used for the time integration. One previous state necessary.
+    The function evaluation is performed before the state is passed to this function.
     """
-    RHS_state_2 = RHS(state_2, grid, params)
-    u_3         = state_2.u + (params.dt/12)*(23*RHS_state_2.u - 16*RHS_state_1.u + 5*RHS_state_0.u)
-    v_3         = state_2.v + (params.dt/12)*(23*RHS_state_2.v - 16*RHS_state_1.v + 5*RHS_state_0.v)
-    eta_3       = state_2.eta + (params.dt/12)*(23*RHS_state_2.eta - 16*RHS_state_1.eta + 5*RHS_state_0.eta)
-    state_3     = State(u = u_3, v = v_3, eta = eta_3)
-    return(state_3, RHS_state_2)
+    u_1         = state_0.u + params.dt*RHS_state[0].u
+    v_1         = state_0.v + params.dt*RHS_state[0].v
+    eta_1       = state_0.eta + params.dt*RHS_state[0].eta
+    state_1     = State(u = u_1, v = v_1, eta = eta_1)
+    return(state_1)
+
+
+def adams_bashford2(state_1: State, RHS_states: List[State], params: Parameters) -> State:
+    """
+    Two-level Adams-Bashford scheme used for the time integration. Two previous states necessary.
+    The function evaluations are performed before the state is passed to this function.
+    """
+    u_2         = state_1.u + (params.dt/2)*(3*RHS_states[1].u - RHS_states[0].u)
+    v_2         = state_1.v + (params.dt/2)*(3*RHS_states[1].v - RHS_states[0].v)
+    eta_2       = state_1.eta + (params.dt/2)*(3*RHS_states[1].eta - RHS_states[0].eta)
+    state_2     = State(u = u_2, v = v_2, eta = eta_2)
+    return(state_2)
 
 #@jit
-def computational_initial_states(state_0: State, RHS: Callable[[State, Parameters],State], grid: Grid, params: Parameters) -> Tuple[State,State,State,State]:
+def adams_bashford3(state_2: State, RHS_states: List[State] , params: Parameters) -> State:
     """
-    The initial state is used to get two computational initial states necessary for the three-level AB.
-    The two initial states are passed together with the two function evaluations to reduce computational
-    effort.
+    Three-level Adams-Bashford scheme used for the time integration. Three previous states necessary.
+    The function evaluations are performed before the state is passed to this function.
     """
-    #Euler scheme for the first computational initial state
+    u_3         = state_2.u + (params.dt/12)*(23*RHS_states[2].u - 16*RHS_states[1].u + 5*RHS_states[0].u)
+    v_3         = state_2.v + (params.dt/12)*(23*RHS_states[2].v - 16*RHS_states[1].v + 5*RHS_states[0].v)
+    eta_3       = state_2.eta + (params.dt/12)*(23*RHS_states[2].eta - 16*RHS_states[1].eta + 5*RHS_states[0].eta)
+    state_3     = State(u = u_3, v = v_3, eta = eta_3)
+    return(state_3)
+
+#@jit
+def computational_initial_states(state_0: State, scheme: Callable[...,State], RHS: Callable[...,State],
+                                 grid: Grid, params: Parameters) -> Tuple[State,List]:
+    """
+    The initial state is used to get the necessary number of computational initial states for the given scheme.
+    Yields the last computational initial state and the RHSs as a list.
+    """
     RHS_state_0 = RHS(state_0, grid, params)
-    u_1         = state_0.u + params.dt*RHS_state_0.u
-    v_1         = state_0.v + params.dt*RHS_state_0.v
-    eta_1       = state_0.eta + params.dt*RHS_state_0.eta
-    state_1     = State(u = u_1, v = v_1, eta = eta_1)
-    #AB scheme for the second computational initial state
-    RHS_state_1 = RHS(state_1, grid, params)
-    u_2         = state_1.u + (params.dt/2)*(3*RHS_state_1.u-RHS_state_0.u)
-    v_2         = state_1.v + (params.dt/2)*(3*RHS_state_1.v-RHS_state_0.v)
-    eta_2       = state_1.eta + (params.dt/2)*(3*RHS_state_1.eta-RHS_state_0.eta)
-    state_2     = State(u = u_2, v = v_2, eta = eta_2)
-    return(state_1, state_2, RHS_state_0, RHS_state_1)
+    if scheme == Euler:
+        return(state_0, [RHS_state_0])
+    else:
+        state_1     = Euler(state_0, [RHS_state_0], params)
+        RHS_state_1 = RHS(state_1, grid, params)
+
+    if scheme == adams_bashford2:
+        return(state_1,[RHS_state_0, RHS_state_1])
+    else:
+        state_2     = adams_bashford2(state_1, [RHS_state_0, RHS_state_1], params)
+        RHS_state_2 = RHS(state_2, grid, params)
+        return(state_2,[RHS_state_0, RHS_state_1, RHS_state_2])
+
 
 #@jit
 def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
@@ -187,21 +211,21 @@ def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
     return(RHS_state)
 
 #@jit
-def integrator(state_0: State, RHS: Callable[[State, Parameters],State], grid: Grid, params: Parameters) -> State:
+def integrator(state_0: State, grid: Grid, params: Parameters, scheme: Callable[..., State] = adams_bashford3,
+               RHS: Callable[..., State] = linearised_SWE) -> State:
     """
-    Function processing time integration.
+    Function processing time integration. Only the last time step is returned.
     """
-    N           = round((params.t_end - params.t_0)/params.dt)
-    solution    = [state_0]
-    state_1, state_2, RHS_state_0, RHS_state_1 = computational_initial_states(state_0, RHS, grid, params)
+    N                      = round((params.t_end - params.t_0)/params.dt)
+    state_old, RHS_states  = computational_initial_states(state_0, scheme, RHS, grid, params)
 
     for k in range(0,N):
-        state_3, RHS_state_2 = adams_bashford3(RHS_state_0,RHS_state_1,state_2, RHS, grid, params)
-        RHS_state_0 = RHS_state_1
-        RHS_state_1 = RHS_state_2
-        state_2     = state_3
+        state_new      = scheme(state_old, RHS_states, params)
+        RHS_states.append(RHS(state_new, grid, params))
+        RHS_states.remove(RHS_states[0])
+        state_old      = state_new
 
-    return(state_3)
+    return(state_new)
 
 """
 Very basic setup with only zonal flow for testing the functionality.
@@ -215,9 +239,9 @@ eta_0   = np.zeros(x.shape)
 init    = State(u = u_0, v = v_0, eta = eta_0)
 grid    = Grid(x, y)
 
-start = timeit.default_timer()
-solution= integrator(init, linearised_SWE, grid, params)
-stop = timeit.default_timer()
+start    = timeit.default_timer()
+solution = integrator(init, grid, params, scheme = adams_bashford3)
+stop     = timeit.default_timer()
 
 print('Runtime: ', stop - start, ' s ')
 '''!!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!'''
