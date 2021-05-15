@@ -42,10 +42,6 @@ class Grid:
     dy: int      = field(init = False)  #grid spacing in y
     len_x: int   = field(init = False)  #length of array in x dimension
     len_y: int   = field(init = False)  #length of array in y dimension
-    index_x: int = field(init = False)  #list of indices in x dimension
-    index_y: int = field(init = False)  #list of indices in y dimension
-    wrap_x: int  = field(init = False)  #wrapper list to produce periodic boundary conditions
-    wrap_y: int  = field(init = False)  #wrapper list to produce periodic boundary conditions
 
     def __post_init__(self) -> None:
         """
@@ -56,10 +52,6 @@ class Grid:
         self.dy      = abs(self.y[0,1]-self.y[0,0])
         self.len_x   = self.x.shape[self.dim_x]
         self.len_y   = self.x.shape[self.dim_y]
-        self.index_x = list(range(0,self.len_x))
-        self.index_y = list(range(0,self.len_y))
-        self.wrap_x  = self.index_x + [0]
-        self.wrap_y  = self.index_y + [0]
 
 
 
