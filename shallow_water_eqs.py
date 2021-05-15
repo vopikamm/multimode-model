@@ -1,9 +1,10 @@
 import numpy as np
 import timeit
-from typing import Callable, Tuple, Union, List
-from numba import jit
+from typing import Callable, Tuple, Union, List, Any
+from numba import njit
 from dataclasses import dataclass, field
 from matplotlib import pyplot as plt
+from collections import deque
 
 
 
@@ -12,6 +13,10 @@ from matplotlib import pyplot as plt
 This script is the initial attempt to formulate the linearised shallow water equation as python functions.
 """
 
+
+"""
+Dataclasses building instances to hold parameters, dynamic variables and their associated grids.
+"""
 @dataclass
 class Parameters:
     """
@@ -21,7 +26,7 @@ class Parameters:
     g: float     = 9.81          #gravitational force m/s^2
     beta: float  = 2./(24*3600)  #beta parameter 1/ms with f = f_0 + beta *y
     H: float     = 1000.         #reference depth in m
-    dt: float    = 8.           #time stepping in s
+    dt: float    = 8.            #time stepping in s
     t_0: float   = 0.            #starting time
     t_end: float = 3600.         #end time
     write: int   = 20            #how many states should be written to output
@@ -59,173 +64,284 @@ class Grid:
 
 
 @dataclass
+class Variable:
+    """
+    Variable class assigning a Grid instance to the data of dynamical variables it holds.
+    """
+    data: np.array
+    grid: Grid
+
+    def __add__(self, other):
+        try:
+            if self.grid is not other.grid:
+                raise ValueError("Try to add variables defined on different grids.")
+            new_data = self.data + other.data
+        except ValueError:
+            raise
+        except:
+            return NotImplemented
+        return self.__class__(data=new_data, grid=self.grid)
+
+@dataclass
 class State:
     """
     Class that combines the dynamical variables u,v, eta into one state object.
     """
-    u: np.array                    #zonal velocity
-    v: np.array                    #meridional velocity
-    eta: np.array                  #surface displacement
+    u: Variable
+    v: Variable
+    eta: Variable
 
-#@jit
-def zonal_pressure_gradient(state: State, grid: Grid) -> np.array:
+    def __add__(self, other):
+        try:
+            u_new = self.u + other.u
+            v_new = self.v + other.v
+            eta_new = self.eta + other.eta
+        except:
+            return NotImplemented
+        return self.__class__(u=u_new, v=v_new, eta=eta_new)
+
+
+
+"""
+Jit-able functions. Second level functions taking data and parameters, not dataclass instances, as input.
+This enables numba to precompile computationally costly operations.
+"""
+
+@njit
+def _iterate_over_grid_2D(loop_body: Callable[..., float], ni: int, nj: int, args: Tuple[Any]) -> np.array:
+    result = np.empty((ni, nj))
+    for i in range(ni):
+        for j in range(nj):
+            result[i, j] = loop_body(*args, i, j, ni, nj)
+    return result
+
+@njit
+def _zonal_pressure_gradient_loop_body(eta: np.array, g: float, dx: float, i: int, j: int, ni: int, nj: int) -> float:
+    ip1 = (i+1) % ni
+    return -g * (eta[ip1, j] - eta[i, j]) / dx
+
+@njit
+def _meridional_pressure_gradient_loop_body(eta: np.array, g: float, dy: float, i: int, j: int, ni: int, nj: int) -> float:
+    jp1 = (j+1) % nj
+    return -g * (eta[i, jp1] - eta[i, j]) / dy
+
+@njit
+def _zonal_divergence_loop_body(u : np.array, H: float, dx: float, i: int, j: int, ni: int, nj: int) -> float:
+    return H * (u[i,j] - u[i-1,j]) / dx
+
+@njit
+def _meridional_divergence_loop_body(v: np.array, H: float, dy: float, i: int, j: int, ni: int, nj: int) -> float:
+    return H * (v[i,j] - v[i,j-1]) / dy
+
+@njit
+def _coriolis_u_loop_body(u: np.array, f: float, i: int, j: int, ni: int, nj: int) -> float:
+    jp1 = (j+1) % nj
+    return -f * (u[i-1,j] + u[i,j] + u[i,jp1] + u[i-1,jp1]) / 4.
+
+@njit
+def _coriolis_v_loop_body(v: np.array, f: float, i: int, j: int, ni: int, nj: int) -> float:
+    ip1 = (i+1) % ni
+    return f * (v[i,j-1] + v[i,j] + v[ip1,j] + v[ip1,j-1]) / 4.
+
+
+"""
+Non jit-able functions. First level funcions connecting the jit-able function output to dataclasses.
+Periodic boundary conditions are applied.
+"""
+
+def zonal_pressure_gradient(state: State, grid: Grid, params: Parameters) -> State:
     """
-    Computes the zonal pressure gradient with centered differencs in the longitude.
-    Periodic boundary conditions are applied with a wrapper index.
+    Computes the zonal pressure gradient with centered differences in the longitude.
     """
-    d_eta_dx = np.zeros(state.eta.shape)
+    result = _iterate_over_grid_2D(
+        loop_body=_zonal_pressure_gradient_loop_body,
+        ni=state.eta.grid.len_x,
+        nj=state.eta.grid.len_y,
+        args=(state.eta.data, params.g, state.eta.grid.dx)
+    )
+    return State(
+        u=Variable(result, state.u.grid),
+        v=Variable(np.zeros_like(state.v.data), state.v.grid),
+        eta=Variable(np.zeros_like(state.eta.data), state.eta.grid)
+    )
 
-    for i in grid.index_x:
-        for j in grid.index_y:
-            d_eta_dx[i,j] = (state.eta[grid.wrap_x[i+1],j] - state.eta[i,j]) / grid.dx
-
-    return(d_eta_dx)
-
-#@jit
-def meridional_pressure_gradient(state: State, grid: Grid) -> np.array:
+def meridional_pressure_gradient(state: State, grid: Grid, params: Parameters) -> State:
     """
     Computes the meridional pressure gradient with centered differencs in the latitude.
-    Periodic boundary conditions are applied with a wrapper index.
     """
-    d_eta_dy = np.zeros(state.eta.shape)
+    result = _iterate_over_grid_2D(
+        loop_body=_meridional_pressure_gradient_loop_body,
+        ni=state.eta.grid.len_x,
+        nj=state.eta.grid.len_y,
+        args=(state.eta.data, params.g, state.eta.grid.dy)
+    )
+    return State(
+        u=Variable(np.zeros_like(state.u.data), state.u.grid),
+        v=Variable(result, state.v.grid),
+        eta=Variable(np.zeros_like(state.eta.data), state.eta.grid)
+    )
 
-    for i in grid.index_x:
-        for j in grid.index_y:
-            d_eta_dy[i,j] = (state.eta[i,grid.wrap_y[j+1]] - state.eta[i,j]) / grid.dy
-
-    return(d_eta_dy)
-
-#@jit
-def horizontal_divergence(state: State, grid: Grid) -> np.array:
+def zonal_divergence(state: State, grid: Grid, params: Parameters) -> State:
     """
-    Computes the horizontal divergence with centered differences in space.
+    Computes the zonal divergence with centered differences in space.
     """
-    divergence = np.zeros(state.v.shape)
+    result = _iterate_over_grid_2D(
+        loop_body=_zonal_divergence_loop_body,
+        ni=state.u.grid.len_x,
+        nj=state.u.grid.len_y,
+        args=(state.u.data, params.H, state.u.grid.dx)
+    )
+    return State(
+        u=Variable(np.zeros_like(state.u.data), state.u.grid),
+        v=Variable(np.zeros_like(state.v.data), state.v.grid),
+        eta=Variable(result, state.eta.grid)
+    )
 
-    for i in grid.index_x:
-        for j in grid.index_y:
-            divergence[i,j] = params.H*((state.v[i,j] - state.v[i,j-1]) / grid.dy +
-                             (state.u[i,j] - state.u[i-1,j]) / grid.dx )
-
-    return(divergence)
-
-#@jit
-def v_on_u_grid(state: State, grid: Grid) -> np.array:
+def meridional_divergence(state: State, grid: Grid, params: Parameters) -> State:
     """
-    Computes the four-point averaged v used for evaluations on the u grid.
-    Periodic boundary conditions are applied with a wrapper index.
+    Computes the meridional divergence with centered differences in space.
     """
-    v = np.zeros(state.v.shape)
+    result = _iterate_over_grid_2D(
+        loop_body=_meridional_divergence_loop_body,
+        ni=state.v.grid.len_x,
+        nj=state.v.grid.len_y,
+        args=(state.v.data, params.H, state.u.grid.dy)
+    )
+    return State(
+        u=Variable(np.zeros_like(state.u.data), state.u.grid),
+        v=Variable(np.zeros_like(state.v.data), state.v.grid),
+        eta=Variable(result, state.eta.grid)
+    )
 
-    for i in grid.index_x:
-        for j in grid.index_y:
-            v[i,j] = (state.v[i,j-1]+state.v[i,j]+state.v[grid.wrap_x[i+1],j] +
-                      state.v[grid.wrap_x[i+1],j-1])/4
-
-    return(v)
-
-#@jit
-def u_on_v_grid(state: State, grid: Grid) -> np.array:
+def coriolis_u(state: State, grid: Grid, params: Parameters) -> State:
     """
-    Computes the four-point averaged u used for evaluations on the v grid.
-    Periodic boundary conditions are applied with a wrapper index.
+    Computes the four point average of u for the coriolis term in the v equation.
     """
-    u = np.zeros(state.u.shape)
+    result = _iterate_over_grid_2D(
+        loop_body=_coriolis_u_loop_body,
+        ni=state.u.grid.len_x,
+        nj=state.u.grid.len_y,
+        args=(state.u.data, params.f)
+    )
+    return State(
+        u=Variable(np.zeros_like(state.u.data), state.u.grid),
+        v=Variable(result, state.v.grid),
+        eta=Variable(np.zeros_like(state.v.data), state.eta.grid)
+    )
 
-    for i in grid.index_x:
-        for j in grid.index_y:
-            u[i,j] = (state.u[i-1,j]+state.u[i,j]+state.u[i,grid.wrap_y[j+1]] +
-                      state.u[i-1,grid.wrap_y[j+1]])/4
-    return(u)
+def coriolis_v(state: State, grid: Grid, params: Parameters) -> State:
+    """
+    Computes the four point average of v for the coriolis term in the u equation.
+    """
+    result = _iterate_over_grid_2D(
+        loop_body=_coriolis_v_loop_body,
+        ni=state.v.grid.len_x,
+        nj=state.v.grid.len_y,
+        args=(state.v.data, params.f)
+    )
+    return State(
+        u=Variable(result, state.u.grid),
+        v=Variable(np.zeros_like(state.v.data), state.v.grid),
+        eta=Variable(np.zeros_like(state.v.data), state.eta.grid)
+    )
 
+"""
+Time integration schemes. To be used optional in integrator function.
+"""
 
-def Euler(state_0: State, RHS_state: List[State], params: Parameters) -> State:
+def euler_forward(rhs: deque, params: Parameters) -> State:
     """
     Simple Euler scheme used for the time integration. One previous state necessary.
     The function evaluation is performed before the state is passed to this function.
+    Returns the increment dstate = next_state - current_state.
     """
-    u_1         = state_0.u + params.dt*RHS_state[0].u
-    v_1         = state_0.v + params.dt*RHS_state[0].v
-    eta_1       = state_0.eta + params.dt*RHS_state[0].eta
-    state_1     = State(u = u_1, v = v_1, eta = eta_1)
-    return(state_1)
+    du      = params.dt * rhs[-1].u.data
+    dv      = params.dt * rhs[-1].v.data
+    deta    = params.dt * rhs[-1].eta.data
 
+    return State(
+        u=Variable(du, rhs[-1].u.grid),
+        v=Variable(dv, rhs[-1].v.grid),
+        eta=Variable(deta, rhs[-1].eta.grid)
+    )
 
-def adams_bashford2(state_1: State, RHS_states: List[State], params: Parameters) -> State:
+def adams_bashforth2(rhs: deque, params: Parameters) -> State:
     """
-    Two-level Adams-Bashford scheme used for the time integration. Two previous states necessary.
+    Two-level Adams-Bashforth scheme used for the time integration. Two previous states necessary.
+    If not provided, computational initial conditions are produced by forward euler.
     The function evaluations are performed before the state is passed to this function.
+    Returns the increment dstate = next_state - current_state.
     """
-    u_2         = state_1.u + (params.dt/2)*(3*RHS_states[1].u - RHS_states[0].u)
-    v_2         = state_1.v + (params.dt/2)*(3*RHS_states[1].v - RHS_states[0].v)
-    eta_2       = state_1.eta + (params.dt/2)*(3*RHS_states[1].eta - RHS_states[0].eta)
-    state_2     = State(u = u_2, v = v_2, eta = eta_2)
-    return(state_2)
+    if len(rhs) < 2:
+        rhs.append(rhs[-1] + euler_forward(rhs, params))
 
-#@jit
-def adams_bashford3(state_2: State, RHS_states: List[State] , params: Parameters) -> State:
+    du      = (params.dt/2)*(3*rhs[-1].u.data - rhs[-2].u.data)
+    dv      = (params.dt/2)*(3*rhs[-1].v.data - rhs[-2].v.data)
+    deta    = (params.dt/2)*(3*rhs[-1].eta.data - rhs[-2].eta.data)
+
+    return State(
+        u=Variable(du, rhs[-1].u.grid),
+        v=Variable(dv, rhs[-1].v.grid),
+        eta=Variable(deta, rhs[-1].eta.grid)
+    )
+
+def adams_bashforth3(rhs: deque, params: Parameters) -> State:
     """
-    Three-level Adams-Bashford scheme used for the time integration. Three previous states necessary.
+    Three-level Adams-Bashforth scheme used for the time integration. Three previous states necessary.
+    If not provided, computational initial conditions are produced by adams_bashforth2.
     The function evaluations are performed before the state is passed to this function.
+    Returns the increment dstate = next_state - current_state.
     """
-    u_3         = state_2.u + (params.dt/12)*(23*RHS_states[2].u - 16*RHS_states[1].u + 5*RHS_states[0].u)
-    v_3         = state_2.v + (params.dt/12)*(23*RHS_states[2].v - 16*RHS_states[1].v + 5*RHS_states[0].v)
-    eta_3       = state_2.eta + (params.dt/12)*(23*RHS_states[2].eta - 16*RHS_states[1].eta + 5*RHS_states[0].eta)
-    state_3     = State(u = u_3, v = v_3, eta = eta_3)
-    return(state_3)
+    if len(rhs) < 3:
+        rhs.append(rhs[-1] + adams_bashforth2(rhs, params))
 
-#@jit
-def computational_initial_states(state_0: State, scheme: Callable[...,State], RHS: Callable[...,State],
-                                 grid: Grid, params: Parameters) -> Tuple[State,List]:
-    """
-    The initial state is used to get the necessary number of computational initial states for the given scheme.
-    Yields the last computational initial state and the RHSs as a list.
-    """
-    RHS_state_0 = RHS(state_0, grid, params)
-    if scheme == Euler:
-        return(state_0, [RHS_state_0])
-    else:
-        state_1     = Euler(state_0, [RHS_state_0], params)
-        RHS_state_1 = RHS(state_1, grid, params)
+    du      = (params.dt/12)*(23*rhs[-1].u.data - 16*rhs[-2].u.data + 5*rhs[-3].u.data)
+    dv      = (params.dt/12)*(23*rhs[-1].v.data - 16*rhs[-2].v.data + 5*rhs[-3].v.data)
+    deta    = (params.dt/12)*(23*rhs[-1].eta.data - 16*rhs[-2].eta.data + 5*rhs[-3].eta.data)
 
-    if scheme == adams_bashford2:
-        return(state_1,[RHS_state_0, RHS_state_1])
-    else:
-        state_2     = adams_bashford2(state_1, [RHS_state_0, RHS_state_1], params)
-        RHS_state_2 = RHS(state_2, grid, params)
-        return(state_2,[RHS_state_0, RHS_state_1, RHS_state_2])
+    return State(
+        u=Variable(du, rhs[-1].u.grid),
+        v=Variable(dv, rhs[-1].v.grid),
+        eta=Variable(deta, rhs[-1].eta.grid)
+    )
 
+"""
+Outmost functions defining the problem and what output should be computed.
+"""
 
-#@jit
 def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
     """
     Simple set of linearised shallow water equations. The equations are evaluated on a C-grid.
-    Output is a state type variable collecting u_t, v_t, eta_t, forming the right-hand-side needed for any time stepping scheme.
+    Output is a state type variable forming the right-hand-side needed for any time stepping scheme.
     """
-
-    u_t    = params.f*v_on_u_grid(state, grid) - params.g*zonal_pressure_gradient(state, grid)
-    v_t    = - params.f*u_on_v_grid(state, grid) - params.g*meridional_pressure_gradient(state, grid)
-    eta_t  = - params.H*horizontal_divergence(state, grid)
-
-    RHS_state = State(u = u_t, v = v_t, eta = eta_t)
+    RHS_state = (zonal_pressure_gradient(state, grid, params) + coriolis_v(state, grid, params) +       #u_t
+                 meridional_pressure_gradient(state, grid, params) + coriolis_u(state, grid, params) +  #v_t
+                 zonal_divergence(state, grid, params) + meridional_divergence(state, grid, params)     #eta_t
+    )
     return(RHS_state)
 
 #@jit
-def integrator(state_0: State, grid: Grid, params: Parameters, scheme: Callable[..., State] = adams_bashford3,
+def integrator(state_0: State, grid: Grid, params: Parameters, scheme: Callable[..., State] = adams_bashforth3,
                RHS: Callable[..., State] = linearised_SWE) -> State:
     """
     Function processing time integration. Only the last time step is returned.
     """
+    if scheme == euler_forward:
+        level = 1
+    if scheme == adams_bashforth2:
+        level = 2
+    if scheme == adams_bashforth3:
+        level = 3
+
     N                      = round((params.t_end - params.t_0)/params.dt)
-    state_old, RHS_states  = computational_initial_states(state_0, scheme, RHS, grid, params)
+    state = deque([state_0], maxlen = 1)
+    rhs   = deque([], maxlen = level)
 
     for k in range(0,N):
-        state_new      = scheme(state_old, RHS_states, params)
-        RHS_states.append(RHS(state_new, grid, params))
-        RHS_states.remove(RHS_states[0])
-        state_old      = state_new
+        rhs.append(RHS(state[-1], grid, params))
+        state.append(state[-1] + scheme(rhs, params))
 
-    return(state_new)
+    return(state[-1])
 
 """
 Very basic setup with only zonal flow for testing the functionality.
@@ -236,21 +352,27 @@ y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
 u_0     = 0.05*np.ones(x.shape)
 v_0     = np.zeros(x.shape)
 eta_0   = np.zeros(x.shape)
-init    = State(u = u_0, v = v_0, eta = eta_0)
 grid    = Grid(x, y)
+init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
 
+#print(type(init.u.data))
 start    = timeit.default_timer()
-solution = integrator(init, grid, params, scheme = adams_bashford3)
+solution = integrator(init, grid, params, scheme = adams_bashforth3)
 stop     = timeit.default_timer()
 
 print('Runtime: ', stop - start, ' s ')
-'''!!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!'''
+'''
+!!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
+
+--> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
+!!! without numba: ~8s, with numba: ~2s
+'''
 
 plt.figure()
-plt.pcolor(solution.u)
+plt.pcolor(solution.u.data)
 plt.colorbar()
 plt.show()
 plt.figure()
-plt.pcolor(solution.v)
+plt.pcolor(solution.v.data)
 plt.colorbar()
 plt.show()
