@@ -1,0 +1,18 @@
+image: mambaorg/micromamba:latest
+
+setup:
+    stage: test
+    script:
+        - micromamba install -y -n base -c conda-forge -f requirements.txt
+
+style:
+    stage: test
+    script:
+        - micromamba install -y -c conda-forge flake8 flake8-docstrings
+        - flake8 .
+
+test:
+    stage: test
+    script:
+        - pytest -v --cov --cov-report term-missing .
+
