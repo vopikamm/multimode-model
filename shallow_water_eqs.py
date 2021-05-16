@@ -335,36 +335,38 @@ def integrator(state_0: State, grid: Grid, params: Parameters, scheme: Callable[
 
     return(state[-1])
 
-"""
-Very basic setup with only zonal flow for testing the functionality.
-"""
 
-params  = Parameters()
-y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
-u_0     = 0.05*np.ones(x.shape)
-v_0     = np.zeros(x.shape)
-eta_0   = np.zeros(x.shape)
-grid    = Grid(x, y)
-init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
+if __name__ == "__main__":
+    """
+    Very basic setup with only zonal flow for testing the functionality.
+    """
 
-#print(type(init.u.data))
-start    = timeit.default_timer()
-solution = integrator(init, grid, params, scheme = adams_bashforth3)
-stop     = timeit.default_timer()
+    params  = Parameters()
+    y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
+    u_0     = 0.05*np.ones(x.shape)
+    v_0     = np.zeros(x.shape)
+    eta_0   = np.zeros(x.shape)
+    grid    = Grid(x, y)
+    init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
 
-print('Runtime: ', stop - start, ' s ')
-'''
-!!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
+    #print(type(init.u.data))
+    start    = timeit.default_timer()
+    solution = integrator(init, grid, params, scheme = adams_bashforth3)
+    stop     = timeit.default_timer()
 
---> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
-!!! without numba: ~8s, with numba: ~2s
-'''
+    print('Runtime: ', stop - start, ' s ')
+    '''
+    !!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
 
-plt.figure()
-plt.pcolor(solution.u.data)
-plt.colorbar()
-plt.show()
-plt.figure()
-plt.pcolor(solution.v.data)
-plt.colorbar()
-plt.show()
+    --> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
+    !!! without numba: ~8s, with numba: ~2s
+    '''
+
+    plt.figure()
+    plt.pcolor(solution.u.data)
+    plt.colorbar()
+    plt.show()
+    plt.figure()
+    plt.pcolor(solution.v.data)
+    plt.colorbar()
+    plt.show()
