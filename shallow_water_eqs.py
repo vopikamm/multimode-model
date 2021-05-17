@@ -48,8 +48,8 @@ class Grid:
         Second __init__ function deriving parameters of the grid,
         necessary for looping with periodic boundary conditions.
         """
-        self.dx      = abs(self.x[1,0]-self.x[0,0])
-        self.dy      = abs(self.y[0,1]-self.y[0,0])
+        self.dx      = np.diff(self.x, axis = self.dim_x)[0,0]
+        self.dy      = np.diff(self.y, axis = self.dim_y)[0,0]
         self.len_x   = self.x.shape[self.dim_x]
         self.len_y   = self.x.shape[self.dim_y]
 
@@ -335,38 +335,36 @@ def integrator(state_0: State, grid: Grid, params: Parameters, scheme: Callable[
 
     return(state[-1])
 
+"""
+Very basic setup with only zonal flow for testing the functionality.
+"""
 
-if __name__ == "__main__":
-    """
-    Very basic setup with only zonal flow for testing the functionality.
-    """
+params  = Parameters()
+y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
+u_0     = 0.05*np.ones(x.shape)
+v_0     = np.zeros(x.shape)
+eta_0   = np.zeros(x.shape)
+grid    = Grid(x, y)
+init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
 
-    params  = Parameters()
-    y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
-    u_0     = 0.05*np.ones(x.shape)
-    v_0     = np.zeros(x.shape)
-    eta_0   = np.zeros(x.shape)
-    grid    = Grid(x, y)
-    init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
+#print(type(init.u.data))
+start    = timeit.default_timer()
+solution = integrator(init, grid, params, scheme = adams_bashforth3)
+stop     = timeit.default_timer()
 
-    #print(type(init.u.data))
-    start    = timeit.default_timer()
-    solution = integrator(init, grid, params, scheme = adams_bashforth3)
-    stop     = timeit.default_timer()
+print('Runtime: ', stop - start, ' s ')
+'''
+!!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
 
-    print('Runtime: ', stop - start, ' s ')
-    '''
-    !!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
+--> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
+!!! without numba: ~8s, with numba: ~2s
+'''
 
-    --> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
-    !!! without numba: ~8s, with numba: ~2s
-    '''
-
-    plt.figure()
-    plt.pcolor(solution.u.data)
-    plt.colorbar()
-    plt.show()
-    plt.figure()
-    plt.pcolor(solution.v.data)
-    plt.colorbar()
-    plt.show()
+plt.figure()
+plt.pcolor(solution.u.data)
+plt.colorbar()
+plt.show()
+plt.figure()
+plt.pcolor(solution.v.data)
+plt.colorbar()
+plt.show()
