@@ -1,0 +1,162 @@
+""" Test the behaviour of the term functions.
+"""
+import sys
+import os
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
+import numpy as np
+import pytest
+from collections import deque
+
+import shallow_water_eqs as swe
+
+def get_x_y(nx, ny, dx, dy):
+    return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
+
+class TestRHS:
+
+    def test_linearised_SWE(self):
+        H, g, f = 1, 2, 3
+        dx, dy  = 1, 2
+        ni, nj  = 10, 5
+
+        x, y    = get_x_y(ni, nj, dx, dy)
+        eta     = 1 * np.ones(x.shape)
+        u       = 2 * np.ones(x.shape)
+        v       = 3 * np.ones(x.shape)
+
+        d_u     = 9 * np.ones(v.shape)
+        d_v     = -6 * np.ones(u.shape)
+        d_eta   = np.zeros_like(u)
+
+        params  = swe.Parameters(H = H, g = g, f = f)
+        grid    = swe.Grid(x, y)
+        state   = swe.State(
+            u   = swe.Variable(u, grid),
+            v   = swe.Variable(v, grid),
+            eta = swe.Variable(eta, grid)
+        )
+
+        assert np.all(swe.linearised_SWE(state, grid, params).u.data == d_u)
+        assert np.all(swe.linearised_SWE(state, grid, params).v.data == d_v)
+        assert np.all(swe.linearised_SWE(state, grid, params).eta.data == d_eta)
+
+class TestIntegration:
+
+    def test_euler_forward(self):
+        H, g, f = 1, 2, 3
+        dt      = 1
+        dx, dy  = 1, 2
+        ni, nj  = 10, 5
+
+        x, y    = get_x_y(ni, nj, dx, dy)
+        eta     = 1 * np.ones(x.shape)
+        u       = 2 * np.ones(x.shape)
+        v       = 3 * np.ones(x.shape)
+
+        d_u     = 9 * np.ones(v.shape)
+        d_v     = -6 * np.ones(u.shape)
+        d_eta   = np.zeros_like(u)
+
+
+        params  = swe.Parameters(H = H, g = g, f = f, dt = dt)
+        grid    = swe.Grid(x, y)
+        state   = swe.State(
+            u   = swe.Variable(u, grid),
+            v   = swe.Variable(v, grid),
+            eta = swe.Variable(eta, grid)
+        )
+        rhs     = deque([swe.linearised_SWE(state, grid, params)],maxlen = 1)
+
+        assert np.all(swe.euler_forward(rhs, params).u.data == d_u)
+        assert np.all(swe.euler_forward(rhs, params).v.data == d_v)
+        assert np.all(swe.euler_forward(rhs, params).eta.data == d_eta)
+
+    def test_adams_bashforth2(self):
+        H, g, f = 1, 1, 1
+        dt      = 1
+        dx, dy  = 1, 2
+        ni, nj  = 10, 5
+
+        x, y    = get_x_y(ni, nj, dx, dy)
+        eta     = 1 * np.ones(x.shape)
+        u       = 1 * np.ones(x.shape)
+        v       = 1 * np.ones(x.shape)
+
+        d_u     = 2.5 * np.ones(v.shape)
+        d_v     = -2.5 * np.ones(u.shape)
+        d_eta   = np.zeros_like(u)
+
+        params  = swe.Parameters(H = H, g = g, f = f, dt = dt)
+        grid    = swe.Grid(x, y)
+        state   = swe.State(
+            u   = swe.Variable(u, grid),
+            v   = swe.Variable(v, grid),
+            eta = swe.Variable(eta, grid)
+        )
+        rhs     = deque([swe.linearised_SWE(state, grid, params)],maxlen = 2)
+
+        assert np.all(swe.adams_bashforth2(rhs, params).u.data == d_u)
+        assert np.all(swe.adams_bashforth2(rhs, params).v.data == d_v)
+        assert np.all(swe.adams_bashforth2(rhs, params).eta.data == d_eta)
+
+    def test_adams_bashforth3(self):
+        H, g, f = 1, 1, 1
+        dt      = 1
+        dx, dy  = 1, 2
+        ni, nj  = 10, 5
+
+        x, y    = get_x_y(ni, nj, dx, dy)
+        eta     = 1 * np.ones(x.shape)
+        u       = 1 * np.ones(x.shape)
+        v       = 1 * np.ones(x.shape)
+
+        d_u     = 1 * np.ones(v.shape)
+        d_v     = -1 * np.ones(u.shape)
+        d_eta   = np.zeros_like(u)
+
+        params  = swe.Parameters(H = H, g = g, f = f, dt = dt)
+        grid    = swe.Grid(x, y)
+        state   = swe.State(
+            u   = swe.Variable(u, grid),
+            v   = swe.Variable(v, grid),
+            eta = swe.Variable(eta, grid)
+        )
+
+        rhs     = deque([
+            swe.linearised_SWE(state, grid, params),
+            swe.linearised_SWE(state, grid, params),
+            swe.linearised_SWE(state, grid, params)
+        ],maxlen = 3)
+
+        assert np.all(swe.adams_bashforth3(rhs, params).u.data == d_u)
+        assert np.all(swe.adams_bashforth3(rhs, params).v.data == d_v)
+        assert np.all(swe.adams_bashforth3(rhs, params).eta.data == d_eta)
+
+    def test_integrator(self):
+        H, g, f         = 1, 1, 1
+        t_0, t_end, dt  = 0, 1, 1
+        dx, dy  = 1, 2
+        ni, nj  = 10, 5
+        x, y    = get_x_y(ni, nj, dx, dy)
+
+        eta_0   = 1 * np.ones(x.shape)
+        u_0     = 1 * np.ones(x.shape)
+        v_0     = 1 * np.ones(x.shape)
+
+        eta_1   = 1 * np.ones(x.shape)
+        u_1     = 2 * np.ones(x.shape)
+        v_1     = 0 * np.ones(x.shape)
+
+        params  = swe.Parameters(H = H, g = g, f = f, t_0 = t_0, t_end = t_end, dt = dt)
+        grid    = swe.Grid(x, y)
+        state_0 = swe.State(
+            u   = swe.Variable(u_0, grid),
+            v   = swe.Variable(v_0, grid),
+            eta = swe.Variable(eta_0, grid)
+        )
+        state_1 = swe.integrator(state_0, grid, params, scheme = swe.euler_forward, RHS = swe.linearised_SWE)
+        assert np.all(state_1.u.data == u_1)
+        assert np.all(state_1.v.data == v_1)
+        assert np.all(state_1.eta.data == eta_1)
