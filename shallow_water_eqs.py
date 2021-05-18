@@ -119,11 +119,11 @@ def _meridional_pressure_gradient_loop_body(eta: np.array, g: float, dy: float, 
 
 @njit
 def _zonal_divergence_loop_body(u : np.array, H: float, dx: float, i: int, j: int, ni: int, nj: int) -> float:
-    return H * (u[i,j] - u[i-1,j]) / dx
+    return -H * (u[i,j] - u[i-1,j]) / dx
 
 @njit
 def _meridional_divergence_loop_body(v: np.array, H: float, dy: float, i: int, j: int, ni: int, nj: int) -> float:
-    return H * (v[i,j] - v[i,j-1]) / dy
+    return -H * (v[i,j] - v[i,j-1]) / dy
 
 @njit
 def _coriolis_u_loop_body(u: np.array, f: float, i: int, j: int, ni: int, nj: int) -> float:
@@ -339,32 +339,33 @@ def integrator(state_0: State, grid: Grid, params: Parameters, scheme: Callable[
 Very basic setup with only zonal flow for testing the functionality.
 """
 
-params  = Parameters()
-y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
-u_0     = 0.05*np.ones(x.shape)
-v_0     = np.zeros(x.shape)
-eta_0   = np.zeros(x.shape)
-grid    = Grid(x, y)
-init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
+if __name__ == "__main__":
+    params  = Parameters()
+    y, x    = np.meshgrid(np.linspace(0,50000,51),np.linspace(0,50000,51))
+    u_0     = 0.05*np.ones(x.shape)
+    v_0     = np.zeros(x.shape)
+    eta_0   = np.zeros(x.shape)
+    grid    = Grid(x, y)
+    init    = State(u = Variable(u_0, grid), v = Variable(v_0, grid), eta = Variable(eta_0, grid))
 
-#print(type(init.u.data))
-start    = timeit.default_timer()
-solution = integrator(init, grid, params, scheme = adams_bashforth3)
-stop     = timeit.default_timer()
+    #print(type(init.u.data))
+    start    = timeit.default_timer()
+    solution = integrator(init, grid, params, scheme = adams_bashforth3)
+    stop     = timeit.default_timer()
 
-print('Runtime: ', stop - start, ' s ')
-'''
-!!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
+    print('Runtime: ', stop - start, ' s ')
+    '''
+    !!! without numba: ~5s, with numba: ~46s, numba gets confused, because it doesn't know the Dataclasses !!!
 
---> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
-!!! without numba: ~8s, with numba: ~2s
-'''
+    --> The 2D grid loops are now jit-able, decreasing the measured (not tested) runtime.
+    !!! without numba: ~8s, with numba: ~2s
+    '''
 
-plt.figure()
-plt.pcolor(solution.u.data)
-plt.colorbar()
-plt.show()
-plt.figure()
-plt.pcolor(solution.v.data)
-plt.colorbar()
-plt.show()
+    plt.figure()
+    plt.pcolor(solution.u.data)
+    plt.colorbar()
+    plt.show()
+    plt.figure()
+    plt.pcolor(solution.v.data)
+    plt.colorbar()
+    plt.show()
