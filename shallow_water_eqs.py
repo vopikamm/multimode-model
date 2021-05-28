@@ -26,7 +26,8 @@ class Parameters:
     g: float = 9.81                 # gravitational force m/s^2
     beta: float = 2. / (24 * 3600)  # beta parameter 1/ms with f=f_0+beta *y
     H: float = 1000.                # reference depth in m
-    dt: float = 8.                  # time stepping in s
+    rho_0:float = 1024.             # reference density in kg / m^3
+    dt: float = 1.                  # time stepping in s
     t_0: float = 0.                 # starting time
     t_end: float = 3600.            # end time
     write: int = 20                 # how many states should be output
@@ -38,9 +39,10 @@ class Grid:
 
     x: np.array                     # longitude on grid
     y: np.array                     # latitude on grid
+    mask: np.array                  # ocean mask, 1 where ocean is, 0 where land is
     dim_x: int = 0                  # x dimension in numpy array
     dim_y: int = 1                  # y dimension in numpy array
-    dx: int = field(init=False)    # grid spacing in x
+    dx: int = field(init=False)     # grid spacing in x
     dy: int = field(init=False)     # grid spacing in y
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
@@ -140,32 +142,34 @@ def _meridional_pressure_gradient_loop_body(
 
 @njit
 def _zonal_divergence_loop_body(
-    u: np.array, H: float, dx: float, i: int, j: int, ni: int, nj: int
+    u: np.array, mask: np.array, H: float, dx: float, i: int, j: int, ni: int, nj: int
 ) -> float:
-    return -H * (u[i, j] - u[i - 1, j]) / dx
+    return -H * (mask[i, j] * u[i, j] - mask[i - 1, j] * u[i - 1, j]) / dx
 
 
 @njit
 def _meridional_divergence_loop_body(
-    v: np.array, H: float, dy: float, i: int, j: int, ni: int, nj: int
+    v: np.array, mask: np.array, H: float, dy: float, i: int, j: int, ni: int, nj: int
 ) -> float:
-    return -H * (v[i, j] - v[i, j - 1]) / dy
+    return -H * (mask[i, j] * v[i, j] - mask[i, j-1] * v[i, j - 1]) / dy
 
 
 @njit
 def _coriolis_u_loop_body(
-    u: np.array, f: float, i: int, j: int, ni: int, nj: int
+    u: np.array, mask: np.array, f: float, i: int, j: int, ni: int, nj: int
 ) -> float:
     jp1 = (j + 1) % nj
-    return -f * (u[i - 1, j] + u[i, j] + u[i, jp1] + u[i - 1, jp1]) / 4.
+    return -f * (mask[i - 1,j] * u[i - 1, j] + mask[i, j] * u[i, j] +
+                 mask[i, jp1] * u[i, jp1] + mask[i - 1, jp1] * u[i - 1, jp1]) / 4.
 
 
 @njit
 def _coriolis_v_loop_body(
-    v: np.array, f: float, i: int, j: int, ni: int, nj: int
+    v: np.array, mask: np.array, f: float, i: int, j: int, ni: int, nj: int
 ) -> float:
     ip1 = (i + 1) % ni
-    return f * (v[i, j - 1] + v[i, j] + v[ip1, j] + v[ip1, j - 1]) / 4.
+    return f * (mask[i, j - 1] * v[i, j - 1] + mask[i, j] * v[i, j] +
+                mask[ip1, j] * v[ip1, j] + mask[ip1, j - 1] * v[ip1, j - 1]) / 4.
 
 
 """
@@ -220,7 +224,7 @@ def zonal_divergence(state: State, grid: Grid, params: Parameters) -> State:
         loop_body=_zonal_divergence_loop_body,
         ni=state.u.grid.len_x,
         nj=state.u.grid.len_y,
-        args=(state.u.data, params.H, state.u.grid.dx)
+        args=(state.u.data, state.u.grid.mask, params.H, state.u.grid.dx)
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -237,7 +241,7 @@ def meridional_divergence(
         loop_body=_meridional_divergence_loop_body,
         ni=state.v.grid.len_x,
         nj=state.v.grid.len_y,
-        args=(state.v.data, params.H, state.u.grid.dy)
+        args=(state.v.data, state.v.grid.mask, params.H, state.u.grid.dy)
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -255,7 +259,7 @@ def coriolis_u(state: State, grid: Grid, params: Parameters) -> State:
         loop_body=_coriolis_u_loop_body,
         ni=state.u.grid.len_x,
         nj=state.u.grid.len_y,
-        args=(state.u.data, params.f)
+        args=(state.u.data, state.u.grid.mask, params.f)
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -273,7 +277,7 @@ def coriolis_v(state: State, grid: Grid, params: Parameters) -> State:
         loop_body=_coriolis_v_loop_body,
         ni=state.v.grid.len_x,
         nj=state.v.grid.len_y,
-        args=(state.v.data, params.f)
+        args=(state.v.data, state.v.grid.mask, params.f)
     )
     return State(
         u=Variable(result, state.u.grid),
@@ -426,12 +430,19 @@ Very basic setup with only zonal flow for testing the functionality.
 """
 
 if __name__ == "__main__":
-    params = Parameters()
-    y, x = np.meshgrid(np.linspace(0, 50000, 51), np.linspace(0, 50000, 51))
-    u_0 = 0.05 * np.ones(x.shape)
+    params       = Parameters()
+    y, x         = np.meshgrid(np.linspace(0, 50000, 51), np.linspace(0, 50000, 51))
+    mask       = np.ones(x.shape)
+
+    mask[0,:]  = 0.
+    mask[-1,:] = 0.
+    mask[:,0]  = 0.
+    mask[:,-1] = 0.
+
+    u_0 = np.zeros(x.shape)
     v_0 = np.zeros(x.shape)
-    eta_0 = np.zeros(x.shape)
-    grid = Grid(x, y)
+    eta_0    = (np.copy(x)/ 50000) - 0.5
+    grid   = Grid(x, y, mask)
     init = State(
         u=Variable(u_0, grid),
         v=Variable(v_0, grid),
@@ -453,7 +464,7 @@ if __name__ == "__main__":
     '''
 
     plt.figure()
-    plt.pcolor(solution.u.data)
+    plt.pcolor(solution.eta.data)
     plt.colorbar()
     plt.show()
     plt.figure()
