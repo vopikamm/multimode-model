@@ -10,6 +10,7 @@ from numba import njit
 from dataclasses import dataclass, field
 from matplotlib import pyplot as plt
 from collections import deque
+from inspect import signature
 
 
 """
@@ -111,61 +112,83 @@ computationally costly operations.
 """
 
 
-@njit
-def _iterate_over_grid_2D(
-    loop_body: Callable[..., float], ni: int, nj: int, args: Tuple[Any]
-) -> np.array:
-    result = np.empty((ni, nj))
-    for i in range(ni):
-        for j in range(nj):
-            result[i, j] = loop_body(*args, i, j, ni, nj)
-    return result
+@njit(inline='always')
+def _expand_7_arguments(func, i, j, ni, nj, args):
+    return func(i, j, ni, nj, args[0], args[1], args[2])
 
 
-@njit
-def _zonal_pressure_gradient_loop_body(
-    eta: np.array, g: float, dx: float, i: int, j: int, ni: int, nj: int
+@njit(inline='always')
+def _expand_6_arguments(func, i, j, ni, nj, args):
+    return func(i, j, ni, nj, args[0], args[1])
+
+
+_arg_expand_map = {
+    6: _expand_6_arguments,
+    7: _expand_7_arguments,
+}
+
+
+def _numba_2D_grid_iterator(func):
+    jitted_func = njit(inline='always')(func)
+    exp_args = _arg_expand_map[len(signature(func).parameters)]
+
+    @njit
+    def _interate_over_grid_2D(ni: int, nj: int, *args: Tuple[Any]):
+        result = np.empty((ni, nj))
+        for i in range(ni):
+            for j in range(nj):
+                result[i, j] = exp_args(
+                    jitted_func,
+                    i, j, ni, nj, args
+                )
+        return result
+    return _interate_over_grid_2D
+
+
+@_numba_2D_grid_iterator
+def _zonal_pressure_gradient(
+    i: int, j: int, ni: int, nj: int, eta: np.array, g: float, dx: float
 ) -> float:
     ip1 = (i + 1) % ni
     return -g * (eta[ip1, j] - eta[i, j]) / dx
 
 
-@njit
-def _meridional_pressure_gradient_loop_body(
-    eta: np.array, g: float, dy: float, i: int, j: int, ni: int, nj: int
+@_numba_2D_grid_iterator
+def _meridional_pressure_gradient(
+    i: int, j: int, ni: int, nj: int, eta: np.array, g: float, dy: float
 ) -> float:
     jp1 = (j + 1) % nj
     return -g * (eta[i, jp1] - eta[i, j]) / dy
 
 
-@njit
-def _zonal_divergence_loop_body(
-    u: np.array, H: float, dx: float, i: int, j: int, ni: int, nj: int
+@_numba_2D_grid_iterator
+def _zonal_divergence(
+    i: int, j: int, ni: int, nj: int, u: np.array, H: float, dx: float
 ) -> float:
     return -H * (u[i, j] - u[i - 1, j]) / dx
 
 
-@njit
-def _meridional_divergence_loop_body(
-    v: np.array, H: float, dy: float, i: int, j: int, ni: int, nj: int
+@_numba_2D_grid_iterator
+def _meridional_divergence(
+    i: int, j: int, ni: int, nj: int, v: np.array, H: float, dy: float
 ) -> float:
     return -H * (v[i, j] - v[i, j - 1]) / dy
 
 
-@njit
-def _coriolis_u_loop_body(
-    u: np.array, f: float, i: int, j: int, ni: int, nj: int
+@_numba_2D_grid_iterator
+def _coriolis_u(
+    i: int, j: int, ni: int, nj: int, u: np.array, f: float
 ) -> float:
     jp1 = (j + 1) % nj
     return -f * (u[i - 1, j] + u[i, j] + u[i, jp1] + u[i - 1, jp1]) / 4.
 
 
-@njit
-def _coriolis_v_loop_body(
-    v: np.array, f: float, i: int, j: int, ni: int, nj: int
+@_numba_2D_grid_iterator
+def _coriolis_v(
+    i: int, j: int, ni: int, nj: int, v: np.array, f: float
 ) -> float:
     ip1 = (i + 1) % ni
-    return f * (v[i, j - 1] + v[i, j] + v[ip1, j] + v[ip1, j - 1]) / 4.
+    return f * .25 * (v[i, j - 1] + v[i, j] + v[ip1, j] + v[ip1, j - 1])
 
 
 """
@@ -181,11 +204,10 @@ def zonal_pressure_gradient(
 
     Using centered differences in space.
     """
-    result = _iterate_over_grid_2D(
-        loop_body=_zonal_pressure_gradient_loop_body,
-        ni=state.eta.grid.len_x,
-        nj=state.eta.grid.len_y,
-        args=(state.eta.data, params.g, state.eta.grid.dx)
+    result = _zonal_pressure_gradient(
+        state.eta.grid.len_x,
+        state.eta.grid.len_y,
+        state.eta.data, params.g, state.eta.grid.dx
     )
     return State(
         u=Variable(result, state.u.grid),
@@ -201,11 +223,10 @@ def meridional_pressure_gradient(
 
     Using centered differences in space.
     """
-    result = _iterate_over_grid_2D(
-        loop_body=_meridional_pressure_gradient_loop_body,
-        ni=state.eta.grid.len_x,
-        nj=state.eta.grid.len_y,
-        args=(state.eta.data, params.g, state.eta.grid.dy)
+    result = _meridional_pressure_gradient(
+        state.eta.grid.len_x,
+        state.eta.grid.len_y,
+        state.eta.data, params.g, state.eta.grid.dy
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -216,11 +237,10 @@ def meridional_pressure_gradient(
 
 def zonal_divergence(state: State, grid: Grid, params: Parameters) -> State:
     """Compute the zonal divergence with centered differences in space."""
-    result = _iterate_over_grid_2D(
-        loop_body=_zonal_divergence_loop_body,
-        ni=state.u.grid.len_x,
-        nj=state.u.grid.len_y,
-        args=(state.u.data, params.H, state.u.grid.dx)
+    result = _zonal_divergence(
+        state.u.grid.len_x,
+        state.u.grid.len_y,
+        state.u.data, params.H, state.u.grid.dx
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -233,11 +253,10 @@ def meridional_divergence(
     state: State, grid: Grid, params: Parameters
 ) -> State:
     """Compute the meridional divergence with centered differences in space."""
-    result = _iterate_over_grid_2D(
-        loop_body=_meridional_divergence_loop_body,
-        ni=state.v.grid.len_x,
-        nj=state.v.grid.len_y,
-        args=(state.v.data, params.H, state.u.grid.dy)
+    result = _meridional_divergence(
+        state.v.grid.len_x,
+        state.v.grid.len_y,
+        state.v.data, params.H, state.u.grid.dy
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -251,11 +270,10 @@ def coriolis_u(state: State, grid: Grid, params: Parameters) -> State:
 
     A arithmetic four point average of u onto the v-grid is performed.
     """
-    result = _iterate_over_grid_2D(
-        loop_body=_coriolis_u_loop_body,
-        ni=state.u.grid.len_x,
-        nj=state.u.grid.len_y,
-        args=(state.u.data, params.f)
+    result = _coriolis_u(
+        state.u.grid.len_x,
+        state.u.grid.len_y,
+        state.u.data, params.f
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -269,11 +287,10 @@ def coriolis_v(state: State, grid: Grid, params: Parameters) -> State:
 
     A arithmetic four point average of v onto the u-grid is performed.
     """
-    result = _iterate_over_grid_2D(
-        loop_body=_coriolis_v_loop_body,
-        ni=state.v.grid.len_x,
-        nj=state.v.grid.len_y,
-        args=(state.v.data, params.f)
+    result = _coriolis_v(
+        state.v.grid.len_x,
+        state.v.grid.len_y,
+        state.v.data, params.f
     )
     return State(
         u=Variable(result, state.u.grid),
