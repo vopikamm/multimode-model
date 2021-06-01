@@ -13,6 +13,16 @@ def get_x_y(nx, ny, dx, dy):
     """Return 2D coordinate arrays."""
     return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
 
+def get_test_mask(x):
+    """Returns a test ocean mask with the shape of the input coordinate array.
+       The mask is zero at the outmost array elements, one elsewhere"""
+    mask        = np.ones(x.shape)
+    mask[0,:]   = 0.
+    mask[-1,:]  = 0.
+    mask[:,0]   = 0.
+    mask[:,-1]  = 0.
+    return mask
+
 
 class TestParameters:
     """Test Parameters class."""
@@ -25,7 +35,7 @@ class TestParameters:
             'g': 9.81,
             'beta': 2. / (24 * 3600),
             'H': 1000.,
-            'dt': 8.,
+            'dt': 1.,
             't_0': 0.,
             't_end': 3600.,
             'write': 20.,
@@ -42,8 +52,9 @@ class TestGrid:
         nx, ny = 10, 5
         dx, dy = 1., 2.
         x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x)
 
-        g1 = Grid(x=x, y=y)
+        g1 = Grid(x=x, y=y, mask=mask)
         assert g1.dx == dx
         assert g1.dy == dy
         assert g1.len_x == nx
@@ -54,8 +65,9 @@ class TestGrid:
         nx, ny = 10, 5
         dx, dy = 1., 2.
         x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x)
 
-        g2 = Grid(x=x.T, y=y.T, dim_x=1, dim_y=0)
+        g2 = Grid(x=x.T, y=y.T, mask = mask, dim_x=1, dim_y=0)
         assert g2.len_x == nx
         assert g2.len_y == ny
         assert g2.dx == dx
@@ -68,7 +80,9 @@ class TestVariable:
     def test_add_data(self):
         """Test variable summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        g1 = Grid(*get_x_y(nx, ny, dx, dy))
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x)
+        g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.
         d2 = np.zeros_like(g1.x) + 2.
         v1 = Variable(d1, g1)
@@ -79,8 +93,10 @@ class TestVariable:
     def test_grid_mismatch(self):
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        g1 = Grid(*get_x_y(nx, ny, dx, dy))
-        g2 = Grid(*get_x_y(nx, ny, dx, dy))
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x)
+        g1 = Grid(x, y, mask)
+        g2 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.
         d2 = np.zeros_like(g1.x) + 2.
         v1 = Variable(d1, g1)
@@ -95,7 +111,9 @@ class TestVariable:
     def test_not_implemented_add(self):
         """Test missing summation implementation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        g1 = Grid(*get_x_y(nx, ny, dx, dy))
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x)
+        g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.
         v1 = Variable(d1, g1)
         with pytest.raises(TypeError) as excinfo:
@@ -109,7 +127,9 @@ class TestState:
     def test_add(self):
         """Test state summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        g1 = Grid(*get_x_y(nx, ny, dx, dy))
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x)
+        g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.
         s1 = State(
             u=Variable(d1, g1),
