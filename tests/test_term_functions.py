@@ -17,38 +17,34 @@ def get_x_y(nx, ny, dx, dy):
 class TestTerms:
     """Test RHS terms."""
 
-    def test_zonal_pressure_gradient_loopbody(self):
-        """Test _zonal_pressure_gradient_loopbody."""
+    def test__zonal_pressure_gradient(self):
+        """Test _zonal_pressure_gradient."""
         g = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
-        i, j = 5, 2
-        x, y = get_x_y(ni, nj, dx, dy)
+        x, _ = get_x_y(ni, nj, dx, dy)
         eta = np.copy(x)
 
-        assert swe._zonal_pressure_gradient_loop_body(
-            eta, g, dx, i, j, ni, nj
-        ) == -1
-        assert swe._zonal_pressure_gradient_loop_body(
-            eta, g, dx, ni - 1, j, ni, nj
-        ) == 9
+        assert np.all(swe._zonal_pressure_gradient(
+            ni, nj, eta, g, dx
+        ) == -g * (np.roll(eta, -1, axis=0) - eta) / dx)
 
-    def test_iteration(self):
-        """Test _iterate_over_grid_2D."""
-        g = 1
-        dx, dy = 1, 2
-        ni, nj = 10, 5
-        x, y = get_x_y(ni, nj, dx, dy)
-        eta = np.copy(x)
-        result = -1 * np.ones(x.shape)
-        result[-1, :] = 9
+    # def test_iteration(self):
+    #     """Test _iterate_over_grid_2D."""
+    #     g = 1
+    #     dx, dy = 1, 2
+    #     ni, nj = 10, 5
+    #     x, y = get_x_y(ni, nj, dx, dy)
+    #     eta = np.copy(x)
+    #     result = -1 * np.ones(x.shape)
+    #     result[-1, :] = 9
 
-        assert np.all(
-            swe._iterate_over_grid_2D(
-                swe._zonal_pressure_gradient_loop_body,
-                ni, nj, args=(eta, g, dx)
-            ) == result
-        )
+    #     assert np.all(
+    #         swe._iterate_over_grid_2D(
+    #             swe._zonal_pressure_gradient_loop_body,
+    #             ni, nj, args=(eta, g, dx)
+    #         ) == result
+    #     )
 
     def test_zonal_pressure_gradient(self):
         """Test zonal_pressure_gradient."""
@@ -219,14 +215,37 @@ class TestTerms:
             ).v.data == result
         )
 
+    def test__coriolis_v(self):
+        """Test _coriolis_v."""
+        f = 10e-4
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+        x, y = get_x_y(ni, nj, dx, dy)
+        v = np.arange(y.shape[0] * y.shape[1]).reshape(y.shape)
+        result = f * .25 * (
+            np.roll(v, -1, axis=0)
+            + np.roll(v, 1, axis=1)
+            + np.roll(v, (-1, 1), axis=(0, 1))
+            + v
+        )
+
+        assert np.all(
+            swe._coriolis_v(ni, nj, v, f) == result
+        )
+
     def test_coriolis_v(self):
         """Test coriolis_v."""
         f = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
-        v = np.ones(y.shape)
-        result = np.ones(y.shape)
+        v = np.arange(y.shape[0] * y.shape[1]).reshape(y.shape)
+        result = f * .25 * (
+            np.roll(v, -1, axis=0)
+            + np.roll(v, 1, axis=1)
+            + np.roll(v, (-1, 1), axis=(0, 1))
+            + v
+        )
 
         params = swe.Parameters(f=f)
         grid = swe.Grid(x, y)
