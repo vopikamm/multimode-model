@@ -27,7 +27,8 @@ class Parameters:
     g: float = 9.81  # gravitational force m/s^2
     beta: float = 2.0 / (24 * 3600)  # beta parameter 1/ms with f=f_0+beta *y
     H: float = 1000.0  # reference depth in m
-    dt: float = 8.0  # time stepping in s
+    rho_0: float = 1024.0  # reference density in kg / m^3
+    dt: float = 1.0  # time stepping in s
     t_0: float = 0.0  # starting time
     t_end: float = 3600.0  # end time
     write: int = 20  # how many states should be output
@@ -39,6 +40,7 @@ class Grid:
 
     x: np.array  # longitude on grid
     y: np.array  # latitude on grid
+    mask: np.array  # ocean mask, 1 where ocean is, 0 where land is
     dim_x: int = 0  # x dimension in numpy array
     dim_y: int = 1  # y dimension in numpy array
     dx: int = field(init=False)  # grid spacing in x
@@ -108,6 +110,11 @@ computationally costly operations.
 
 
 @njit(inline="always")
+def _expand_8_arguments(func, i, j, ni, nj, args):
+    return func(i, j, ni, nj, args[0], args[1], args[2], args[3])
+
+
+@njit(inline="always")
 def _expand_7_arguments(func, i, j, ni, nj, args):
     return func(i, j, ni, nj, args[0], args[1], args[2])
 
@@ -120,6 +127,7 @@ def _expand_6_arguments(func, i, j, ni, nj, args):
 _arg_expand_map = {
     6: _expand_6_arguments,
     7: _expand_7_arguments,
+    8: _expand_8_arguments,
 }
 
 
@@ -156,28 +164,50 @@ def _meridional_pressure_gradient(
 
 @_numba_2D_grid_iterator
 def _zonal_divergence(
-    i: int, j: int, ni: int, nj: int, u: np.array, H: float, dx: float
+    i: int, j: int, ni: int, nj: int, u: np.array, mask: np.array, H: float, dx: float
 ) -> float:
-    return -H * (u[i, j] - u[i - 1, j]) / dx
+    return -H * (mask[i, j] * u[i, j] - mask[i - 1, j] * u[i - 1, j]) / dx
 
 
 @_numba_2D_grid_iterator
 def _meridional_divergence(
-    i: int, j: int, ni: int, nj: int, v: np.array, H: float, dy: float
+    i: int, j: int, ni: int, nj: int, v: np.array, mask: np.array, H: float, dy: float
 ) -> float:
-    return -H * (v[i, j] - v[i, j - 1]) / dy
+    return -H * (mask[i, j] * v[i, j] - mask[i, j - 1] * v[i, j - 1]) / dy
 
 
 @_numba_2D_grid_iterator
-def _coriolis_u(i: int, j: int, ni: int, nj: int, u: np.array, f: float) -> float:
+def _coriolis_u(
+    i: int, j: int, ni: int, nj: int, u: np.array, mask: np.array, f: float
+) -> float:
     jp1 = (j + 1) % nj
-    return -f * (u[i - 1, j] + u[i, j] + u[i, jp1] + u[i - 1, jp1]) / 4.0
+    return (
+        -f
+        * (
+            mask[i - 1, j] * u[i - 1, j]
+            + mask[i, j] * u[i, j]
+            + mask[i, jp1] * u[i, jp1]
+            + mask[i - 1, jp1] * u[i - 1, jp1]
+        )
+        / 4.0
+    )
 
 
 @_numba_2D_grid_iterator
-def _coriolis_v(i: int, j: int, ni: int, nj: int, v: np.array, f: float) -> float:
+def _coriolis_v(
+    i: int, j: int, ni: int, nj: int, v: np.array, mask: np.array, f: float
+) -> float:
     ip1 = (i + 1) % ni
-    return f * 0.25 * (v[i, j - 1] + v[i, j] + v[ip1, j] + v[ip1, j - 1])
+    return (
+        f
+        * 0.25
+        * (
+            mask[i, j - 1] * v[i, j - 1]
+            + mask[i, j] * v[i, j]
+            + mask[ip1, j] * v[ip1, j]
+            + mask[ip1, j - 1] * v[ip1, j - 1]
+        )
+    )
 
 
 """
@@ -186,7 +216,7 @@ function output to dataclasses. Periodic boundary conditions are applied.
 """
 
 
-def zonal_pressure_gradient(state: State, grid: Grid, params: Parameters) -> State:
+def zonal_pressure_gradient(state: State, params: Parameters) -> State:
     """Compute the zonal pressure gradient.
 
     Using centered differences in space.
@@ -199,13 +229,13 @@ def zonal_pressure_gradient(state: State, grid: Grid, params: Parameters) -> Sta
         state.eta.grid.dx,
     )
     return State(
-        u=Variable(result, state.u.grid),
+        u=Variable(state.u.grid.mask * result, state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
         eta=Variable(np.zeros_like(state.eta.data), state.eta.grid),
     )
 
 
-def meridional_pressure_gradient(state: State, grid: Grid, params: Parameters) -> State:
+def meridional_pressure_gradient(state: State, params: Parameters) -> State:
     """Compute the meridional pressure gradient.
 
     Using centered differences in space.
@@ -219,56 +249,78 @@ def meridional_pressure_gradient(state: State, grid: Grid, params: Parameters) -
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
-        v=Variable(result, state.v.grid),
+        v=Variable(state.u.grid.mask * result, state.v.grid),
         eta=Variable(np.zeros_like(state.eta.data), state.eta.grid),
     )
 
 
-def zonal_divergence(state: State, grid: Grid, params: Parameters) -> State:
+def zonal_divergence(state: State, params: Parameters) -> State:
     """Compute the zonal divergence with centered differences in space."""
     result = _zonal_divergence(
-        state.u.grid.len_x, state.u.grid.len_y, state.u.data, params.H, state.u.grid.dx
+        state.u.grid.len_x,
+        state.u.grid.len_y,
+        state.u.data,
+        state.u.grid.mask,
+        params.H,
+        state.u.grid.dx,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(result, state.eta.grid),
+        eta=Variable(state.eta.grid.mask * result, state.eta.grid),
     )
 
 
-def meridional_divergence(state: State, grid: Grid, params: Parameters) -> State:
+def meridional_divergence(state: State, params: Parameters) -> State:
     """Compute the meridional divergence with centered differences in space."""
     result = _meridional_divergence(
-        state.v.grid.len_x, state.v.grid.len_y, state.v.data, params.H, state.u.grid.dy
+        state.v.grid.len_x,
+        state.v.grid.len_y,
+        state.v.data,
+        state.v.grid.mask,
+        params.H,
+        state.u.grid.dy,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(result, state.eta.grid),
+        eta=Variable(state.eta.grid.mask * result, state.eta.grid),
     )
 
 
-def coriolis_u(state: State, grid: Grid, params: Parameters) -> State:
+def coriolis_u(state: State, params: Parameters) -> State:
     """Compute meridional acceleration due to Coriolis force.
 
     A arithmetic four point average of u onto the v-grid is performed.
     """
-    result = _coriolis_u(state.u.grid.len_x, state.u.grid.len_y, state.u.data, params.f)
+    result = _coriolis_u(
+        state.u.grid.len_x,
+        state.u.grid.len_y,
+        state.u.data,
+        state.u.grid.mask,
+        params.f,
+    )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
-        v=Variable(result, state.v.grid),
+        v=Variable(state.v.grid.mask * result, state.v.grid),
         eta=Variable(np.zeros_like(state.v.data), state.eta.grid),
     )
 
 
-def coriolis_v(state: State, grid: Grid, params: Parameters) -> State:
+def coriolis_v(state: State, params: Parameters) -> State:
     """Compute the zonal acceleration due to the Coriolis force.
 
     A arithmetic four point average of v onto the u-grid is performed.
     """
-    result = _coriolis_v(state.v.grid.len_x, state.v.grid.len_y, state.v.data, params.f)
+    result = _coriolis_v(
+        state.v.grid.len_x,
+        state.v.grid.len_y,
+        state.v.data,
+        state.v.grid.mask,
+        params.f,
+    )
     return State(
-        u=Variable(result, state.u.grid),
+        u=Variable(state.u.grid.mask * result, state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
         eta=Variable(np.zeros_like(state.v.data), state.eta.grid),
     )
@@ -355,24 +407,19 @@ Outmost functions defining the problem and what output should be computed.
 """
 
 
-def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
+def linearised_SWE(state: State, params: Parameters) -> State:
     """Compute RHS of the linearised shallow water equations.
 
     The equations are evaluated on a C-grid. Output is a state type variable
     forming the right-hand-side needed for any time stepping scheme.
     """
     RHS_state = (
-        (  # u_t
-            zonal_pressure_gradient(state, grid, params)
-            + coriolis_v(state, grid, params)
-        )
+        (zonal_pressure_gradient(state, params) + coriolis_v(state, params))  # u_t
         + (  # v_t
-            meridional_pressure_gradient(state, grid, params)
-            + coriolis_u(state, grid, params)
+            meridional_pressure_gradient(state, params) + coriolis_u(state, params)
         )
         + (  # eta_t
-            zonal_divergence(state, grid, params)
-            + meridional_divergence(state, grid, params)
+            zonal_divergence(state, params) + meridional_divergence(state, params)
         )
     )
     return RHS_state
@@ -381,7 +428,6 @@ def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
 # @jit
 def integrator(
     state_0: State,
-    grid: Grid,
     params: Parameters,
     scheme: Callable[..., State] = adams_bashforth3,
     RHS: Callable[..., State] = linearised_SWE,
@@ -402,7 +448,7 @@ def integrator(
     rhs = deque([], maxlen=level)
 
     for _ in range(N):
-        rhs.append(RHS(state[-1], grid, params))
+        rhs.append(RHS(state[-1], params))
         state.append(state[-1] + scheme(rhs, params))
 
     return state[-1]
@@ -413,18 +459,25 @@ Very basic setup with only zonal flow for testing the functionality.
 """
 
 if __name__ == "__main__":
-    params = Parameters()
+    params = Parameters(t_end=7200.0)
     y, x = np.meshgrid(np.linspace(0, 50000, 51), np.linspace(0, 50000, 51))
-    u_0 = 0.05 * np.ones(x.shape)
+    mask = np.ones(x.shape)
+
+    mask[0, :] = 0.0
+    mask[-1, :] = 0.0
+    mask[:, 0] = 0.0
+    mask[:, -1] = 0.0
+
+    u_0 = np.zeros(x.shape)
     v_0 = np.zeros(x.shape)
-    eta_0 = np.zeros(x.shape)
-    grid = Grid(x, y)
+    eta_0 = mask * (np.copy(x) / 50000) - 0.5
+    grid = Grid(x, y, mask)
     init = State(
         u=Variable(u_0, grid), v=Variable(v_0, grid), eta=Variable(eta_0, grid)
     )
 
     start = timeit.default_timer()
-    solution = integrator(init, grid, params, scheme=adams_bashforth3)
+    solution = integrator(init, params, scheme=adams_bashforth3)
     stop = timeit.default_timer()
 
     print("Runtime: ", stop - start, " s ")
@@ -438,10 +491,10 @@ if __name__ == "__main__":
     """
 
     plt.figure()
-    plt.pcolor(solution.u.data)
+    plt.pcolor(solution.eta.data)
     plt.colorbar()
     plt.show()
     plt.figure()
-    plt.pcolor(solution.v.data)
+    plt.pcolor(solution.u.data)
     plt.colorbar()
     plt.show()
