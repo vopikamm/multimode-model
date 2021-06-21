@@ -3,9 +3,8 @@ import sys
 import os
 import numpy as np
 from collections import deque
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shallow_water_eqs as swe  # noqa: E402
 
@@ -38,14 +37,12 @@ class TestRHS:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
 
         assert np.all(swe.linearised_SWE(state, grid, params).u.data == d_u)
         assert np.all(swe.linearised_SWE(state, grid, params).v.data == d_v)
-        assert np.all(swe.linearised_SWE(
-            state, grid, params).eta.data == d_eta
-        )
+        assert np.all(swe.linearised_SWE(state, grid, params).eta.data == d_eta)
 
 
 class TestIntegration:
@@ -72,7 +69,7 @@ class TestIntegration:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
         rhs = deque([swe.linearised_SWE(state, grid, params)], maxlen=1)
 
@@ -101,7 +98,7 @@ class TestIntegration:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
         rhs = deque([swe.linearised_SWE(state, grid, params)], maxlen=2)
 
@@ -130,16 +127,16 @@ class TestIntegration:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
 
         rhs = deque(
             [
                 swe.linearised_SWE(state, grid, params),
                 swe.linearised_SWE(state, grid, params),
-                swe.linearised_SWE(state, grid, params)
+                swe.linearised_SWE(state, grid, params),
             ],
-            maxlen=3
+            maxlen=3,
         )
 
         assert np.all(swe.adams_bashforth3(rhs, params).u.data == d_u)
@@ -167,12 +164,10 @@ class TestIntegration:
         state_0 = swe.State(
             u=swe.Variable(u_0, grid),
             v=swe.Variable(v_0, grid),
-            eta=swe.Variable(eta_0, grid)
+            eta=swe.Variable(eta_0, grid),
         )
         state_1 = swe.integrator(
-            state_0, grid, params,
-            scheme=swe.euler_forward,
-            RHS=swe.linearised_SWE
+            state_0, grid, params, scheme=swe.euler_forward, RHS=swe.linearised_SWE
         )
         assert np.all(state_1.u.data == u_1)
         assert np.all(state_1.v.data == v_1)

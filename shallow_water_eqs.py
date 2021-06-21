@@ -23,26 +23,26 @@ and their associated grids.
 class Parameters:
     """Class to organise all constant parameters."""
 
-    f: float = 0.
-    g: float = 9.81                 # gravitational force m/s^2
-    beta: float = 2. / (24 * 3600)  # beta parameter 1/ms with f=f_0+beta *y
-    H: float = 1000.                # reference depth in m
-    dt: float = 8.                  # time stepping in s
-    t_0: float = 0.                 # starting time
-    t_end: float = 3600.            # end time
-    write: int = 20                 # how many states should be output
+    f: float = 0.0
+    g: float = 9.81  # gravitational force m/s^2
+    beta: float = 2.0 / (24 * 3600)  # beta parameter 1/ms with f=f_0+beta *y
+    H: float = 1000.0  # reference depth in m
+    dt: float = 8.0  # time stepping in s
+    t_0: float = 0.0  # starting time
+    t_end: float = 3600.0  # end time
+    write: int = 20  # how many states should be output
 
 
 @dataclass
 class Grid:
     """Grid informtation."""
 
-    x: np.array                     # longitude on grid
-    y: np.array                     # latitude on grid
-    dim_x: int = 0                  # x dimension in numpy array
-    dim_y: int = 1                  # y dimension in numpy array
-    dx: int = field(init=False)    # grid spacing in x
-    dy: int = field(init=False)     # grid spacing in y
+    x: np.array  # longitude on grid
+    y: np.array  # latitude on grid
+    dim_x: int = 0  # x dimension in numpy array
+    dim_y: int = 1  # y dimension in numpy array
+    dx: int = field(init=False)  # grid spacing in x
+    dy: int = field(init=False)  # grid spacing in y
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
 
@@ -68,9 +68,7 @@ class Variable:
             (isinstance(self, type(other)) or isinstance(other, type(self)))
             and self.grid is not other.grid
         ):
-            raise ValueError(
-                "Try to add variables defined on different grids."
-            )
+            raise ValueError("Try to add variables defined on different grids.")
         try:
             new_data = self.data + other.data
         except (TypeError, AttributeError):
@@ -91,10 +89,7 @@ class State:
 
     def __add__(self, other):
         """Add all variables of two states."""
-        if (
-            not isinstance(other, type(self))
-            or not isinstance(self, type(other))
-        ):
+        if not isinstance(other, type(self)) or not isinstance(self, type(other)):
             return NotImplemented
         try:
             u_new = self.u + other.u
@@ -112,12 +107,12 @@ computationally costly operations.
 """
 
 
-@njit(inline='always')
+@njit(inline="always")
 def _expand_7_arguments(func, i, j, ni, nj, args):
     return func(i, j, ni, nj, args[0], args[1], args[2])
 
 
-@njit(inline='always')
+@njit(inline="always")
 def _expand_6_arguments(func, i, j, ni, nj, args):
     return func(i, j, ni, nj, args[0], args[1])
 
@@ -129,7 +124,7 @@ _arg_expand_map = {
 
 
 def _numba_2D_grid_iterator(func):
-    jitted_func = njit(inline='always')(func)
+    jitted_func = njit(inline="always")(func)
     exp_args = _arg_expand_map[len(signature(func).parameters)]
 
     @njit
@@ -137,11 +132,9 @@ def _numba_2D_grid_iterator(func):
         result = np.empty((ni, nj))
         for i in range(ni):
             for j in range(nj):
-                result[i, j] = exp_args(
-                    jitted_func,
-                    i, j, ni, nj, args
-                )
+                result[i, j] = exp_args(jitted_func, i, j, ni, nj, args)
         return result
+
     return _interate_over_grid_2D
 
 
@@ -176,19 +169,15 @@ def _meridional_divergence(
 
 
 @_numba_2D_grid_iterator
-def _coriolis_u(
-    i: int, j: int, ni: int, nj: int, u: np.array, f: float
-) -> float:
+def _coriolis_u(i: int, j: int, ni: int, nj: int, u: np.array, f: float) -> float:
     jp1 = (j + 1) % nj
-    return -f * (u[i - 1, j] + u[i, j] + u[i, jp1] + u[i - 1, jp1]) / 4.
+    return -f * (u[i - 1, j] + u[i, j] + u[i, jp1] + u[i - 1, jp1]) / 4.0
 
 
 @_numba_2D_grid_iterator
-def _coriolis_v(
-    i: int, j: int, ni: int, nj: int, v: np.array, f: float
-) -> float:
+def _coriolis_v(i: int, j: int, ni: int, nj: int, v: np.array, f: float) -> float:
     ip1 = (i + 1) % ni
-    return f * .25 * (v[i, j - 1] + v[i, j] + v[ip1, j] + v[ip1, j - 1])
+    return f * 0.25 * (v[i, j - 1] + v[i, j] + v[ip1, j] + v[ip1, j - 1])
 
 
 """
@@ -197,9 +186,7 @@ function output to dataclasses. Periodic boundary conditions are applied.
 """
 
 
-def zonal_pressure_gradient(
-    state: State, grid: Grid, params: Parameters
-) -> State:
+def zonal_pressure_gradient(state: State, grid: Grid, params: Parameters) -> State:
     """Compute the zonal pressure gradient.
 
     Using centered differences in space.
@@ -207,18 +194,18 @@ def zonal_pressure_gradient(
     result = _zonal_pressure_gradient(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.data, params.g, state.eta.grid.dx
+        state.eta.data,
+        params.g,
+        state.eta.grid.dx,
     )
     return State(
         u=Variable(result, state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(np.zeros_like(state.eta.data), state.eta.grid)
+        eta=Variable(np.zeros_like(state.eta.data), state.eta.grid),
     )
 
 
-def meridional_pressure_gradient(
-    state: State, grid: Grid, params: Parameters
-) -> State:
+def meridional_pressure_gradient(state: State, grid: Grid, params: Parameters) -> State:
     """Compute the meridional pressure gradient.
 
     Using centered differences in space.
@@ -226,42 +213,38 @@ def meridional_pressure_gradient(
     result = _meridional_pressure_gradient(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.data, params.g, state.eta.grid.dy
+        state.eta.data,
+        params.g,
+        state.eta.grid.dy,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(result, state.v.grid),
-        eta=Variable(np.zeros_like(state.eta.data), state.eta.grid)
+        eta=Variable(np.zeros_like(state.eta.data), state.eta.grid),
     )
 
 
 def zonal_divergence(state: State, grid: Grid, params: Parameters) -> State:
     """Compute the zonal divergence with centered differences in space."""
     result = _zonal_divergence(
-        state.u.grid.len_x,
-        state.u.grid.len_y,
-        state.u.data, params.H, state.u.grid.dx
+        state.u.grid.len_x, state.u.grid.len_y, state.u.data, params.H, state.u.grid.dx
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(result, state.eta.grid)
+        eta=Variable(result, state.eta.grid),
     )
 
 
-def meridional_divergence(
-    state: State, grid: Grid, params: Parameters
-) -> State:
+def meridional_divergence(state: State, grid: Grid, params: Parameters) -> State:
     """Compute the meridional divergence with centered differences in space."""
     result = _meridional_divergence(
-        state.v.grid.len_x,
-        state.v.grid.len_y,
-        state.v.data, params.H, state.u.grid.dy
+        state.v.grid.len_x, state.v.grid.len_y, state.v.data, params.H, state.u.grid.dy
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(result, state.eta.grid)
+        eta=Variable(result, state.eta.grid),
     )
 
 
@@ -270,15 +253,11 @@ def coriolis_u(state: State, grid: Grid, params: Parameters) -> State:
 
     A arithmetic four point average of u onto the v-grid is performed.
     """
-    result = _coriolis_u(
-        state.u.grid.len_x,
-        state.u.grid.len_y,
-        state.u.data, params.f
-    )
+    result = _coriolis_u(state.u.grid.len_x, state.u.grid.len_y, state.u.data, params.f)
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(result, state.v.grid),
-        eta=Variable(np.zeros_like(state.v.data), state.eta.grid)
+        eta=Variable(np.zeros_like(state.v.data), state.eta.grid),
     )
 
 
@@ -287,15 +266,11 @@ def coriolis_v(state: State, grid: Grid, params: Parameters) -> State:
 
     A arithmetic four point average of v onto the u-grid is performed.
     """
-    result = _coriolis_v(
-        state.v.grid.len_x,
-        state.v.grid.len_y,
-        state.v.data, params.f
-    )
+    result = _coriolis_v(state.v.grid.len_x, state.v.grid.len_y, state.v.data, params.f)
     return State(
         u=Variable(result, state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(np.zeros_like(state.v.data), state.eta.grid)
+        eta=Variable(np.zeros_like(state.v.data), state.eta.grid),
     )
 
 
@@ -319,7 +294,7 @@ def euler_forward(rhs: deque, params: Parameters) -> State:
     return State(
         u=Variable(du, rhs[-1].u.grid),
         v=Variable(dv, rhs[-1].v.grid),
-        eta=Variable(deta, rhs[-1].eta.grid)
+        eta=Variable(deta, rhs[-1].eta.grid),
     )
 
 
@@ -342,7 +317,7 @@ def adams_bashforth2(rhs: deque, params: Parameters) -> State:
     return State(
         u=Variable(du, rhs[-1].u.grid),
         v=Variable(dv, rhs[-1].v.grid),
-        eta=Variable(deta, rhs[-1].eta.grid)
+        eta=Variable(deta, rhs[-1].eta.grid),
     )
 
 
@@ -358,27 +333,20 @@ def adams_bashforth3(rhs: deque, params: Parameters) -> State:
     if len(rhs) < 3:
         rhs.append(rhs[-1] + adams_bashforth2(rhs, params))
 
-    du = (
-        (params.dt / 12)
-        * (23 * rhs[-1].u.data - 16 * rhs[-2].u.data + 5 * rhs[-3].u.data)
+    du = (params.dt / 12) * (
+        23 * rhs[-1].u.data - 16 * rhs[-2].u.data + 5 * rhs[-3].u.data
     )
-    dv = (
-        (params.dt / 12)
-        * (23 * rhs[-1].v.data - 16 * rhs[-2].v.data + 5 * rhs[-3].v.data)
+    dv = (params.dt / 12) * (
+        23 * rhs[-1].v.data - 16 * rhs[-2].v.data + 5 * rhs[-3].v.data
     )
-    deta = (
-        (params.dt / 12)
-        * (
-            23 * rhs[-1].eta.data
-            - 16 * rhs[-2].eta.data
-            + 5 * rhs[-3].eta.data
-        )
+    deta = (params.dt / 12) * (
+        23 * rhs[-1].eta.data - 16 * rhs[-2].eta.data + 5 * rhs[-3].eta.data
     )
 
     return State(
         u=Variable(du, rhs[-1].u.grid),
         v=Variable(dv, rhs[-1].v.grid),
-        eta=Variable(deta, rhs[-1].eta.grid)
+        eta=Variable(deta, rhs[-1].eta.grid),
     )
 
 
@@ -407,14 +375,16 @@ def linearised_SWE(state: State, grid: Grid, params: Parameters) -> State:
             + meridional_divergence(state, grid, params)
         )
     )
-    return(RHS_state)
+    return RHS_state
 
 
 # @jit
 def integrator(
-    state_0: State, grid: Grid, params: Parameters,
+    state_0: State,
+    grid: Grid,
+    params: Parameters,
     scheme: Callable[..., State] = adams_bashforth3,
-    RHS: Callable[..., State] = linearised_SWE
+    RHS: Callable[..., State] = linearised_SWE,
 ) -> State:
     """Integrate a system of differential equations.
 
@@ -435,7 +405,7 @@ def integrator(
         rhs.append(RHS(state[-1], grid, params))
         state.append(state[-1] + scheme(rhs, params))
 
-    return(state[-1])
+    return state[-1]
 
 
 """
@@ -450,24 +420,22 @@ if __name__ == "__main__":
     eta_0 = np.zeros(x.shape)
     grid = Grid(x, y)
     init = State(
-        u=Variable(u_0, grid),
-        v=Variable(v_0, grid),
-        eta=Variable(eta_0, grid)
+        u=Variable(u_0, grid), v=Variable(v_0, grid), eta=Variable(eta_0, grid)
     )
 
     start = timeit.default_timer()
     solution = integrator(init, grid, params, scheme=adams_bashforth3)
     stop = timeit.default_timer()
 
-    print('Runtime: ', stop - start, ' s ')
-    '''
+    print("Runtime: ", stop - start, " s ")
+    """
     !!! without numba: ~5s, with numba: ~46s, numba gets confused,
     because it doesn't know the Dataclasses !!!
 
     --> The 2D grid loops are now jit-able, decreasing the measured
     (not tested) runtime.
     !!! without numba: ~8s, with numba: ~2s
-    '''
+    """
 
     plt.figure()
     plt.pcolor(solution.u.data)

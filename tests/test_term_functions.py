@@ -2,9 +2,8 @@
 import sys
 import os
 import numpy as np
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shallow_water_eqs as swe  # noqa: E402
 
@@ -25,9 +24,10 @@ class TestTerms:
         x, _ = get_x_y(ni, nj, dx, dy)
         eta = np.copy(x)
 
-        assert np.all(swe._zonal_pressure_gradient(
-            ni, nj, eta, g, dx
-        ) == -g * (np.roll(eta, -1, axis=0) - eta) / dx)
+        assert np.all(
+            swe._zonal_pressure_gradient(ni, nj, eta, g, dx)
+            == -g * (np.roll(eta, -1, axis=0) - eta) / dx
+        )
 
     # def test_iteration(self):
     #     """Test _iterate_over_grid_2D."""
@@ -61,24 +61,17 @@ class TestTerms:
         state = swe.State(
             u=swe.Variable(np.zeros(x.shape), grid),
             v=swe.Variable(np.zeros(x.shape), grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
 
         assert np.all(
-            swe.zonal_pressure_gradient(
-                state, grid, params
-            ).eta.data == np.zeros(x.shape)
+            swe.zonal_pressure_gradient(state, grid, params).eta.data
+            == np.zeros(x.shape)
         )
         assert np.all(
-            swe.zonal_pressure_gradient(
-                state, grid, params
-            ).v.data == np.zeros(x.shape)
+            swe.zonal_pressure_gradient(state, grid, params).v.data == np.zeros(x.shape)
         )
-        assert np.all(
-            swe.zonal_pressure_gradient(
-                state, grid, params
-            ).u.data == result
-        )
+        assert np.all(swe.zonal_pressure_gradient(state, grid, params).u.data == result)
 
     def test_meridional_pressure_gradient(self):
         """Test meridional_pressure_gradient."""
@@ -95,23 +88,17 @@ class TestTerms:
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(np.zeros(y.shape), grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
 
         assert np.all(
-            swe.meridional_pressure_gradient(
-                state, grid, params
-            ).eta.data == 0.
+            swe.meridional_pressure_gradient(state, grid, params).eta.data == 0.0
         )
         assert np.all(
-            swe.meridional_pressure_gradient(
-                state, grid, params
-            ).u.data == 0.
+            swe.meridional_pressure_gradient(state, grid, params).u.data == 0.0
         )
         assert np.all(
-            swe.meridional_pressure_gradient(
-                state, grid, params
-            ).v.data == result
+            swe.meridional_pressure_gradient(state, grid, params).v.data == result
         )
 
     def test_zonal_divergence(self):
@@ -129,24 +116,12 @@ class TestTerms:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(np.zeros(x.shape), grid),
-            eta=swe.Variable(np.zeros(x.shape), grid)
+            eta=swe.Variable(np.zeros(x.shape), grid),
         )
 
-        assert np.all(
-            swe.zonal_divergence(
-                state, grid, params
-            ).u.data == 0.
-        )
-        assert np.all(
-            swe.zonal_divergence(
-                state, grid, params
-            ).v.data == 0.
-        )
-        assert np.all(
-            swe.zonal_divergence(
-                state, grid, params
-            ).eta.data == result
-        )
+        assert np.all(swe.zonal_divergence(state, grid, params).u.data == 0.0)
+        assert np.all(swe.zonal_divergence(state, grid, params).v.data == 0.0)
+        assert np.all(swe.zonal_divergence(state, grid, params).eta.data == result)
 
     def test_meridional_divergence(self):
         """Test meridional_divergence."""
@@ -163,24 +138,16 @@ class TestTerms:
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(np.zeros(y.shape), grid)
+            eta=swe.Variable(np.zeros(y.shape), grid),
         )
 
         assert np.all(
-            swe.meridional_divergence(
-                state, grid, params
-            ).u.data == np.zeros(y.shape)
+            swe.meridional_divergence(state, grid, params).u.data == np.zeros(y.shape)
         )
         assert np.all(
-            swe.meridional_divergence(
-                state, grid, params
-            ).v.data == np.zeros(y.shape)
+            swe.meridional_divergence(state, grid, params).v.data == np.zeros(y.shape)
         )
-        assert np.all(
-            swe.meridional_divergence(
-                state, grid, params
-            ).eta.data == result
-        )
+        assert np.all(swe.meridional_divergence(state, grid, params).eta.data == result)
 
     def test_coriolis_u(self):
         """Test coriolis_u."""
@@ -196,24 +163,12 @@ class TestTerms:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(np.zeros(x.shape), grid),
-            eta=swe.Variable(np.zeros(x.shape), grid)
+            eta=swe.Variable(np.zeros(x.shape), grid),
         )
 
-        assert np.all(
-            swe.coriolis_u(
-                state, grid, params
-            ).u.data == np.zeros(x.shape)
-        )
-        assert np.all(
-            swe.coriolis_u(
-                state, grid, params
-            ).eta.data == np.zeros(x.shape)
-        )
-        assert np.all(
-            swe.coriolis_u(
-                state, grid, params
-            ).v.data == result
-        )
+        assert np.all(swe.coriolis_u(state, grid, params).u.data == np.zeros(x.shape))
+        assert np.all(swe.coriolis_u(state, grid, params).eta.data == np.zeros(x.shape))
+        assert np.all(swe.coriolis_u(state, grid, params).v.data == result)
 
     def test__coriolis_v(self):
         """Test _coriolis_v."""
@@ -222,16 +177,18 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         v = np.arange(y.shape[0] * y.shape[1]).reshape(y.shape)
-        result = f * .25 * (
-            np.roll(v, -1, axis=0)
-            + np.roll(v, 1, axis=1)
-            + np.roll(v, (-1, 1), axis=(0, 1))
-            + v
+        result = (
+            f
+            * 0.25
+            * (
+                np.roll(v, -1, axis=0)
+                + np.roll(v, 1, axis=1)
+                + np.roll(v, (-1, 1), axis=(0, 1))
+                + v
+            )
         )
 
-        assert np.all(
-            swe._coriolis_v(ni, nj, v, f) == result
-        )
+        assert np.all(swe._coriolis_v(ni, nj, v, f) == result)
 
     def test_coriolis_v(self):
         """Test coriolis_v."""
@@ -240,11 +197,15 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         v = np.arange(y.shape[0] * y.shape[1]).reshape(y.shape)
-        result = f * .25 * (
-            np.roll(v, -1, axis=0)
-            + np.roll(v, 1, axis=1)
-            + np.roll(v, (-1, 1), axis=(0, 1))
-            + v
+        result = (
+            f
+            * 0.25
+            * (
+                np.roll(v, -1, axis=0)
+                + np.roll(v, 1, axis=1)
+                + np.roll(v, (-1, 1), axis=(0, 1))
+                + v
+            )
         )
 
         params = swe.Parameters(f=f)
@@ -252,21 +213,9 @@ class TestTerms:
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(np.zeros(y.shape), grid)
+            eta=swe.Variable(np.zeros(y.shape), grid),
         )
 
-        assert np.all(
-            swe.coriolis_v(
-                state, grid, params
-            ).v.data == np.zeros(y.shape)
-        )
-        assert np.all(
-            swe.coriolis_v(
-                state, grid, params
-            ).eta.data == np.zeros(y.shape)
-        )
-        assert np.all(
-            swe.coriolis_v(
-                state, grid, params
-            ).u.data == result
-        )
+        assert np.all(swe.coriolis_v(state, grid, params).v.data == np.zeros(y.shape))
+        assert np.all(swe.coriolis_v(state, grid, params).eta.data == np.zeros(y.shape))
+        assert np.all(swe.coriolis_v(state, grid, params).u.data == result)
