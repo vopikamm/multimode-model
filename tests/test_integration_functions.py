@@ -3,9 +3,8 @@ import sys
 import os
 import numpy as np
 from collections import deque
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shallow_water_eqs as swe  # noqa: E402
 
@@ -14,16 +13,18 @@ def get_x_y(nx, ny, dx, dy):
     """Return 2D coordinate arrays."""
     return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
 
-def get_test_mask(x):
-    """Returns a test ocean mask with the shape of the input coordinate array.
-       The mask is zero at the outmost array elements, one elsewhere"""
-    mask        = np.ones(x.shape)
-    mask[0,:]   = 0.
-    mask[-1,:]  = 0.
-    mask[:,0]   = 0.
-    mask[:,-1]  = 0.
-    return mask
 
+def get_test_mask(x):
+    """Return a test ocean mask with the shape of the input coordinate array.
+
+    The mask is zero at the outmost array elements, one elsewhere.
+    """
+    mask = np.ones(x.shape)
+    mask[0, :] = 0.0
+    mask[-1, :] = 0.0
+    mask[:, 0] = 0.0
+    mask[:, -1] = 0.0
+    return mask
 
 
 class TestRHS:
@@ -42,28 +43,26 @@ class TestRHS:
         v = 1 * np.ones(x.shape)
 
         d_u = 4 * np.ones(v.shape)
-        d_u[-2,:]   = 2
-        d_u[:, 1]   = 2
-        d_u[-2,1]   = 1
+        d_u[-2, :] = 2
+        d_u[:, 1] = 2
+        d_u[-2, 1] = 1
         d_u = d_u * mask
 
         d_v = np.zeros_like(u)
         d_eta = np.zeros_like(u)
-        d_eta[1:-1,1] = -0.5
+        d_eta[1:-1, 1] = -0.5
 
         params = swe.Parameters(H=H, g=g, f=f)
         grid = swe.Grid(x, y, mask)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
 
         assert np.all(swe.linearised_SWE(state, params).u.data == d_u)
         assert np.all(swe.linearised_SWE(state, params).v.data == d_v)
-        assert np.all(swe.linearised_SWE(
-            state, params).eta.data == d_eta
-        )
+        assert np.all(swe.linearised_SWE(state, params).eta.data == d_eta)
 
 
 class TestIntegration:
@@ -91,7 +90,7 @@ class TestIntegration:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
         rhs = deque([swe.linearised_SWE(state, params)], maxlen=1)
 
@@ -121,7 +120,7 @@ class TestIntegration:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
         rhs = deque([swe.linearised_SWE(state, params)], maxlen=2)
 
@@ -151,16 +150,16 @@ class TestIntegration:
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid)
+            eta=swe.Variable(eta, grid),
         )
 
         rhs = deque(
             [
                 swe.linearised_SWE(state, params),
                 swe.linearised_SWE(state, params),
-                swe.linearised_SWE(state, params)
+                swe.linearised_SWE(state, params),
             ],
-            maxlen=3
+            maxlen=3,
         )
 
         assert np.all(swe.adams_bashforth3(rhs, params).u.data == d_u)
@@ -189,12 +188,10 @@ class TestIntegration:
         state_0 = swe.State(
             u=swe.Variable(u_0, grid),
             v=swe.Variable(v_0, grid),
-            eta=swe.Variable(eta_0, grid)
+            eta=swe.Variable(eta_0, grid),
         )
         state_1 = swe.integrator(
-            state_0, params,
-            scheme=swe.euler_forward,
-            RHS=swe.linearised_SWE
+            state_0, params, scheme=swe.euler_forward, RHS=swe.linearised_SWE
         )
         assert np.all(state_1.u.data == u_1)
         assert np.all(state_1.v.data == v_1)
