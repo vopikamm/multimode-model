@@ -41,6 +41,7 @@ class TestParameters:
             "t_0": 0.0,
             "t_end": 3600.0,
             "write": 20.0,
+            "r": 6_371_000.0,
         }
         for var, val in defaults.items():
             assert p.__getattribute__(var) == val
@@ -55,10 +56,12 @@ class TestGrid:
         dx, dy = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
 
-        g1 = Grid(x=x, y=y, mask=mask)
-        assert g1.dx == dx
-        assert g1.dy == dy
+        g1 = Grid(x=x, y=y, mask=mask, e_x=e_x, e_y=e_y)
+        assert np.all(g1.dx == dx * np.ones(x.shape))
+        assert np.all(g1.dy == dy * np.ones(y.shape))
         assert g1.len_x == nx
         assert g1.len_y == ny
 
@@ -69,11 +72,17 @@ class TestGrid:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
 
-        g2 = Grid(x=x.T, y=y.T, mask=mask, dim_x=1, dim_y=0)
+        g2 = Grid(x=x.T, y=y.T, mask=mask, e_x=x.T, e_y=y.T, dim_x=1, dim_y=0)
         assert g2.len_x == nx
         assert g2.len_y == ny
-        assert g2.dx == dx
-        assert g2.dy == dy
+        assert np.all(g2.dx == dx)
+        assert np.all(g2.dy == dy)
+        assert g2.x.shape == (ny, nx)
+        assert g2.y.shape == (ny, nx)
+        assert g2.dx.shape == (ny, nx)
+        assert g2.dy.shape == (ny, nx)
+        assert g2.e_x.shape == (ny, nx)
+        assert g2.e_y.shape == (ny, nx)
 
 
 class TestVariable:
@@ -84,7 +93,10 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
-        g1 = Grid(x, y, mask)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
+        g1 = Grid(x, y, mask, e_x, e_y)
+
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
         v1 = Variable(d1, g1)
@@ -97,8 +109,10 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
-        g1 = Grid(x, y, mask)
-        g2 = Grid(x, y, mask)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
+        g1 = Grid(x, y, mask, e_x, e_y)
+        g2 = Grid(x, y, mask, e_x, e_y)
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
         v1 = Variable(d1, g1)
@@ -112,7 +126,9 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
-        g1 = Grid(x, y, mask)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
+        g1 = Grid(x, y, mask, e_x, e_y)
         d1 = np.zeros_like(g1.x) + 1.0
         v1 = Variable(d1, g1)
         with pytest.raises(TypeError) as excinfo:
@@ -128,7 +144,9 @@ class TestState:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
-        g1 = Grid(x, y, mask)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
+        g1 = Grid(x, y, mask, e_x, e_y)
         d1 = np.zeros_like(g1.x) + 1.0
         s1 = State(
             u=Variable(d1, g1),

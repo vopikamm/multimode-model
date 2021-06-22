@@ -32,6 +32,7 @@ class Parameters:
     t_0: float = 0.0  # starting time
     t_end: float = 3600.0  # end time
     write: int = 20  # how many states should be output
+    r: float = 6371000.0  # radius of the earth
 
 
 @dataclass
@@ -41,6 +42,8 @@ class Grid:
     x: np.array  # longitude on grid
     y: np.array  # latitude on grid
     mask: np.array  # ocean mask, 1 where ocean is, 0 where land is
+    e_x: np.array  # weights transforming to curvilinear
+    e_y: np.array  # weights transforming to curvilinear
     dim_x: int = 0  # x dimension in numpy array
     dim_y: int = 1  # y dimension in numpy array
     dx: int = field(init=False)  # grid spacing in x
@@ -48,10 +51,21 @@ class Grid:
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
 
+    def _compute_grid_spacing(self):
+        """Compute the spatial differences along x and y."""
+        dx = np.diff(self.x, axis=self.dim_x)
+        dy = np.diff(self.y, axis=self.dim_y)
+        dx = np.append(
+            dx, np.expand_dims(dx[0, :], axis=0), axis=self.dim_x
+        )  # * self.ex
+        dy = np.append(
+            dy, np.expand_dims(dy[:, 0], axis=1), axis=self.dim_y
+        )  # * self.e_y
+        return dx, dy
+
     def __post_init__(self) -> None:
         """Set derived attributes of the grid."""
-        self.dx = np.diff(self.x, axis=self.dim_x)[0, 0]
-        self.dy = np.diff(self.y, axis=self.dim_y)[0, 0]
+        self.dx, self.dy = self._compute_grid_spacing()
         self.len_x = self.x.shape[self.dim_x]
         self.len_y = self.x.shape[self.dim_y]
 
@@ -110,6 +124,11 @@ computationally costly operations.
 
 
 @njit(inline="always")
+def _expand_9_arguments(func, i, j, ni, nj, args):
+    return func(i, j, ni, nj, args[0], args[1], args[2], args[3], args[4])
+
+
+@njit(inline="always")
 def _expand_8_arguments(func, i, j, ni, nj, args):
     return func(i, j, ni, nj, args[0], args[1], args[2], args[3])
 
@@ -128,6 +147,7 @@ _arg_expand_map = {
     6: _expand_6_arguments,
     7: _expand_7_arguments,
     8: _expand_8_arguments,
+    9: _expand_9_arguments,
 }
 
 
@@ -148,32 +168,72 @@ def _numba_2D_grid_iterator(func):
 
 @_numba_2D_grid_iterator
 def _zonal_pressure_gradient(
-    i: int, j: int, ni: int, nj: int, eta: np.array, g: float, dx: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    eta: np.array,
+    g: float,
+    dx: np.array,
+    e_x: np.array,
 ) -> float:
     ip1 = (i + 1) % ni
-    return -g * (eta[ip1, j] - eta[i, j]) / dx
+    return -g * (eta[ip1, j] - eta[i, j]) / dx[i, j] / e_x[i, j]
 
 
 @_numba_2D_grid_iterator
 def _meridional_pressure_gradient(
-    i: int, j: int, ni: int, nj: int, eta: np.array, g: float, dy: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    eta: np.array,
+    g: float,
+    dy: np.array,
+    e_y: np.array,
 ) -> float:
     jp1 = (j + 1) % nj
-    return -g * (eta[i, jp1] - eta[i, j]) / dy
+    return -g * (eta[i, jp1] - eta[i, j]) / dy[i, j] / e_y[i, j]
 
 
 @_numba_2D_grid_iterator
 def _zonal_divergence(
-    i: int, j: int, ni: int, nj: int, u: np.array, mask: np.array, H: float, dx: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    u: np.array,
+    mask: np.array,
+    H: float,
+    dx: np.array,
+    e_x: np.array,
 ) -> float:
-    return -H * (mask[i, j] * u[i, j] - mask[i - 1, j] * u[i - 1, j]) / dx
+    return (
+        -H
+        * (mask[i, j] * u[i, j] - mask[i - 1, j] * u[i - 1, j])
+        / dx[i - 1, j]
+        / e_x[i - 1, j]
+    )
 
 
 @_numba_2D_grid_iterator
 def _meridional_divergence(
-    i: int, j: int, ni: int, nj: int, v: np.array, mask: np.array, H: float, dy: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    v: np.array,
+    mask: np.array,
+    H: float,
+    dy: np.array,
+    e_y: np.array,
 ) -> float:
-    return -H * (mask[i, j] * v[i, j] - mask[i, j - 1] * v[i, j - 1]) / dy
+    return (
+        -H
+        * (mask[i, j] * v[i, j] - mask[i, j - 1] * v[i, j - 1])
+        / dy[i, j - 1]
+        / e_y[i, j - 1]
+    )
 
 
 @_numba_2D_grid_iterator
@@ -227,6 +287,7 @@ def zonal_pressure_gradient(state: State, params: Parameters) -> State:
         state.eta.data,
         params.g,
         state.eta.grid.dx,
+        state.eta.grid.e_x,
     )
     return State(
         u=Variable(state.u.grid.mask * result, state.u.grid),
@@ -246,6 +307,7 @@ def meridional_pressure_gradient(state: State, params: Parameters) -> State:
         state.eta.data,
         params.g,
         state.eta.grid.dy,
+        state.eta.grid.e_y,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -263,6 +325,7 @@ def zonal_divergence(state: State, params: Parameters) -> State:
         state.u.grid.mask,
         params.H,
         state.u.grid.dx,
+        state.eta.grid.e_x,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -280,6 +343,7 @@ def meridional_divergence(state: State, params: Parameters) -> State:
         state.v.grid.mask,
         params.H,
         state.u.grid.dy,
+        state.eta.grid.e_y,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -460,18 +524,21 @@ Very basic setup with only zonal flow for testing the functionality.
 
 if __name__ == "__main__":
     params = Parameters(t_end=7200.0)
-    y, x = np.meshgrid(np.linspace(0, 50000, 51), np.linspace(0, 50000, 51))
-    mask = np.ones(x.shape)
+    lat, lon = np.meshgrid(np.linspace(0, 50, 51), np.linspace(0, 50, 51))
+    mask = np.ones(lon.shape)
 
     mask[0, :] = 0.0
     mask[-1, :] = 0.0
     mask[:, 0] = 0.0
     mask[:, -1] = 0.0
 
-    u_0 = np.zeros(x.shape)
-    v_0 = np.zeros(x.shape)
-    eta_0 = mask * (np.copy(x) / 50000) - 0.5
-    grid = Grid(x, y, mask)
+    u_0 = np.zeros(lon.shape)
+    v_0 = np.zeros(lon.shape)
+
+    e_x = np.pi * params.r * np.cos(lat * np.pi / 180) / 180
+    e_y = np.pi * np.ones(lon.shape) * params.r / 180
+    eta_0 = mask * (np.copy(lon) / 50) - 0.5
+    grid = Grid(lon, lat, mask, e_x, e_y)
     init = State(
         u=Variable(u_0, grid), v=Variable(v_0, grid), eta=Variable(eta_0, grid)
     )

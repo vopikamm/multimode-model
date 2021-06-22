@@ -36,10 +36,12 @@ class TestTerms:
         ni, nj = 10, 5
         x, _ = get_x_y(ni, nj, dx, dy)
         eta = np.copy(x)
+        dx_a = dx * np.ones(x.shape)
+        e_x = np.ones(x.shape)
 
         assert np.all(
-            swe._zonal_pressure_gradient(ni, nj, eta, g, dx)
-            == -g * (np.roll(eta, -1, axis=0) - eta) / dx
+            swe._zonal_pressure_gradient(ni, nj, eta, g, dx_a, e_x)
+            == -g * (np.roll(eta, -1, axis=0) - eta) / dx / e_x
         )
 
     def test_zonal_pressure_gradient(self):
@@ -49,11 +51,13 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(x.shape)
         eta = np.copy(x)
-        result = -1 * np.ones(x.shape) * mask
+        result = -1 * np.ones(x.shape) * mask / dx / e_x
 
         params = swe.Parameters(g=g)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x=e_x, e_y=e_y)
         state = swe.State(
             u=swe.Variable(np.zeros(x.shape), grid),
             v=swe.Variable(np.zeros(x.shape), grid),
@@ -73,11 +77,13 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(x.shape)
         eta = np.copy(y)
-        result = -1 * np.ones(y.shape) * mask
+        result = -dy * np.ones(y.shape) * mask / dy / e_y
 
         params = swe.Parameters(g=g)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x=e_x, e_y=e_y)
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(np.zeros(y.shape), grid),
@@ -97,11 +103,13 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(x.shape)
         u = np.copy(x)
-        result = -1 * np.ones(x.shape) * mask
+        result = -1 * np.ones(x.shape) * mask / dx / e_x
 
         params = swe.Parameters(H=H)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x=e_x, e_y=e_y)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(np.zeros(x.shape), grid),
@@ -121,11 +129,15 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(x.shape)
         v = np.copy(y)
-        result = -1 * np.ones(y.shape) * mask
+        result = -dy * np.ones(y.shape) * mask / dy / e_y
 
         params = swe.Parameters(H=H)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x=e_x, e_y=e_y)
+        print(grid.dy)
+        print(result)
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(v, grid),
@@ -133,7 +145,7 @@ class TestTerms:
         )
 
         inc = swe.meridional_divergence(state, params)
-
+        print(inc.eta.data)
         assert np.all(inc.u.data == np.zeros(y.shape))
         assert np.all(inc.v.data == np.zeros(y.shape))
         assert np.all(inc.eta.data == result)
@@ -145,6 +157,8 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(x.shape)
         u = 4 * np.ones(x.shape)
         result = -4 * np.ones(x.shape)
 
@@ -155,7 +169,7 @@ class TestTerms:
         result = result * mask
 
         params = swe.Parameters(f=f)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x=e_x, e_y=e_y)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(np.zeros(x.shape), grid),
@@ -175,6 +189,8 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(x.shape)
         v = 4 * np.ones(y.shape)
         result = 4 * np.ones(y.shape)
 
@@ -185,7 +201,7 @@ class TestTerms:
         result = result * mask
 
         params = swe.Parameters(f=f)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x=e_x, e_y=e_y)
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(v, grid),

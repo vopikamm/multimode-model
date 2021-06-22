@@ -38,6 +38,8 @@ class TestRHS:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
         eta = np.zeros(x.shape)
         u = np.zeros(x.shape)
         v = 1 * np.ones(x.shape)
@@ -53,7 +55,7 @@ class TestRHS:
         d_eta[1:-1, 1] = -0.5
 
         params = swe.Parameters(H=H, g=g, f=f)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x, e_y)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
@@ -77,6 +79,8 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
         eta = 1 * np.ones(x.shape)
         u = 2 * np.ones(x.shape)
         v = 3 * np.ones(x.shape)
@@ -86,7 +90,7 @@ class TestIntegration:
         d_eta = np.zeros_like(u)
 
         params = swe.Parameters(H=H, g=g, f=f, dt=dt)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x, e_y)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
@@ -107,6 +111,8 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
         eta = 1 * np.ones(x.shape)
         u = 1 * np.ones(x.shape)
         v = 1 * np.ones(x.shape)
@@ -116,7 +122,7 @@ class TestIntegration:
         d_eta = np.zeros_like(u)
 
         params = swe.Parameters(H=H, g=g, f=f, dt=dt)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x, e_y)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
@@ -137,6 +143,8 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
         eta = 1 * np.ones(x.shape)
         u = 1 * np.ones(x.shape)
         v = 1 * np.ones(x.shape)
@@ -146,7 +154,7 @@ class TestIntegration:
         d_eta = np.zeros_like(u)
 
         params = swe.Parameters(H=H, g=g, f=f, dt=dt)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x, e_y)
         state = swe.State(
             u=swe.Variable(u, grid),
             v=swe.Variable(v, grid),
@@ -174,6 +182,8 @@ class TestIntegration:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
+        e_x = np.ones(x.shape)
+        e_y = np.ones(y.shape)
 
         eta_0 = 1 * np.ones(x.shape)
         u_0 = 1 * np.ones(x.shape)
@@ -184,7 +194,7 @@ class TestIntegration:
         v_1 = 0 * np.ones(x.shape)
 
         params = swe.Parameters(H=H, g=g, f=f, t_0=t_0, t_end=t_end, dt=dt)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x, y, mask, e_x, e_y)
         state_0 = swe.State(
             u=swe.Variable(u_0, grid),
             v=swe.Variable(v_0, grid),
