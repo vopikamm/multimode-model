@@ -63,6 +63,41 @@ class Grid:
         )  # * self.e_y
         return dx, dy
 
+    @classmethod
+    def regular_spherical_geometry(
+        cls: Any,
+        lon_start: float = 0.0,
+        lon_end: float = 60.0,
+        lat_start: float = 0.0,
+        lat_end: float = 60.0,
+        nx: int = 61,
+        ny: int = 61,
+        dim_x: int = 0,
+        r: float = 6371000.0,
+    ):
+        """Generate a regular lat/lon grid."""
+        indexing = ["ij", "xy"]
+        to_rad = np.pi / 180.0
+        lon = np.linspace(lon_start, lon_end, nx)
+        lat = np.linspace(lat_start, lat_end, ny)
+        longitude, latitude = np.meshgrid(lon, lat, indexing=indexing[dim_x])
+        mask = np.ones(longitude.shape)
+        mask[0, :] = 0.0
+        mask[-1, :] = 0.0
+        mask[:, 0] = 0.0
+        mask[:, -1] = 0.0
+        e_lon = r * np.cos(latitude * to_rad) * to_rad
+        e_lat = r * to_rad * np.ones(latitude.shape)
+        return cls(
+            x=longitude,
+            y=latitude,
+            mask=mask,
+            e_x=e_lon,
+            e_y=e_lat,
+            dim_x=dim_x,
+            dim_y=1 - dim_x,
+        )
+
     def __post_init__(self) -> None:
         """Set derived attributes of the grid."""
         self.dx, self.dy = self._compute_grid_spacing()
@@ -355,7 +390,7 @@ def meridional_divergence(state: State, params: Parameters) -> State:
 def coriolis_u(state: State, params: Parameters) -> State:
     """Compute meridional acceleration due to Coriolis force.
 
-    A arithmetic four point average of u onto the v-grid is performed.
+    An arithmetic four point average of u onto the v-grid is performed.
     """
     result = _coriolis_u(
         state.u.grid.len_x,
@@ -374,7 +409,7 @@ def coriolis_u(state: State, params: Parameters) -> State:
 def coriolis_v(state: State, params: Parameters) -> State:
     """Compute the zonal acceleration due to the Coriolis force.
 
-    A arithmetic four point average of v onto the u-grid is performed.
+    An arithmetic four point average of v onto the u-grid is performed.
     """
     result = _coriolis_v(
         state.v.grid.len_x,
@@ -524,23 +559,21 @@ Very basic setup with only zonal flow for testing the functionality.
 
 if __name__ == "__main__":
     params = Parameters(t_end=7200.0)
-    lat, lon = np.meshgrid(np.linspace(0, 50, 51), np.linspace(0, 50, 51))
-    mask = np.ones(lon.shape)
+    grid_q = Grid.regular_spherical_geometry(
+        lon_start=0.0,
+        lon_end=50.0,
+        lat_start=0.0,
+        lat_end=50.0,
+        nx=51,
+        ny=51,
+    )
 
-    mask[0, :] = 0.0
-    mask[-1, :] = 0.0
-    mask[:, 0] = 0.0
-    mask[:, -1] = 0.0
+    u_0 = np.zeros(grid_q.x.shape)
+    v_0 = np.zeros(grid_q.x.shape)
+    eta_0 = grid_q.mask * (grid_q.x / 50) - 0.5
 
-    u_0 = np.zeros(lon.shape)
-    v_0 = np.zeros(lon.shape)
-
-    e_x = np.pi * params.r * np.cos(lat * np.pi / 180) / 180
-    e_y = np.pi * np.ones(lon.shape) * params.r / 180
-    eta_0 = mask * (np.copy(lon) / 50) - 0.5
-    grid = Grid(lon, lat, mask, e_x, e_y)
     init = State(
-        u=Variable(u_0, grid), v=Variable(v_0, grid), eta=Variable(eta_0, grid)
+        u=Variable(u_0, grid_q), v=Variable(v_0, grid_q), eta=Variable(eta_0, grid_q)
     )
 
     start = timeit.default_timer()
