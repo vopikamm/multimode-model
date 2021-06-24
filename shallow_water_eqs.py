@@ -55,12 +55,14 @@ class Grid:
         """Compute the spatial differences along x and y."""
         dx = np.diff(self.x, axis=self.dim_x)
         dy = np.diff(self.y, axis=self.dim_y)
-        dx = np.append(
-            dx, np.expand_dims(dx[0, :], axis=0), axis=self.dim_x
-        )  # * self.ex
-        dy = np.append(
-            dy, np.expand_dims(dy[:, 0], axis=1), axis=self.dim_y
-        )  # * self.e_y
+        if self.dim_x == 0:
+            dx_0 = dx[0, :]
+            dy_0 = dy[:, 0]
+        else:
+            dx_0 = dx[:, 0]
+            dy_0 = dy[0, :]
+        dx = np.append(dx, np.expand_dims(dx_0, axis=self.dim_x), axis=self.dim_x)
+        dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
         return dx, dy
 
     @classmethod

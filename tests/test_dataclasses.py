@@ -72,7 +72,7 @@ class TestGrid:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
 
-        g2 = Grid(x=x.T, y=y.T, mask=mask, e_x=x.T, e_y=y.T, dim_x=1, dim_y=0)
+        g2 = Grid(x=x.T, y=y.T, mask=mask.T, e_x=x.T, e_y=y.T, dim_x=1, dim_y=0)
         assert g2.len_x == nx
         assert g2.len_y == ny
         assert np.all(g2.dx == dx)
