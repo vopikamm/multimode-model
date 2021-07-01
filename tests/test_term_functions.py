@@ -35,11 +35,14 @@ class TestTerms:
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, _ = get_x_y(ni, nj, dx, dy)
+        mask = get_test_mask(x)
         eta = np.copy(x)
+        dx_a = dx * np.ones(x.shape)
+        dy_a = dy * np.ones(x.shape)
 
         assert np.all(
-            swe._zonal_pressure_gradient(ni, nj, eta, g, dx)
-            == -g * (np.roll(eta, -1, axis=0) - eta) / dx
+            swe._zonal_pressure_gradient(ni, nj, eta, mask, g, dx_a, dy_a, dy_a)
+            == -g * (eta * mask - np.roll(eta * mask, 1, axis=0)) / dx
         )
 
     def test_zonal_pressure_gradient(self):
@@ -49,8 +52,8 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        eta = np.copy(x)
-        result = -1 * np.ones(x.shape) * mask
+        eta = np.copy(x) * mask
+        result = -g * mask * (eta - np.roll(eta, 1, axis=0)) / dx
 
         params = swe.Parameters(g=g)
         grid = swe.Grid(x, y, mask)
@@ -74,7 +77,7 @@ class TestTerms:
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         eta = np.copy(y)
-        result = -1 * np.ones(y.shape) * mask
+        result = -g * mask * (eta - np.roll(eta, 1, axis=1)) / dy
 
         params = swe.Parameters(g=g)
         grid = swe.Grid(x, y, mask)
@@ -97,8 +100,8 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        u = np.copy(x)
-        result = -1 * np.ones(x.shape) * mask
+        u = np.copy(x) * mask
+        result = -H * mask * (np.roll(u, -1, axis=0) - u) / dx
 
         params = swe.Parameters(H=H)
         grid = swe.Grid(x, y, mask)
@@ -121,8 +124,8 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        v = np.copy(y)
-        result = -1 * np.ones(y.shape) * mask
+        v = np.copy(y) * mask
+        result = -H * mask * (np.roll(v, -1, axis=1) - v) / dy
 
         params = swe.Parameters(H=H)
         grid = swe.Grid(x, y, mask)
@@ -133,9 +136,8 @@ class TestTerms:
         )
 
         inc = swe.meridional_divergence(state, params)
-
-        assert np.all(inc.u.data == np.zeros(y.shape))
-        assert np.all(inc.v.data == np.zeros(y.shape))
+        assert np.all(inc.u.data == 0.0)
+        assert np.all(inc.v.data == 0.0)
         assert np.all(inc.eta.data == result)
 
     def test_coriolis_u(self):
@@ -145,14 +147,17 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        u = 4 * np.ones(x.shape)
-        result = -4 * np.ones(x.shape)
-
-        result[1, :] = -2
-        result[:, -2] = -2
-        result[1, -2] = -1
-
-        result = result * mask
+        u = np.ones(x.shape) * mask
+        result = (
+            -mask
+            * (
+                np.roll(np.roll(u, -1, axis=0), 1, axis=1)
+                + np.roll(u, -1, axis=0)
+                + np.roll(u, 1, axis=1)
+                + u
+            )
+            / 4.0
+        )
 
         params = swe.Parameters(f=f)
         grid = swe.Grid(x, y, mask)
@@ -163,7 +168,6 @@ class TestTerms:
         )
 
         inc = swe.coriolis_u(state, params)
-
         assert np.all(inc.u.data == np.zeros(x.shape))
         assert np.all(inc.eta.data == np.zeros(x.shape))
         assert np.all(inc.v.data == result)
@@ -175,14 +179,17 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        v = 4 * np.ones(y.shape)
-        result = 4 * np.ones(y.shape)
-
-        result[-2, :] = 2
-        result[:, 1] = 2
-        result[-2, 1] = 1
-
-        result = result * mask
+        v = np.ones(y.shape) * mask
+        result = (
+            mask
+            * (
+                np.roll(np.roll(v, 1, axis=0), -1, axis=1)
+                + np.roll(v, 1, axis=0)
+                + np.roll(v, -1, axis=1)
+                + v
+            )
+            / 4.0
+        )
 
         params = swe.Parameters(f=f)
         grid = swe.Grid(x, y, mask)
@@ -193,7 +200,8 @@ class TestTerms:
         )
 
         inc = swe.coriolis_v(state, params)
-
+        print(inc.u.data)
+        print(result)
         assert np.all(inc.v.data == np.zeros(y.shape))
         assert np.all(inc.eta.data == np.zeros(y.shape))
         assert np.all(inc.u.data == result)
