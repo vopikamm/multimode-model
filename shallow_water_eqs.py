@@ -32,6 +32,7 @@ class Parameters:
     t_0: float = 0.0  # starting time
     t_end: float = 3600.0  # end time
     write: int = 20  # how many states should be output
+    r: float = 6371000.0  # radius of the earth
 
 
 @dataclass
@@ -48,12 +49,111 @@ class Grid:
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
 
+    def _compute_grid_spacing(self):
+        """Compute the spatial differences along x and y."""
+        dx = np.diff(self.x, axis=self.dim_x)
+        dy = np.diff(self.y, axis=self.dim_y)
+        if self.dim_x == 0:
+            dx_0 = dx[0, :]
+            dy_0 = dy[:, 0]
+        else:
+            dx_0 = dx[:, 0]
+            dy_0 = dy[0, :]
+        dx = np.append(dx, np.expand_dims(dx_0, axis=self.dim_x), axis=self.dim_x)
+        dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
+        return dx, dy
+
+    def _get_u_mask(self) -> np.array:
+        """U mask. Land when meridional neighbouring q-points are land."""
+        return np.maximum(np.roll(self.mask, axis=self.dim_y, shift=1), self.mask)
+
+    def _get_v_mask(self) -> np.array:
+        """V mask. Land when zonal neighbouring q-points are land."""
+        return np.maximum(np.roll(self.mask, axis=self.dim_x, shift=1), self.mask)
+
+    def _get_eta_mask(self) -> np.array:
+        """Eta mask. Land when all four surrounding q-points are land."""
+        along_0 = np.maximum(np.roll(self.mask, axis=0, shift=1), self.mask)
+        return np.maximum(np.roll(along_0, axis=1, shift=1), along_0)
+
+    @classmethod
+    def regular_lat_lon(
+        cls: Any,
+        lon_start: float = 0.0,
+        lon_end: float = 60.0,
+        lat_start: float = 0.0,
+        lat_end: float = 60.0,
+        nx: int = 61,
+        ny: int = 61,
+        dim_x: int = 0,
+        r: float = 6371000.0,
+    ):
+        """Generate a regular lat/lon grid."""
+        indexing = ["ij", "xy"]
+        to_rad = np.pi / 180.0
+        lon = np.linspace(lon_start, lon_end, nx)
+        lat = np.linspace(lat_start, lat_end, ny)
+        longitude, latitude = np.meshgrid(lon, lat, indexing=indexing[dim_x])
+        mask = np.ones(longitude.shape)
+        mask[0, :] = 0.0
+        mask[-1, :] = 0.0
+        mask[:, 0] = 0.0
+        mask[:, -1] = 0.0
+
+        grid = cls(
+            x=longitude,
+            y=latitude,
+            mask=mask,
+            dim_x=dim_x,
+            dim_y=1 - dim_x,
+        )
+
+        grid.dx = r * np.cos(grid.y * to_rad) * grid.dx * to_rad
+        grid.dy = r * grid.dy * to_rad
+
+        return grid
+
     def __post_init__(self) -> None:
         """Set derived attributes of the grid."""
-        self.dx = np.diff(self.x, axis=self.dim_x)[0, 0]
-        self.dy = np.diff(self.y, axis=self.dim_y)[0, 0]
+        self.dx, self.dy = self._compute_grid_spacing()
         self.len_x = self.x.shape[self.dim_x]
         self.len_y = self.x.shape[self.dim_y]
+
+
+@dataclass
+class StaggeredGrid:
+    """The u, v, and eta grids are evaluated on staggered gridpoints."""
+
+    q_grid: Grid
+    u_grid: Grid
+    v_grid: Grid
+    eta_grid: Grid
+
+    @classmethod
+    def c_grid(
+        cls: Any,
+        func: Callable[..., Grid],
+        **kwargs_to_callable: Tuple[Any],
+    ):
+        """Generate an Arakawa C-grid based on a given Grid() classmethod."""
+        q_grid = func(**kwargs_to_callable)
+        list_of_grid = [q_grid]
+        u_grid = list_of_grid.copy()[0]
+        v_grid = list_of_grid.copy()[0]
+        eta_grid = list_of_grid.copy()[0]
+        dx, dy = q_grid._compute_grid_spacing()
+
+        u_grid.y = u_grid.y + dy / 2
+        u_grid.mask = u_grid._get_u_mask()
+
+        v_grid.x = v_grid.x + dx / 2
+        v_grid.mask = v_grid._get_v_mask()
+
+        eta_grid.x = eta_grid.x + dx / 2
+        eta_grid.y = eta_grid.y + dy / 2
+        eta_grid.mask = u_grid._get_eta_mask()
+
+        return StaggeredGrid(q_grid, u_grid, v_grid, eta_grid)
 
 
 @dataclass
@@ -110,6 +210,16 @@ computationally costly operations.
 
 
 @njit(inline="always")
+def _expand_10_arguments(func, i, j, ni, nj, args):
+    return func(i, j, ni, nj, args[0], args[1], args[2], args[3], args[4], args[5])
+
+
+@njit(inline="always")
+def _expand_9_arguments(func, i, j, ni, nj, args):
+    return func(i, j, ni, nj, args[0], args[1], args[2], args[3], args[4])
+
+
+@njit(inline="always")
 def _expand_8_arguments(func, i, j, ni, nj, args):
     return func(i, j, ni, nj, args[0], args[1], args[2], args[3])
 
@@ -128,6 +238,8 @@ _arg_expand_map = {
     6: _expand_6_arguments,
     7: _expand_7_arguments,
     8: _expand_8_arguments,
+    9: _expand_9_arguments,
+    10: _expand_10_arguments,
 }
 
 
@@ -148,46 +260,108 @@ def _numba_2D_grid_iterator(func):
 
 @_numba_2D_grid_iterator
 def _zonal_pressure_gradient(
-    i: int, j: int, ni: int, nj: int, eta: np.array, g: float, dx: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    eta: np.array,
+    mask: np.array,
+    g: float,
+    dx_u: np.array,
+    dy_u: np.array,
+    dy_eta: np.array,
 ) -> float:
-    ip1 = (i + 1) % ni
-    return -g * (eta[ip1, j] - eta[i, j]) / dx
+    return (
+        -g
+        * (
+            mask[i, j] * dy_eta[i, j] * eta[i, j]
+            - mask[i - 1, j] * dy_eta[i - 1, j] * eta[i - 1, j]
+        )
+        / dx_u[i, j]
+        / dy_u[i, j]
+    )
 
 
 @_numba_2D_grid_iterator
 def _meridional_pressure_gradient(
-    i: int, j: int, ni: int, nj: int, eta: np.array, g: float, dy: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    eta: np.array,
+    mask: np.array,
+    g: float,
+    dx_v: np.array,
+    dy_v: np.array,
+    dx_eta: np.array,
 ) -> float:
-    jp1 = (j + 1) % nj
-    return -g * (eta[i, jp1] - eta[i, j]) / dy
+    return (
+        -g
+        * (
+            mask[i, j] * dx_eta[i, j] * eta[i, j]
+            - mask[i, j - 1] * dx_eta[i, j - 1] * eta[i, j - 1]
+        )
+        / dx_v[i, j]
+        / dy_v[i, j]
+    )
 
 
 @_numba_2D_grid_iterator
 def _zonal_divergence(
-    i: int, j: int, ni: int, nj: int, u: np.array, mask: np.array, H: float, dx: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    u: np.array,
+    mask: np.array,
+    H: float,
+    dx_eta: np.array,
+    dy_eta: np.array,
+    dy_u: np.array,
 ) -> float:
-    return -H * (mask[i, j] * u[i, j] - mask[i - 1, j] * u[i - 1, j]) / dx
+    ip1 = (i + 1) % ni
+    return (
+        -H
+        * (mask[ip1, j] * dy_u[ip1, j] * u[ip1, j] - mask[i, j] * dy_u[i, j] * u[i, j])
+        / dx_eta[i, j]
+        / dy_eta[i, j]
+    )
 
 
 @_numba_2D_grid_iterator
 def _meridional_divergence(
-    i: int, j: int, ni: int, nj: int, v: np.array, mask: np.array, H: float, dy: float
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    v: np.array,
+    mask: np.array,
+    H: float,
+    dx_eta: np.array,
+    dy_eta: np.array,
+    dx_v: np.array,
 ) -> float:
-    return -H * (mask[i, j] * v[i, j] - mask[i, j - 1] * v[i, j - 1]) / dy
+    jp1 = (j + 1) % nj
+    return (
+        -H
+        * (mask[i, jp1] * dx_v[i, jp1] * v[i, jp1] - mask[i, j] * dx_v[i, j] * v[i, j])
+        / dx_eta[i, j]
+        / dy_eta[i, j]
+    )
 
 
 @_numba_2D_grid_iterator
 def _coriolis_u(
     i: int, j: int, ni: int, nj: int, u: np.array, mask: np.array, f: float
 ) -> float:
-    jp1 = (j + 1) % nj
+    ip1 = (i + 1) % ni
     return (
         -f
         * (
-            mask[i - 1, j] * u[i - 1, j]
+            mask[i, j - 1] * u[i, j - 1]
             + mask[i, j] * u[i, j]
-            + mask[i, jp1] * u[i, jp1]
-            + mask[i - 1, jp1] * u[i - 1, jp1]
+            + mask[ip1, j] * u[ip1, j]
+            + mask[ip1, j - 1] * u[ip1, j - 1]
         )
         / 4.0
     )
@@ -197,16 +371,16 @@ def _coriolis_u(
 def _coriolis_v(
     i: int, j: int, ni: int, nj: int, v: np.array, mask: np.array, f: float
 ) -> float:
-    ip1 = (i + 1) % ni
+    jp1 = (j + 1) % nj
     return (
         f
-        * 0.25
         * (
-            mask[i, j - 1] * v[i, j - 1]
+            mask[i - 1, j] * v[i - 1, j]
             + mask[i, j] * v[i, j]
-            + mask[ip1, j] * v[ip1, j]
-            + mask[ip1, j - 1] * v[ip1, j - 1]
+            + mask[i, jp1] * v[i, jp1]
+            + mask[i - 1, jp1] * v[i - 1, jp1]
         )
+        / 4.0
     )
 
 
@@ -225,8 +399,11 @@ def zonal_pressure_gradient(state: State, params: Parameters) -> State:
         state.eta.grid.len_x,
         state.eta.grid.len_y,
         state.eta.data,
+        state.eta.grid.mask,
         params.g,
-        state.eta.grid.dx,
+        state.u.grid.dx,
+        state.u.grid.dy,
+        state.eta.grid.dy,
     )
     return State(
         u=Variable(state.u.grid.mask * result, state.u.grid),
@@ -244,8 +421,11 @@ def meridional_pressure_gradient(state: State, params: Parameters) -> State:
         state.eta.grid.len_x,
         state.eta.grid.len_y,
         state.eta.data,
+        state.eta.grid.mask,
         params.g,
-        state.eta.grid.dy,
+        state.v.grid.dx,
+        state.v.grid.dy,
+        state.eta.grid.dx,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -262,7 +442,9 @@ def zonal_divergence(state: State, params: Parameters) -> State:
         state.u.data,
         state.u.grid.mask,
         params.H,
-        state.u.grid.dx,
+        state.eta.grid.dx,
+        state.eta.grid.dy,
+        state.u.grid.dy,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -279,7 +461,9 @@ def meridional_divergence(state: State, params: Parameters) -> State:
         state.v.data,
         state.v.grid.mask,
         params.H,
-        state.u.grid.dy,
+        state.eta.grid.dx,
+        state.eta.grid.dy,
+        state.v.grid.dx,
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -291,7 +475,7 @@ def meridional_divergence(state: State, params: Parameters) -> State:
 def coriolis_u(state: State, params: Parameters) -> State:
     """Compute meridional acceleration due to Coriolis force.
 
-    A arithmetic four point average of u onto the v-grid is performed.
+    An arithmetic four point average of u onto the v-grid is performed.
     """
     result = _coriolis_u(
         state.u.grid.len_x,
@@ -310,7 +494,7 @@ def coriolis_u(state: State, params: Parameters) -> State:
 def coriolis_v(state: State, params: Parameters) -> State:
     """Compute the zonal acceleration due to the Coriolis force.
 
-    A arithmetic four point average of v onto the u-grid is performed.
+    An arithmetic four point average of v onto the u-grid is performed.
     """
     result = _coriolis_v(
         state.v.grid.len_x,
@@ -460,20 +644,25 @@ Very basic setup with only zonal flow for testing the functionality.
 
 if __name__ == "__main__":
     params = Parameters(t_end=7200.0)
-    y, x = np.meshgrid(np.linspace(0, 50000, 51), np.linspace(0, 50000, 51))
-    mask = np.ones(x.shape)
 
-    mask[0, :] = 0.0
-    mask[-1, :] = 0.0
-    mask[:, 0] = 0.0
-    mask[:, -1] = 0.0
+    c_grid = StaggeredGrid.c_grid(
+        func=Grid.regular_lat_lon,
+        lon_start=0.0,
+        lon_end=50.0,
+        lat_start=0.0,
+        lat_end=50.0,
+        nx=51,
+        ny=51,
+    )
 
-    u_0 = np.zeros(x.shape)
-    v_0 = np.zeros(x.shape)
-    eta_0 = mask * (np.copy(x) / 50000) - 0.5
-    grid = Grid(x, y, mask)
+    u_0 = np.zeros(c_grid.u_grid.x.shape)
+    v_0 = np.zeros(c_grid.v_grid.x.shape)
+    eta_0 = c_grid.eta_grid.mask * (c_grid.eta_grid.x / 50) - 0.5
+
     init = State(
-        u=Variable(u_0, grid), v=Variable(v_0, grid), eta=Variable(eta_0, grid)
+        u=Variable(u_0, c_grid.u_grid),
+        v=Variable(v_0, c_grid.v_grid),
+        eta=Variable(eta_0, c_grid.eta_grid),
     )
 
     start = timeit.default_timer()
@@ -481,14 +670,6 @@ if __name__ == "__main__":
     stop = timeit.default_timer()
 
     print("Runtime: ", stop - start, " s ")
-    """
-    !!! without numba: ~5s, with numba: ~46s, numba gets confused,
-    because it doesn't know the Dataclasses !!!
-
-    --> The 2D grid loops are now jit-able, decreasing the measured
-    (not tested) runtime.
-    !!! without numba: ~8s, with numba: ~2s
-    """
 
     plt.figure()
     plt.pcolor(solution.eta.data)

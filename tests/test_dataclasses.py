@@ -4,8 +4,16 @@ import os
 import numpy as np
 import pytest
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from shallow_water_eqs import Parameters, Grid, Variable, State  # noqa: E402
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)  # noqa: E402
+from shallow_water_eqs import (  # noqa: E402
+    Parameters,  # noqa: E402
+    Grid,  # noqa: E402
+    Variable,  # noqa: E402
+    State,  # noqa: E402
+    StaggeredGrid,  # noqa: E402
+)  # noqa: E402
 
 
 def get_x_y(nx, ny, dx, dy):
@@ -41,6 +49,7 @@ class TestParameters:
             "t_0": 0.0,
             "t_end": 3600.0,
             "write": 20.0,
+            "r": 6_371_000.0,
         }
         for var, val in defaults.items():
             assert p.__getattribute__(var) == val
@@ -57,8 +66,8 @@ class TestGrid:
         mask = get_test_mask(x)
 
         g1 = Grid(x=x, y=y, mask=mask)
-        assert g1.dx == dx
-        assert g1.dy == dy
+        assert np.all(g1.dx == dx * np.ones(x.shape))
+        assert np.all(g1.dy == dy * np.ones(y.shape))
         assert g1.len_x == nx
         assert g1.len_y == ny
 
@@ -69,11 +78,78 @@ class TestGrid:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
 
-        g2 = Grid(x=x.T, y=y.T, mask=mask, dim_x=1, dim_y=0)
+        g2 = Grid(x=x.T, y=y.T, mask=mask.T, dim_x=1, dim_y=0)
         assert g2.len_x == nx
         assert g2.len_y == ny
-        assert g2.dx == dx
-        assert g2.dy == dy
+        assert np.all(g2.dx == dx)
+        assert np.all(g2.dy == dy)
+        assert g2.x.shape == (ny, nx)
+        assert g2.y.shape == (ny, nx)
+        assert g2.dx.shape == (ny, nx)
+        assert g2.dy.shape == (ny, nx)
+
+    def test_regular_lat_lon(self):
+        """Test lat_lon grid generating classmethod.
+
+        Assert the grid spacing with six digits precision.
+        """
+        r = 6371000.0
+        lon_start, lon_end = 0.0, 10.0
+        lat_start, lat_end = 0.0, 5.0
+        nx, ny = 11, 6
+        d_lon, d_lat = 1.0, 1.0
+        lon, lat = get_x_y(nx, ny, d_lon, d_lat)
+        mask = get_test_mask(lon)
+        dx = d_lon * r * np.cos(lat * np.pi / 180) * np.pi / 180.0
+        dy = d_lat * r * np.pi / 180.0
+
+        grid = Grid.regular_lat_lon(lon_start, lon_end, lat_start, lat_end, nx, ny)
+
+        assert np.all(grid.x == lon)
+        assert np.all(grid.y == lat)
+        assert np.all(np.round(grid.dx, 6) == np.round(dx, 6))
+        assert np.all(np.round(grid.dy, 6) == np.round(dy, 6))
+        assert np.all(grid.mask == mask)
+
+
+class TestStaggeredGrid:
+    """Test StaggeredGrid class."""
+
+    def test_c_grid(self):
+        """Test staggering to Arakawa c-grid."""
+        lon_start, lon_end = 0.0, 10.0
+        lat_start, lat_end = 0.0, 5.0
+        nx, ny = 11, 6
+        d_lon, d_lat = 1.0, 1.0
+        lon, lat = get_x_y(nx, ny, d_lon, d_lat)
+
+        q_grid = Grid.regular_lat_lon(lon_start, lon_end, lat_start, lat_end, nx, ny)
+
+        u_grid = [q_grid].copy()[0]
+        v_grid = [q_grid].copy()[0]
+        eta_grid = [q_grid].copy()[0]
+
+        u_grid.y = u_grid.y + d_lat / 2
+        v_grid.x = v_grid.x + d_lon / 2
+        eta_grid.x = eta_grid.x + d_lon / 2
+        eta_grid.y = eta_grid.y + d_lat / 2
+
+        c_grid = StaggeredGrid.c_grid(
+            func=Grid.regular_lat_lon,
+            lon_start=lon_start,
+            lon_end=lon_end,
+            lat_start=lat_start,
+            lat_end=lat_end,
+            nx=nx,
+            ny=ny,
+        )
+
+        assert np.all(c_grid.u_grid.x == u_grid.x)
+        assert np.all(c_grid.u_grid.y == u_grid.y)
+        assert np.all(c_grid.v_grid.x == v_grid.x)
+        assert np.all(c_grid.v_grid.y == v_grid.y)
+        assert np.all(c_grid.eta_grid.x == eta_grid.x)
+        assert np.all(c_grid.eta_grid.y == eta_grid.y)
 
 
 class TestVariable:
@@ -85,6 +161,7 @@ class TestVariable:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x)
         g1 = Grid(x, y, mask)
+
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
         v1 = Variable(d1, g1)
