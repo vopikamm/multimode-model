@@ -40,17 +40,22 @@ class TestRHS:
         mask = get_test_mask(x)
         eta = np.zeros(x.shape)
         u = np.zeros(x.shape)
-        v = 1 * np.ones(x.shape)
+        v = np.ones(x.shape) * mask
 
-        d_u = 4 * np.ones(v.shape)
-        d_u[-2, :] = 2
-        d_u[:, 1] = 2
-        d_u[-2, 1] = 1
-        d_u = d_u * mask
+        d_u = (
+            mask
+            * f
+            * (
+                np.roll(np.roll(v, 1, axis=0), -1, axis=1)
+                + np.roll(v, 1, axis=0)
+                + np.roll(v, -1, axis=1)
+                + v
+            )
+            / 4.0
+        )
 
+        d_eta = -H * mask * (np.roll(v, -1, axis=1) - v) / dy
         d_v = np.zeros_like(u)
-        d_eta = np.zeros_like(u)
-        d_eta[1:-1, 1] = -0.5
 
         params = swe.Parameters(H=H, g=g, f=f)
         grid = swe.Grid(x, y, mask)
