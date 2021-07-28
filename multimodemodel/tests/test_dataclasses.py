@@ -110,27 +110,31 @@ class TestGrid:
 class TestStaggeredGrid:
     """Test StaggeredGrid class."""
 
-    def test_c_grid(self):
+    def test_regular_c_grid(self):
         """Test staggering to Arakawa c-grid."""
         lon_start, lon_end = 0.0, 10.0
         lat_start, lat_end = 0.0, 5.0
-        nx, ny = 11, 6
-        d_lon, d_lat = 1.0, 1.0
+        nx, ny = 11, 11
+        d_lon, d_lat = 1.0, 0.5
         lon, lat = get_x_y(nx, ny, d_lon, d_lat)
 
         q_grid = Grid.regular_lat_lon(lon_start, lon_end, lat_start, lat_end, nx, ny)
+        u_grid = Grid.regular_lat_lon(
+            lon_start, lon_end, lat_start + d_lat / 2, lat_end + d_lat / 2, nx, ny
+        )
+        v_grid = Grid.regular_lat_lon(
+            lon_start + d_lon / 2, lon_end + d_lon / 2, lat_start, lat_end, nx, ny
+        )
+        eta_grid = Grid.regular_lat_lon(
+            lon_start + d_lon / 2,
+            lon_end + d_lon / 2,
+            lat_start + d_lat / 2,
+            lat_end + d_lat / 2,
+            nx,
+            ny,
+        )
 
-        u_grid = [q_grid].copy()[0]
-        v_grid = [q_grid].copy()[0]
-        eta_grid = [q_grid].copy()[0]
-
-        u_grid.y = u_grid.y + d_lat / 2
-        v_grid.x = v_grid.x + d_lon / 2
-        eta_grid.x = eta_grid.x + d_lon / 2
-        eta_grid.y = eta_grid.y + d_lat / 2
-
-        c_grid = StaggeredGrid.c_grid(
-            func=Grid.regular_lat_lon,
+        c_grid = StaggeredGrid.regular_lat_lon_c_grid(
             lon_start=lon_start,
             lon_end=lon_end,
             lat_start=lat_start,
@@ -139,6 +143,8 @@ class TestStaggeredGrid:
             ny=ny,
         )
 
+        assert np.all(c_grid.q_grid.x == q_grid.x)
+        assert np.all(c_grid.q_grid.y == q_grid.y)
         assert np.all(c_grid.u_grid.x == u_grid.x)
         assert np.all(c_grid.u_grid.y == u_grid.y)
         assert np.all(c_grid.v_grid.x == v_grid.x)

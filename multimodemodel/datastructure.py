@@ -5,7 +5,7 @@ and their associated grids.
 """
 
 import numpy as np
-from typing import Any, Callable, Tuple
+from typing import Any, Tuple
 from dataclasses import dataclass, field
 
 
@@ -53,30 +53,17 @@ class Grid:
         dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
         return dx, dy
 
-    def _get_u_mask(self) -> np.array:
-        """U mask. Land when meridional neighbouring q-points are land."""
-        return np.maximum(np.roll(self.mask, axis=self.dim_y, shift=1), self.mask)
-
-    def _get_v_mask(self) -> np.array:
-        """V mask. Land when zonal neighbouring q-points are land."""
-        return np.maximum(np.roll(self.mask, axis=self.dim_x, shift=1), self.mask)
-
-    def _get_eta_mask(self) -> np.array:
-        """Eta mask. Land when all four surrounding q-points are land."""
-        along_0 = np.maximum(np.roll(self.mask, axis=0, shift=1), self.mask)
-        return np.maximum(np.roll(along_0, axis=1, shift=1), along_0)
-
     @classmethod
     def regular_lat_lon(
         cls: Any,
-        lon_start: float = 0.0,
-        lon_end: float = 60.0,
-        lat_start: float = 0.0,
-        lat_end: float = 60.0,
-        nx: int = 61,
-        ny: int = 61,
+        lon_start: float,
+        lon_end: float,
+        lat_start: float,
+        lat_end: float,
+        nx: int,
+        ny: int,
         dim_x: int = 0,
-        r: float = 6371000.0,
+        r_earth: float = 6_371_000.0,
     ):
         """Generate a regular lat/lon grid."""
         indexing = ["ij", "xy"]
@@ -98,8 +85,8 @@ class Grid:
             dim_y=1 - dim_x,
         )
 
-        grid.dx = r * np.cos(grid.y * to_rad) * grid.dx * to_rad
-        grid.dy = r * grid.dy * to_rad
+        grid.dx = r_earth * np.cos(grid.y * to_rad) * grid.dx * to_rad
+        grid.dy = r_earth * grid.dy * to_rad
 
         return grid
 
@@ -120,30 +107,56 @@ class StaggeredGrid:
     eta_grid: Grid
 
     @classmethod
-    def c_grid(
+    def regular_lat_lon_c_grid(
         cls: Any,
-        func: Callable[..., Grid],
         **kwargs_to_callable: Tuple[Any],
     ):
         """Generate an Arakawa C-grid based on a given Grid() classmethod."""
-        q_grid = func(**kwargs_to_callable)
-        list_of_grid = [q_grid]
-        u_grid = list_of_grid.copy()[0]
-        v_grid = list_of_grid.copy()[0]
-        eta_grid = list_of_grid.copy()[0]
+        q_grid = Grid.regular_lat_lon(**kwargs_to_callable)
         dx, dy = q_grid._compute_grid_spacing()
 
-        u_grid.y = u_grid.y + dy / 2
-        u_grid.mask = u_grid._get_u_mask()
+        u_lat_start, u_lat_end = (
+            q_grid.y.min() + dy.min() / 2,
+            q_grid.y.max() + dy.min() / 2,
+        )
+        u_kwargs = kwargs_to_callable.copy()
+        u_kwargs.update(dict(lat_start=u_lat_start, lat_end=u_lat_end))
+        u_grid = Grid.regular_lat_lon(**u_kwargs)
+        u_grid.mask = (
+            (np.roll(q_grid.mask, axis=q_grid.dim_y, shift=-1) == 1)
+            & (q_grid.mask == 1)
+        ).astype(int)
 
-        v_grid.x = v_grid.x + dx / 2
-        v_grid.mask = v_grid._get_v_mask()
+        v_lon_start, v_lon_end = (
+            q_grid.x.min() + dx.min() / 2,
+            q_grid.x.max() + dx.min() / 2,
+        )
+        v_kwargs = kwargs_to_callable.copy()
+        v_kwargs.update(dict(lon_start=v_lon_start, lon_end=v_lon_end))
+        v_grid = Grid.regular_lat_lon(**v_kwargs)
+        v_grid.mask = (
+            (np.roll(q_grid.mask, axis=q_grid.dim_x, shift=-1) == 1)
+            & (q_grid.mask == 1)
+        ).astype(int)
 
-        eta_grid.x = eta_grid.x + dx / 2
-        eta_grid.y = eta_grid.y + dy / 2
-        eta_grid.mask = u_grid._get_eta_mask()
+        eta_kwargs = v_kwargs.copy()
+        eta_kwargs.update(dict(lat_start=u_lat_start, lat_end=u_lat_end))
+        eta_grid = Grid.regular_lat_lon(**eta_kwargs)
+        eta_grid.mask = (
+            (q_grid.mask == 1)
+            & (np.roll(q_grid.mask, axis=q_grid.dim_x, shift=-1) == 1)
+            & (np.roll(q_grid.mask, axis=q_grid.dim_y, shift=-1) == 1)
+            & (
+                np.roll(
+                    np.roll(q_grid.mask, axis=q_grid.dim_x, shift=-1),
+                    axis=q_grid.dim_y,
+                    shift=-1,
+                )
+                == 1
+            )
+        ).astype(int)
 
-        return StaggeredGrid(q_grid, u_grid, v_grid, eta_grid)
+        return cls(q_grid, u_grid, v_grid, eta_grid)
 
 
 @dataclass
