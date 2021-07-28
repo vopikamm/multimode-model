@@ -19,8 +19,8 @@ from .kernel import (
 def euler_forward(rhs: deque, params: Parameters) -> State:
     """Compute increment using Euler forward scheme.
 
-    Used for the time integration. One previous is
-    state necessary. The function evaluation is performed before the
+    Used for the time integration. One previous state
+    is necessary. The function evaluation is performed before the
     state is passed to this function. Returns the increment
     dstate = next_state - current_state.
     """
@@ -39,13 +39,11 @@ def adams_bashforth2(rhs: deque, params: Parameters) -> State:
     """Compute increment using two-level Adams-Bashforth scheme.
 
     Used for the time integration.
-    Two previous states necessary. If not provided, computational
-    initial conditions are produced by forward euler. The function
-    evaluations are performed before the state is passed to this function.
-    Returns the increment dstate = next_state - current_state.
+    Two previous states are necessary. If not provided, the forward euler
+    scheme is used. Returns the increment dstate = next_state - current_state.
     """
     if len(rhs) < 2:
-        rhs.append(rhs[-1] + euler_forward(rhs, params))
+        return euler_forward(rhs, params)
 
     du = (params.dt / 2) * (3 * rhs[-1].u.data - rhs[-2].u.data)
     dv = (params.dt / 2) * (3 * rhs[-1].v.data - rhs[-2].v.data)
@@ -61,14 +59,12 @@ def adams_bashforth2(rhs: deque, params: Parameters) -> State:
 def adams_bashforth3(rhs: deque, params: Parameters) -> State:
     """Compute increment using three-level Adams-Bashforth scheme.
 
-    Used for the time integration.
-    Three previous states necessary. If not provided, computational
-    initial conditions are produced by adams_bashforth2. The function
-    evaluations are performed before the state is passed to this
-    function. Returns the increment dstate = next_state - current_state.
+    Used for the time integration. Three previous states necessary.
+    If not provided, the adams_bashforth2 scheme is used instead.
+    Returns the increment dstate = next_state - current_state.
     """
     if len(rhs) < 3:
-        rhs.append(rhs[-1] + adams_bashforth2(rhs, params))
+        return adams_bashforth2(rhs, params)
 
     du = (params.dt / 12) * (
         23 * rhs[-1].u.data - 16 * rhs[-2].u.data + 5 * rhs[-3].u.data
