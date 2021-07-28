@@ -1,12 +1,7 @@
 """Test the behaviour of the term functions."""
-import sys
-import os
 import numpy as np
 from collections import deque
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import shallow_water_eqs as swe  # noqa: E402
+import multimodemodel as swe
 
 
 def get_x_y(nx, ny, dx, dy):
