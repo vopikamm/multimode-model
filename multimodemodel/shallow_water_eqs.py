@@ -9,7 +9,6 @@ from matplotlib import pyplot as plt
 from multimodemodel import (
     Parameters,
     StaggeredGrid,
-    Grid,
     State,
     Variable,
     integrator,
@@ -24,8 +23,7 @@ Very basic setup with only zonal flow for testing the functionality.
 if __name__ == "__main__":
     params = Parameters(t_end=7200.0)
 
-    c_grid = StaggeredGrid.c_grid(
-        func=Grid.regular_lat_lon,
+    c_grid = StaggeredGrid.regular_lat_lon_c_grid(
         lon_start=0.0,
         lon_end=50.0,
         lat_start=0.0,
@@ -34,8 +32,8 @@ if __name__ == "__main__":
         ny=51,
     )
 
-    u_0 = np.zeros(c_grid.u_grid.x.shape)
-    v_0 = np.zeros(c_grid.v_grid.x.shape)
+    u_0 = np.zeros_like(c_grid.u_grid.x)
+    v_0 = np.zeros_like(c_grid.v_grid.x)
     eta_0 = c_grid.eta_grid.mask * (c_grid.eta_grid.x / 50) - 0.5
 
     init = State(
