@@ -14,12 +14,19 @@ include:
 
 test:
   stage: test
+  needs: []
   script:
   - micromamba install -y -n base -c conda-forge -f requirements.txt pytest-cov
-  - pytest -v --cov --cov-report term-missing .
+  - pytest -v --cov --cov-report term-missing --junitxml=report.xml .
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
 
 lint:
   stage: test
+  needs: []
   script:
   - micromamba install -y -n base -c conda-forge flake8 flake8-docstrings
   - flake8 .
