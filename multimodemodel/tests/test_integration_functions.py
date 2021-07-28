@@ -98,35 +98,64 @@ class TestIntegration:
         assert np.all(swe.euler_forward(rhs, params).v.data == d_v)
         assert np.all(swe.euler_forward(rhs, params).eta.data == d_eta)
 
-    def test_adams_bashforth2(self):
-        """Test adams_bashforth2."""
-        H, g, f = 1, 1, 1
-        dt = 1
+    def test_adams_bashforth2_euler_forward_dropin(self):
+        """Test adams_bashforth2 mcomputational initial condition."""
+        params = swe.Parameters(dt=2.0)
         dx, dy = 1, 2
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
-        eta = 1 * np.ones(x.shape)
-        u = 1 * np.ones(x.shape)
-        v = 1 * np.ones(x.shape)
-
-        d_u = 2.5 * np.ones(v.shape)
-        d_v = -2.5 * np.ones(u.shape)
-        d_eta = np.zeros_like(u)
-
-        params = swe.Parameters(H=H, g=g, f=f, dt=dt)
         grid = swe.Grid(x, y, mask)
-        state = swe.State(
-            u=swe.Variable(u, grid),
-            v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid),
-        )
-        rhs = deque([swe.linearised_SWE(state, params)], maxlen=2)
 
-        assert np.all(swe.adams_bashforth2(rhs, params).u.data == d_u)
-        assert np.all(swe.adams_bashforth2(rhs, params).v.data == d_v)
-        assert np.all(swe.adams_bashforth2(rhs, params).eta.data == d_eta)
+        state1 = swe.State(
+            u=swe.Variable(np.ones(x.shape), grid),
+            v=swe.Variable(np.ones(x.shape), grid),
+            eta=swe.Variable(np.ones(x.shape), grid),
+        )
+
+        d_u = params.dt * np.ones(x.shape)
+
+        rhs = deque([state1], maxlen=3)
+
+        d_state = swe.adams_bashforth2(rhs, params)
+
+        assert np.all(d_state.u.data == d_u)
+        assert np.all(d_state.v.data == d_u)
+        assert np.all(d_state.eta.data == d_u)
+
+    def test_adams_bashforth2(self):
+        """Test adams_bashforth2."""
+        params = swe.Parameters(dt=2.0)
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+
+        x, y = get_x_y(ni, nj, dx, dy)
+        mask = np.ones(x.shape)
+        grid = swe.Grid(x, y, mask)
+
+        state1 = swe.State(
+            u=swe.Variable(3 * np.ones(x.shape), grid),
+            v=swe.Variable(3 * np.ones(x.shape), grid),
+            eta=swe.Variable(3 * np.ones(x.shape), grid),
+        )
+        state2 = swe.State(
+            u=swe.Variable(np.ones(x.shape), grid),
+            v=swe.Variable(np.ones(x.shape), grid),
+            eta=swe.Variable(np.ones(x.shape), grid),
+        )
+
+        d_u = np.zeros(x.shape)
+        d_v = np.zeros(x.shape)
+        d_eta = np.zeros(x.shape)
+
+        rhs = deque([state1, state2], maxlen=3)
+
+        d_state = swe.adams_bashforth2(rhs, params)
+
+        assert np.all(d_state.u.data == d_u)
+        assert np.all(d_state.v.data == d_v)
+        assert np.all(d_state.eta.data == d_eta)
 
     def test_adams_bashforth3(self):
         """Test adams_bashforth3."""
@@ -165,6 +194,39 @@ class TestIntegration:
         assert np.all(swe.adams_bashforth3(rhs, params).u.data == d_u)
         assert np.all(swe.adams_bashforth3(rhs, params).v.data == d_v)
         assert np.all(swe.adams_bashforth3(rhs, params).eta.data == d_eta)
+
+    def test_adams_bashforth3_adams_bashforth2_dropin(self):
+        """Test adams_bashforth2."""
+        params = swe.Parameters(dt=2.0)
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+
+        x, y = get_x_y(ni, nj, dx, dy)
+        mask = np.ones(x.shape)
+        grid = swe.Grid(x, y, mask)
+
+        state1 = swe.State(
+            u=swe.Variable(3 * np.ones(x.shape), grid),
+            v=swe.Variable(3 * np.ones(x.shape), grid),
+            eta=swe.Variable(3 * np.ones(x.shape), grid),
+        )
+        state2 = swe.State(
+            u=swe.Variable(np.ones(x.shape), grid),
+            v=swe.Variable(np.ones(x.shape), grid),
+            eta=swe.Variable(np.ones(x.shape), grid),
+        )
+
+        d_u = np.zeros(x.shape)
+        d_v = np.zeros(x.shape)
+        d_eta = np.zeros(x.shape)
+
+        rhs = deque([state1, state2], maxlen=3)
+
+        d_state = swe.adams_bashforth3(rhs, params)
+
+        assert np.all(d_state.u.data == d_u)
+        assert np.all(d_state.v.data == d_v)
+        assert np.all(d_state.eta.data == d_eta)
 
     def test_integrator(self):
         """Test integrator."""
