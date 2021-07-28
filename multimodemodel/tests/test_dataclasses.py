@@ -1,19 +1,14 @@
 """Test the behaviour of the dataclasses."""
-import sys
-import os
 import numpy as np
 import pytest
 
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)  # noqa: E402
-from shallow_water_eqs import (  # noqa: E402
-    Parameters,  # noqa: E402
-    Grid,  # noqa: E402
-    Variable,  # noqa: E402
-    State,  # noqa: E402
-    StaggeredGrid,  # noqa: E402
-)  # noqa: E402
+from multimodemodel import (
+    Parameters,
+    Grid,
+    Variable,
+    State,
+    StaggeredGrid,
+)
 
 
 def get_x_y(nx, ny, dx, dy):
