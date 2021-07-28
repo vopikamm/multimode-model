@@ -5,6 +5,7 @@ repos:
     -   id: check-merge-conflict
     -   id: check-yaml
     -   id: end-of-file-fixer
+        exclude: '.json'
     -   id: trailing-whitespace
     -   id: check-case-conflict
     -   id: check-added-large-files
