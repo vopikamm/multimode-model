@@ -203,7 +203,7 @@ class TestStaggeredGrid:
             lat_end=eta_grid.y.max(),
             nx=eta_grid.len_x,
             ny=eta_grid.len_y,
-            mask=mask,
+            mask=mask,  # type: ignore
         )
 
         assert np.all(staggered_grid.u.mask == u_mask)

@@ -36,7 +36,9 @@ class TestTerms:
         dy_a = dy * np.ones(x.shape)
 
         assert np.all(
-            swe._zonal_pressure_gradient(ni, nj, eta, mask, g, dx_a, dy_a, dy_a)
+            swe._zonal_pressure_gradient(
+                ni, nj, eta, mask, g, dx_a, dy_a, dy_a  # type: ignore
+            )
             == -g * (eta * mask - np.roll(eta * mask, 1, axis=0)) / dx
         )
 

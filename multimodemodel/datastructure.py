@@ -29,7 +29,7 @@ class Parameters:
 class Variable:
     """Variable class consisting of the data and a Grid instance."""
 
-    data: np.array
+    data: np.ndarray
     grid: Grid
 
     def __add__(self, other):
@@ -61,11 +61,11 @@ class State:
     def __add__(self, other):
         """Add all variables of two states."""
         if not isinstance(other, type(self)) or not isinstance(self, type(other)):
-            return NotImplemented
+            return NotImplemented  # pragma: no cover
         try:
             u_new = self.u + other.u
             v_new = self.v + other.v
             eta_new = self.eta + other.eta
-        except (AttributeError, TypeError):
+        except (AttributeError, TypeError):  # pragma: no cover
             return NotImplemented
         return self.__class__(u=u_new, v=v_new, eta=eta_new)

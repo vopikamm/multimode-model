@@ -2,23 +2,25 @@
 import numpy as np
 from collections import deque
 import multimodemodel as swe
+from typing import Tuple
+import pytest
 
 
-def get_x_y(nx, ny, dx, dy):
+def get_x_y(nx: int, ny: int, dx: float, dy: float) -> Tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
     return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
 
 
-def get_test_mask(x):
+def get_test_mask(x: np.ndarray) -> np.ndarray:
     """Return a test ocean mask with the shape of the input coordinate array.
 
     The mask is zero at the outmost array elements, one elsewhere.
     """
-    mask = np.ones(x.shape)
-    mask[0, :] = 0.0
-    mask[-1, :] = 0.0
-    mask[:, 0] = 0.0
-    mask[:, -1] = 0.0
+    mask = np.ones(x.shape, dtype=int)
+    mask[0, :] = 0
+    mask[-1, :] = 0
+    mask[:, 0] = 0
+    mask[:, -1] = 0
     return mask
 
 
@@ -27,15 +29,15 @@ class TestRHS:
 
     def test_linearised_SWE(self):
         """Test LSWE."""
-        H, g, f = 1, 2, 4
-        dx, dy = 1, 2
+        H, g, f = 1.0, 2.0, 4.0
+        dx, dy = 1.0, 2.0
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         eta = np.zeros(x.shape)
         u = np.zeros(x.shape)
-        v = np.ones(x.shape) * mask
+        v = mask.copy()
 
         d_u = (
             mask
@@ -48,8 +50,7 @@ class TestRHS:
             )
             / 4.0
         )
-
-        d_eta = -H * mask * (np.roll(v, -1, axis=1) - v) / dy
+        d_eta = -H * mask * (np.roll(v, -1, axis=1) + (-1) * v) / dy
         d_v = np.zeros_like(u)
 
         params = swe.Parameters(H=H, g=g, f=f)
@@ -258,3 +259,29 @@ class TestIntegration:
         assert np.all(state_1.u.data == u_1)
         assert np.all(state_1.v.data == v_1)
         assert np.all(state_1.eta.data == eta_1)
+
+    def test_integrator_raises_on_unknown_scheme(self):
+        """Test integrator raises on unknown scheme."""
+        H, g, f = 1, 1, 1
+        t_0, t_end, dt = 0, 1, 1
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+        x, y = get_x_y(ni, nj, dx, dy)
+        mask = np.ones(x.shape)
+
+        eta_0 = 1 * np.ones(x.shape)
+        u_0 = 1 * np.ones(x.shape)
+        v_0 = 1 * np.ones(x.shape)
+
+        params = swe.Parameters(H=H, g=g, f=f, t_0=t_0, t_end=t_end, dt=dt)
+        grid = swe.Grid(x, y, mask)
+        state_0 = swe.State(
+            u=swe.Variable(u_0, grid),
+            v=swe.Variable(v_0, grid),
+            eta=swe.Variable(eta_0, grid),
+        )
+
+        with pytest.raises(ValueError, match="Unsupported scheme"):
+            _ = swe.integrator(
+                state_0, params, scheme=(lambda x: state_0), RHS=swe.linearised_SWE
+            )
