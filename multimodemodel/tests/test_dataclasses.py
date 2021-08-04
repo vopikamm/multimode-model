@@ -7,7 +7,7 @@ from multimodemodel import (
     Grid,
     Variable,
     State,
-    regular_lat_lon_c_grid,
+    StaggeredGrid,
     GridShift,
 )
 
@@ -139,12 +139,7 @@ class TestStaggeredGrid:
         grids = self.get_regular_staggered_grids()
         q_grid, u_grid, v_grid, eta_grid = [grids[order.index(i)] for i in "quve"]
 
-        (
-            eta_grid_staggered,
-            u_grid_staggered,
-            v_grid_staggered,
-            q_grid_staggered,
-        ) = regular_lat_lon_c_grid(
+        staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
             shift=shift,
             lon_start=eta_grid.x.min(),
             lon_end=eta_grid.x.max(),
@@ -154,14 +149,14 @@ class TestStaggeredGrid:
             ny=eta_grid.len_y,
         )
 
-        assert np.all(q_grid_staggered.x == q_grid.x)
-        assert np.all(q_grid_staggered.y == q_grid.y)
-        assert np.all(u_grid_staggered.x == u_grid.x)
-        assert np.all(u_grid_staggered.y == u_grid.y)
-        assert np.all(v_grid_staggered.x == v_grid.x)
-        assert np.all(v_grid_staggered.y == v_grid.y)
-        assert np.all(eta_grid_staggered.x == eta_grid.x)
-        assert np.all(eta_grid_staggered.y == eta_grid.y)
+        assert np.all(staggered_grid.q.x == q_grid.x)
+        assert np.all(staggered_grid.q.y == q_grid.y)
+        assert np.all(staggered_grid.u.x == u_grid.x)
+        assert np.all(staggered_grid.u.y == u_grid.y)
+        assert np.all(staggered_grid.v.x == v_grid.x)
+        assert np.all(staggered_grid.v.y == v_grid.y)
+        assert np.all(staggered_grid.eta.x == eta_grid.x)
+        assert np.all(staggered_grid.eta.y == eta_grid.y)
 
 
 class TestVariable:

@@ -94,56 +94,84 @@ class Grid:
         self.len_y = self.x.shape[self.dim_y]
 
 
-def regular_lat_lon_c_grid(
-    shift: GridShift = GridShift.LL,
-    **kwargs: Tuple[Any],
-):
-    """Generate an Arakawa C-grid based on a given Grid() classmethod.
+@dataclass
+class StaggeredGrid:
+    """Staggered Grid.
 
-    Returns tuple of (eta_grid, u_grid, v_grid, q_grid)
+    Subgrids are available as attributes `eta`, `u`, `v` and `q`.
     """
-    eta_grid = Grid.regular_lat_lon(**kwargs)
-    dx, dy = eta_grid._compute_grid_spacing()
 
-    u_x_start, u_x_end = (
-        eta_grid.x.min() + shift.value[0] * dx.min() / 2,
-        eta_grid.x.max() + shift.value[0] * dx.min() / 2,
-    )
-    u_kwargs = kwargs.copy()
-    u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
-    u_grid = Grid.regular_lat_lon(**u_kwargs)
-    u_grid.mask = (
-        (np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
-        & (eta_grid.mask == 1)
-    ).astype(int)
+    eta: Grid
+    u: Grid
+    v: Grid
+    q: Grid
 
-    v_y_start, v_y_end = (
-        eta_grid.y.min() + shift.value[1] * dy.min() / 2,
-        eta_grid.y.max() + shift.value[1] * dy.min() / 2,
-    )
-    v_kwargs = kwargs.copy()
-    v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
-    v_grid = Grid.regular_lat_lon(**v_kwargs)
-    v_grid.mask = (
-        (np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
-        & (eta_grid.mask == 1)
-    ).astype(int)
+    @classmethod
+    def regular_lat_lon_c_grid(
+        cls,
+        shift: GridShift = GridShift.LL,
+        **kwargs: Tuple[Any],
+    ):
+        """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
-    q_kwargs = v_kwargs.copy()
-    q_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
-    q_grid = Grid.regular_lat_lon(**q_kwargs)
-    q_grid.mask = (
-        (eta_grid.mask == 1)
-        | (np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
-        | (np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
-        | (
-            np.roll(
-                np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]),
-                axis=eta_grid.dim_y,
-                shift=-1 * shift.value[1],
-            )
-            == 1
+        Returns StaggeredGrid object with all four grids
+        """
+        eta_grid = Grid.regular_lat_lon(**kwargs)
+        dx, dy = eta_grid._compute_grid_spacing()
+
+        u_x_start, u_x_end = (
+            eta_grid.x.min() + shift.value[0] * dx.min() / 2,
+            eta_grid.x.max() + shift.value[0] * dx.min() / 2,
         )
-    ).astype(int)
+        u_kwargs = kwargs.copy()
+        u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
+        u_grid = Grid.regular_lat_lon(**u_kwargs)
+        u_grid.mask = (
+            (
+                np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0])
+                == 1
+            )
+            & (eta_grid.mask == 1)
+        ).astype(int)
 
-    return eta_grid, u_grid, v_grid, q_grid
+        v_y_start, v_y_end = (
+            eta_grid.y.min() + shift.value[1] * dy.min() / 2,
+            eta_grid.y.max() + shift.value[1] * dy.min() / 2,
+        )
+        v_kwargs = kwargs.copy()
+        v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
+        v_grid = Grid.regular_lat_lon(**v_kwargs)
+        v_grid.mask = (
+            (
+                np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1])
+                == 1
+            )
+            & (eta_grid.mask == 1)
+        ).astype(int)
+
+        q_kwargs = v_kwargs.copy()
+        q_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
+        q_grid = Grid.regular_lat_lon(**q_kwargs)
+        q_grid.mask = (
+            (eta_grid.mask == 1)
+            | (
+                np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0])
+                == 1
+            )
+            | (
+                np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1])
+                == 1
+            )
+            | (
+                np.roll(
+                    np.roll(
+                        eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]
+                    ),
+                    axis=eta_grid.dim_y,
+                    shift=-1 * shift.value[1],
+                )
+                == 1
+            )
+        ).astype(int)
+
+        return cls(eta_grid, u_grid, v_grid, q_grid)

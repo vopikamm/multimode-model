@@ -12,7 +12,7 @@ from .datastructure import (
 
 from .grid import (
     Grid,
-    regular_lat_lon_c_grid,
+    StaggeredGrid,
     GridShift,
 )
 
