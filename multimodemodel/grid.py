@@ -5,6 +5,8 @@ from typing import Any, Tuple
 import numpy as np
 from enum import Enum, unique
 
+from .jit import _numba_2D_grid_iterator
+
 
 @unique
 class GridShift(Enum):
@@ -59,6 +61,7 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
+        mask: np.array = None,
         dim_x: int = 0,
         r_earth: float = 6_371_000.0,
     ):
@@ -68,11 +71,13 @@ class Grid:
         lon = np.linspace(lon_start, lon_end, nx)
         lat = np.linspace(lat_start, lat_end, ny)
         longitude, latitude = np.meshgrid(lon, lat, indexing=indexing[dim_x])
-        mask = np.ones(longitude.shape)
-        mask[0, :] = 0.0
-        mask[-1, :] = 0.0
-        mask[:, 0] = 0.0
-        mask[:, -1] = 0.0
+
+        if mask is None:
+            mask = np.ones(longitude.shape)
+            mask[0, :] = 0.0
+            mask[-1, :] = 0.0
+            mask[:, 0] = 0.0
+            mask[:, -1] = 0.0
 
         grid = cls(
             x=longitude,
@@ -127,11 +132,13 @@ class StaggeredGrid:
         u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         u_grid = Grid.regular_lat_lon(**u_kwargs)
         u_grid.mask = (
-            (
-                np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0])
-                == 1
+            cls._u_mask_from_eta(
+                u_grid.len_x,
+                u_grid.len_y,
+                eta_grid.mask,
+                shift.value[0],
+                shift.value[1],
             )
-            & (eta_grid.mask == 1)
         ).astype(int)
 
         v_y_start, v_y_end = (
@@ -142,36 +149,83 @@ class StaggeredGrid:
         v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
         v_grid = Grid.regular_lat_lon(**v_kwargs)
         v_grid.mask = (
-            (
-                np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1])
-                == 1
+            cls._v_mask_from_eta(
+                u_grid.len_x,
+                u_grid.len_y,
+                eta_grid.mask,
+                shift.value[0],
+                shift.value[1],
             )
-            & (eta_grid.mask == 1)
         ).astype(int)
 
         q_kwargs = v_kwargs.copy()
         q_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         q_grid = Grid.regular_lat_lon(**q_kwargs)
         q_grid.mask = (
-            (eta_grid.mask == 1)
-            | (
-                np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0])
-                == 1
-            )
-            | (
-                np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1])
-                == 1
-            )
-            | (
-                np.roll(
-                    np.roll(
-                        eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]
-                    ),
-                    axis=eta_grid.dim_y,
-                    shift=-1 * shift.value[1],
-                )
-                == 1
+            cls._q_mask_from_eta(
+                u_grid.len_x,
+                u_grid.len_y,
+                eta_grid.mask,
+                shift.value[0],
+                shift.value[1],
             )
         ).astype(int)
 
         return cls(eta_grid, u_grid, v_grid, q_grid)
+
+    @staticmethod
+    @_numba_2D_grid_iterator
+    def _u_mask_from_eta(
+        i: int,
+        j: int,
+        ni: int,
+        nj: int,
+        eta_mask: np.ndarray,
+        shift_x: int,
+        shift_y: int,
+    ) -> int:
+        i_shift = (i + shift_x) % ni
+        if (eta_mask[i, j] + eta_mask[i_shift, j]) == 2:
+            return 1
+        else:
+            return 0
+
+    @staticmethod
+    @_numba_2D_grid_iterator
+    def _v_mask_from_eta(
+        i: int,
+        j: int,
+        ni: int,
+        nj: int,
+        eta_mask: np.ndarray,
+        shift_x: int,
+        shift_y: int,
+    ) -> int:
+        j_shift = (j + shift_y) % nj
+        if (eta_mask[i, j] + eta_mask[i, j_shift]) == 2:
+            return 1
+        else:
+            return 0
+
+    @staticmethod
+    @_numba_2D_grid_iterator
+    def _q_mask_from_eta(
+        i: int,
+        j: int,
+        ni: int,
+        nj: int,
+        eta_mask: np.ndarray,
+        shift_x: int,
+        shift_y: int,
+    ) -> int:
+        i_shift = (i + shift_x) % ni
+        j_shift = (j + shift_y) % nj
+        if (
+            eta_mask[i, j]
+            + eta_mask[i, j_shift]
+            + eta_mask[i_shift, j]
+            + eta_mask[i_shift, j_shift]
+        ) == 4:
+            return 1
+        else:
+            return 0
