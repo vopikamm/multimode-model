@@ -12,15 +12,19 @@
 	},
 	// Set *default* container specific settings.json values on container create.
 	"settings": {
-		// "python.pythonPath": "/Users/mclaus/mambaforge/envs/multimode-model/bin/python",
-		"python.linting.flake8Enabled": false,
+		"python.linting.flake8Enabled": true,
 		"python.linting.enabled": true,
 		"python.linting.pydocstyleEnabled": false,
 		"python.linting.banditEnabled": false,
-		"python.linting.pycodestyleEnabled": true
+		"python.linting.pycodestyleEnabled": false,
+		"python.languageServer": "Pylance",
+		"python.defaultInterpreterPath": "/app/conda/bin/python",
+		"python.analysis.typeCheckingMode": "basic",
 	},
 	// Add the IDs of extensions you want installed when the container is created.
-	"extensions": [],
+	"extensions": [
+		"ms-python.python",
+	],
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 	// Use 'postCreateCommand' to run commands after the container is created.
