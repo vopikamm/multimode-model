@@ -8,6 +8,7 @@ from multimodemodel import (
     Variable,
     State,
     regular_lat_lon_c_grid,
+    GridShift,
 )
 
 
@@ -140,6 +141,7 @@ class TestStaggeredGrid:
             v_grid_staggered,
             eta_grid_staggered,
         ) = regular_lat_lon_c_grid(
+            shift=GridShift.LL,
             lon_start=lon_start,
             lon_end=lon_end,
             lat_start=lat_start,

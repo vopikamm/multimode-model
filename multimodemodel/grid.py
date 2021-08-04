@@ -3,6 +3,21 @@
 from dataclasses import dataclass, field
 from typing import Any, Tuple
 import numpy as np
+from enum import Enum, unique
+
+
+@unique
+class GridShift(Enum):
+    """Direction of shift of staggered grids with respect to the eta-grid.
+
+    E.g., `GridShift.LR` indicates that the grid points of the other grids which share
+    the same index are located on the lower and/or left face of the eta Grid.
+    """
+
+    LR = 0
+    UR = 1
+    LL = 2
+    UL = 3
 
 
 @dataclass
@@ -78,7 +93,7 @@ class Grid:
 
 
 def regular_lat_lon_c_grid(
-    type="SE",
+    shift: GridShift = GridShift.LL,
     **kwargs_to_callable: Tuple[Any],
 ):
     """Generate an Arakawa C-grid based on a given Grid() classmethod."""
