@@ -111,28 +111,25 @@ class TestGrid:
 class TestStaggeredGrid:
     """Test StaggeredGrid class."""
 
-    def test_regular_c_grid(self):
-        """Test staggering to Arakawa c-grid."""
-        lon_start, lon_end = 0.0, 10.0
-        lat_start, lat_end = 0.0, 5.0
-        nx, ny = 11, 11
-        d_lon, d_lat = 1.0, 0.5
-        lon, lat = get_x_y(nx, ny, d_lon, d_lat)
+    def get_regular_staggered_grids(
+        self, xs=0.0, xe=10.0, ys=0.0, ye=5.0, nx=11, ny=11
+    ):
+        """Set up test grids."""
+        dx = (xe - xs) / (nx - 1)
+        dy = (ye - ys) / (ny - 1)
+        ll_grid = Grid.regular_lat_lon(xs, xe, ys, ye, nx, ny)
+        lr_grid = Grid.regular_lat_lon(xs + dx / 2, xe + dx / 2, ys, ye, nx, ny)
+        ur_grid = Grid.regular_lat_lon(
+            xs + dx / 2, xe + dx / 2, ys + dy / 2, ye + dy / 2, nx, ny
+        )
+        ul_grid = Grid.regular_lat_lon(xs, xe, ys + dy / 2, ye + dy / 2, nx, ny)
+        return ll_grid, lr_grid, ur_grid, ul_grid
 
-        q_grid = Grid.regular_lat_lon(lon_start, lon_end, lat_start, lat_end, nx, ny)
-        u_grid = Grid.regular_lat_lon(
-            lon_start, lon_end, lat_start + d_lat / 2, lat_end + d_lat / 2, nx, ny
-        )
-        v_grid = Grid.regular_lat_lon(
-            lon_start + d_lon / 2, lon_end + d_lon / 2, lat_start, lat_end, nx, ny
-        )
-        eta_grid = Grid.regular_lat_lon(
-            lon_start + d_lon / 2,
-            lon_end + d_lon / 2,
-            lat_start + d_lat / 2,
-            lat_end + d_lat / 2,
-            nx,
-            ny,
+    def test_regular_c_grid_LL(self):
+        """Test staggering to Arakawa c-grid."""
+        xs, xe, ys, ye, nx, ny = 0.0, 10.0, 0.0, 5.0, 11, 11
+        q_grid, v_grid, eta_grid, u_grid = self.get_regular_staggered_grids(
+            xs, xe, ys, ye, nx, ny
         )
 
         (
@@ -142,10 +139,10 @@ class TestStaggeredGrid:
             eta_grid_staggered,
         ) = regular_lat_lon_c_grid(
             shift=GridShift.LL,
-            lon_start=lon_start,
-            lon_end=lon_end,
-            lat_start=lat_start,
-            lat_end=lat_end,
+            lon_start=xs,
+            lon_end=xe,
+            lat_start=ys,
+            lat_end=ye,
             nx=nx,
             ny=ny,
         )
