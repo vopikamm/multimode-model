@@ -125,26 +125,33 @@ class TestStaggeredGrid:
         ul_grid = Grid.regular_lat_lon(xs, xe, ys + dy / 2, ye + dy / 2, nx, ny)
         return ll_grid, lr_grid, ur_grid, ul_grid
 
-    def test_regular_c_grid_LL(self):
+    @pytest.mark.parametrize(
+        "shift,order",
+        [
+            (GridShift.LL, "qveu"),
+            (GridShift.LR, "vque"),
+            (GridShift.UL, "uevq"),
+            (GridShift.UR, "euqv"),
+        ],
+    )
+    def test_regular_c_grid(self, shift, order):
         """Test staggering to Arakawa c-grid."""
-        xs, xe, ys, ye, nx, ny = 0.0, 10.0, 0.0, 5.0, 11, 11
-        q_grid, v_grid, eta_grid, u_grid = self.get_regular_staggered_grids(
-            xs, xe, ys, ye, nx, ny
-        )
+        grids = self.get_regular_staggered_grids()
+        q_grid, u_grid, v_grid, eta_grid = [grids[order.index(i)] for i in "quve"]
 
         (
-            q_grid_staggered,
+            eta_grid_staggered,
             u_grid_staggered,
             v_grid_staggered,
-            eta_grid_staggered,
+            q_grid_staggered,
         ) = regular_lat_lon_c_grid(
-            shift=GridShift.LL,
-            lon_start=xs,
-            lon_end=xe,
-            lat_start=ys,
-            lat_end=ye,
-            nx=nx,
-            ny=ny,
+            shift=shift,
+            lon_start=eta_grid.x.min(),
+            lon_end=eta_grid.x.max(),
+            lat_start=eta_grid.y.min(),
+            lat_end=eta_grid.y.max(),
+            nx=eta_grid.len_x,
+            ny=eta_grid.len_y,
         )
 
         assert np.all(q_grid_staggered.x == q_grid.x)

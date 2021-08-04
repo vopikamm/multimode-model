@@ -11,13 +11,15 @@ class GridShift(Enum):
     """Direction of shift of staggered grids with respect to the eta-grid.
 
     E.g., `GridShift.LR` indicates that the grid points of the other grids which share
-    the same index are located on the lower and/or left face of the eta Grid.
+    the same index are located on the lower and/or left face of the eta Grid. The
+    value of the enumerator is a tuple giving the direction of shift in
+    x- and y-direction.
     """
 
-    LR = 0
-    UR = 1
-    LL = 2
-    UL = 3
+    LR = (1, -1)
+    UR = (1, 1)
+    LL = (-1, -1)
+    UL = (-1, 1)
 
 
 @dataclass
@@ -94,49 +96,54 @@ class Grid:
 
 def regular_lat_lon_c_grid(
     shift: GridShift = GridShift.LL,
-    **kwargs_to_callable: Tuple[Any],
+    **kwargs: Tuple[Any],
 ):
-    """Generate an Arakawa C-grid based on a given Grid() classmethod."""
-    q_grid = Grid.regular_lat_lon(**kwargs_to_callable)
-    dx, dy = q_grid._compute_grid_spacing()
+    """Generate an Arakawa C-grid based on a given Grid() classmethod.
 
-    u_lat_start, u_lat_end = (
-        q_grid.y.min() + dy.min() / 2,
-        q_grid.y.max() + dy.min() / 2,
+    Returns tuple of (eta_grid, u_grid, v_grid, q_grid)
+    """
+    eta_grid = Grid.regular_lat_lon(**kwargs)
+    dx, dy = eta_grid._compute_grid_spacing()
+
+    u_x_start, u_x_end = (
+        eta_grid.x.min() + shift.value[0] * dx.min() / 2,
+        eta_grid.x.max() + shift.value[0] * dx.min() / 2,
     )
-    u_kwargs = kwargs_to_callable.copy()
-    u_kwargs.update(dict(lat_start=u_lat_start, lat_end=u_lat_end))
+    u_kwargs = kwargs.copy()
+    u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
     u_grid = Grid.regular_lat_lon(**u_kwargs)
     u_grid.mask = (
-        (np.roll(q_grid.mask, axis=q_grid.dim_y, shift=-1) == 1) & (q_grid.mask == 1)
+        (np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
+        & (eta_grid.mask == 1)
     ).astype(int)
 
-    v_lon_start, v_lon_end = (
-        q_grid.x.min() + dx.min() / 2,
-        q_grid.x.max() + dx.min() / 2,
+    v_y_start, v_y_end = (
+        eta_grid.y.min() + shift.value[1] * dy.min() / 2,
+        eta_grid.y.max() + shift.value[1] * dy.min() / 2,
     )
-    v_kwargs = kwargs_to_callable.copy()
-    v_kwargs.update(dict(lon_start=v_lon_start, lon_end=v_lon_end))
+    v_kwargs = kwargs.copy()
+    v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
     v_grid = Grid.regular_lat_lon(**v_kwargs)
     v_grid.mask = (
-        (np.roll(q_grid.mask, axis=q_grid.dim_x, shift=-1) == 1) & (q_grid.mask == 1)
+        (np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
+        & (eta_grid.mask == 1)
     ).astype(int)
 
-    eta_kwargs = v_kwargs.copy()
-    eta_kwargs.update(dict(lat_start=u_lat_start, lat_end=u_lat_end))
-    eta_grid = Grid.regular_lat_lon(**eta_kwargs)
-    eta_grid.mask = (
-        (q_grid.mask == 1)
-        & (np.roll(q_grid.mask, axis=q_grid.dim_x, shift=-1) == 1)
-        & (np.roll(q_grid.mask, axis=q_grid.dim_y, shift=-1) == 1)
-        & (
+    q_kwargs = v_kwargs.copy()
+    q_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
+    q_grid = Grid.regular_lat_lon(**q_kwargs)
+    q_grid.mask = (
+        (eta_grid.mask == 1)
+        | (np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
+        | (np.roll(eta_grid.mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
+        | (
             np.roll(
-                np.roll(q_grid.mask, axis=q_grid.dim_x, shift=-1),
-                axis=q_grid.dim_y,
-                shift=-1,
+                np.roll(eta_grid.mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]),
+                axis=eta_grid.dim_y,
+                shift=-1 * shift.value[1],
             )
             == 1
         )
     ).astype(int)
 
-    return q_grid, u_grid, v_grid, eta_grid
+    return eta_grid, u_grid, v_grid, q_grid
