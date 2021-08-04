@@ -1,7 +1,7 @@
 """Logic related to creation of grids."""
 
 from dataclasses import dataclass, field
-from typing import Any, Tuple
+from typing import Any, Dict
 import numpy as np
 from enum import Enum, unique
 
@@ -28,13 +28,13 @@ class GridShift(Enum):
 class Grid:
     """Grid informtation."""
 
-    x: np.array  # longitude on grid
-    y: np.array  # latitude on grid
-    mask: np.array  # ocean mask, 1 where ocean is, 0 where land is
+    x: np.ndarray  # longitude on grid
+    y: np.ndarray  # latitude on grid
+    mask: np.ndarray  # ocean mask, 1 where ocean is, 0 where land is
     dim_x: int = 0  # x dimension in numpy array
     dim_y: int = 1  # y dimension in numpy array
-    dx: int = field(init=False)  # grid spacing in x
-    dy: int = field(init=False)  # grid spacing in y
+    dx: np.ndarray = field(init=False)  # grid spacing in x
+    dy: np.ndarray = field(init=False)  # grid spacing in y
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
 
@@ -61,7 +61,7 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
-        mask: np.array = None,
+        mask: np.ndarray = None,
         dim_x: int = 0,
         r_earth: float = 6_371_000.0,
     ):
@@ -115,13 +115,13 @@ class StaggeredGrid:
     def regular_lat_lon_c_grid(
         cls,
         shift: GridShift = GridShift.LL,
-        **kwargs: Tuple[Any],
+        **kwargs: Dict[str, Any],
     ):
         """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
         Returns StaggeredGrid object with all four grids
         """
-        eta_grid = Grid.regular_lat_lon(**kwargs)
+        eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
         dx, dy = eta_grid._compute_grid_spacing()
 
         u_x_start, u_x_end = (
@@ -130,9 +130,9 @@ class StaggeredGrid:
         )
         u_kwargs = kwargs.copy()
         u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
-        u_grid = Grid.regular_lat_lon(**u_kwargs)
+        u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
         u_grid.mask = (
-            cls._u_mask_from_eta(
+            cls._u_mask_from_eta(  # type: ignore
                 u_grid.len_x,
                 u_grid.len_y,
                 eta_grid.mask,
@@ -147,9 +147,9 @@ class StaggeredGrid:
         )
         v_kwargs = kwargs.copy()
         v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
-        v_grid = Grid.regular_lat_lon(**v_kwargs)
+        v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
         v_grid.mask = (
-            cls._v_mask_from_eta(
+            cls._v_mask_from_eta(  # type: ignore
                 u_grid.len_x,
                 u_grid.len_y,
                 eta_grid.mask,
@@ -160,9 +160,9 @@ class StaggeredGrid:
 
         q_kwargs = v_kwargs.copy()
         q_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
-        q_grid = Grid.regular_lat_lon(**q_kwargs)
+        q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
         q_grid.mask = (
-            cls._q_mask_from_eta(
+            cls._q_mask_from_eta(  # type: ignore
                 u_grid.len_x,
                 u_grid.len_y,
                 eta_grid.mask,
@@ -183,7 +183,7 @@ class StaggeredGrid:
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
-    ) -> int:
+    ) -> int:  # pragma: no cover
         i_shift = (i + shift_x) % ni
         if (eta_mask[i, j] + eta_mask[i_shift, j]) == 2:
             return 1
@@ -200,7 +200,7 @@ class StaggeredGrid:
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
-    ) -> int:
+    ) -> int:  # pragma: no cover
         j_shift = (j + shift_y) % nj
         if (eta_mask[i, j] + eta_mask[i, j_shift]) == 2:
             return 1
@@ -217,7 +217,7 @@ class StaggeredGrid:
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
-    ) -> int:
+    ) -> int:  # pragma: no cover
         i_shift = (i + shift_x) % ni
         j_shift = (j + shift_y) % nj
         if (

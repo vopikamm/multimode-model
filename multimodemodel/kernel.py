@@ -16,13 +16,13 @@ def _zonal_pressure_gradient(
     j: int,
     ni: int,
     nj: int,
-    eta: np.array,
-    mask: np.array,
+    eta: np.ndarray,
+    mask: np.ndarray,
     g: float,
-    dx_u: np.array,
-    dy_u: np.array,
-    dy_eta: np.array,
-) -> float:
+    dx_u: np.ndarray,
+    dy_u: np.ndarray,
+    dy_eta: np.ndarray,
+) -> float:  # pragma: no cover
     return (
         -g
         * (
@@ -40,13 +40,13 @@ def _meridional_pressure_gradient(
     j: int,
     ni: int,
     nj: int,
-    eta: np.array,
-    mask: np.array,
+    eta: np.ndarray,
+    mask: np.ndarray,
     g: float,
-    dx_v: np.array,
-    dy_v: np.array,
-    dx_eta: np.array,
-) -> float:
+    dx_v: np.ndarray,
+    dy_v: np.ndarray,
+    dx_eta: np.ndarray,
+) -> float:  # pragma: no cover
     return (
         -g
         * (
@@ -64,13 +64,13 @@ def _zonal_divergence(
     j: int,
     ni: int,
     nj: int,
-    u: np.array,
-    mask: np.array,
+    u: np.ndarray,
+    mask: np.ndarray,
     H: float,
-    dx_eta: np.array,
-    dy_eta: np.array,
-    dy_u: np.array,
-) -> float:
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    dy_u: np.ndarray,
+) -> float:  # pragma: no cover
     ip1 = (i + 1) % ni
     return (
         -H
@@ -86,13 +86,13 @@ def _meridional_divergence(
     j: int,
     ni: int,
     nj: int,
-    v: np.array,
-    mask: np.array,
+    v: np.ndarray,
+    mask: np.ndarray,
     H: float,
-    dx_eta: np.array,
-    dy_eta: np.array,
-    dx_v: np.array,
-) -> float:
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    dx_v: np.ndarray,
+) -> float:  # pragma: no cover
     jp1 = (j + 1) % nj
     return (
         -H
@@ -104,8 +104,8 @@ def _meridional_divergence(
 
 @_numba_2D_grid_iterator
 def _coriolis_u(
-    i: int, j: int, ni: int, nj: int, u: np.array, mask: np.array, f: float
-) -> float:
+    i: int, j: int, ni: int, nj: int, u: np.ndarray, mask: np.ndarray, f: float
+) -> float:  # pragma: no cover
     ip1 = (i + 1) % ni
     return (
         -f
@@ -121,8 +121,8 @@ def _coriolis_u(
 
 @_numba_2D_grid_iterator
 def _coriolis_v(
-    i: int, j: int, ni: int, nj: int, v: np.array, mask: np.array, f: float
-) -> float:
+    i: int, j: int, ni: int, nj: int, v: np.ndarray, mask: np.ndarray, f: float
+) -> float:  # pragma: no cover
     jp1 = (j + 1) % nj
     return (
         f
@@ -150,12 +150,12 @@ def zonal_pressure_gradient(state: State, params: Parameters) -> State:
     result = _zonal_pressure_gradient(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.data,
-        state.eta.grid.mask,
-        params.g,
-        state.u.grid.dx,
-        state.u.grid.dy,
-        state.eta.grid.dy,
+        state.eta.data,  # type: ignore
+        state.eta.grid.mask,  # type: ignore
+        params.g,  # type: ignore
+        state.u.grid.dx,  # type: ignore
+        state.u.grid.dy,  # type: ignore
+        state.eta.grid.dy,  # type: ignore
     )
     return State(
         u=Variable(state.u.grid.mask * result, state.u.grid),
@@ -172,12 +172,12 @@ def meridional_pressure_gradient(state: State, params: Parameters) -> State:
     result = _meridional_pressure_gradient(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.data,
-        state.eta.grid.mask,
-        params.g,
-        state.v.grid.dx,
-        state.v.grid.dy,
-        state.eta.grid.dx,
+        state.eta.data,  # type: ignore
+        state.eta.grid.mask,  # type: ignore
+        params.g,  # type: ignore
+        state.v.grid.dx,  # type: ignore
+        state.v.grid.dy,  # type: ignore
+        state.eta.grid.dx,  # type: ignore
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -191,12 +191,12 @@ def zonal_divergence(state: State, params: Parameters) -> State:
     result = _zonal_divergence(
         state.u.grid.len_x,
         state.u.grid.len_y,
-        state.u.data,
-        state.u.grid.mask,
-        params.H,
-        state.eta.grid.dx,
-        state.eta.grid.dy,
-        state.u.grid.dy,
+        state.u.data,  # type: ignore
+        state.u.grid.mask,  # type: ignore
+        params.H,  # type: ignore
+        state.eta.grid.dx,  # type: ignore
+        state.eta.grid.dy,  # type: ignore
+        state.u.grid.dy,  # type: ignore
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -210,12 +210,12 @@ def meridional_divergence(state: State, params: Parameters) -> State:
     result = _meridional_divergence(
         state.v.grid.len_x,
         state.v.grid.len_y,
-        state.v.data,
-        state.v.grid.mask,
-        params.H,
-        state.eta.grid.dx,
-        state.eta.grid.dy,
-        state.v.grid.dx,
+        state.v.data,  # type: ignore
+        state.v.grid.mask,  # type: ignore
+        params.H,  # type: ignore
+        state.eta.grid.dx,  # type: ignore
+        state.eta.grid.dy,  # type: ignore
+        state.v.grid.dx,  # type: ignore
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -232,9 +232,9 @@ def coriolis_u(state: State, params: Parameters) -> State:
     result = _coriolis_u(
         state.u.grid.len_x,
         state.u.grid.len_y,
-        state.u.data,
-        state.u.grid.mask,
-        params.f,
+        state.u.data,  # type: ignore
+        state.u.grid.mask,  # type: ignore
+        params.f,  # type: ignore
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
@@ -251,9 +251,9 @@ def coriolis_v(state: State, params: Parameters) -> State:
     result = _coriolis_v(
         state.v.grid.len_x,
         state.v.grid.len_y,
-        state.v.data,
-        state.v.grid.mask,
-        params.f,
+        state.v.data,  # type: ignore
+        state.v.grid.mask,  # type: ignore
+        params.f,  # type: ignore
     )
     return State(
         u=Variable(state.u.grid.mask * result, state.u.grid),

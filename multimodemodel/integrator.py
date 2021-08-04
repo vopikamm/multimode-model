@@ -116,12 +116,14 @@ def integrator(
 
     Only the last time step is returned.
     """
-    if scheme == euler_forward:
+    if scheme is euler_forward:
         level = 1
-    if scheme == adams_bashforth2:
+    elif scheme is adams_bashforth2:
         level = 2
-    if scheme == adams_bashforth3:
+    elif scheme is adams_bashforth3:
         level = 3
+    else:
+        raise ValueError("Unsupported scheme provided.")
 
     N = round((params.t_end - params.t_0) / params.dt)
     state = deque([state_0], maxlen=1)
