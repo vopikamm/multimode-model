@@ -17,16 +17,16 @@ def get_x_y(nx, ny, dx, dy):
     return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
 
 
-def get_test_mask(x):
+def get_test_mask(shape):
     """Return a test ocean mask with the shape of the input coordinate array.
 
     The mask is zero at the outmost array elements, one elsewhere.
     """
-    mask = np.ones(x.shape)
-    mask[0, :] = 0.0
-    mask[-1, :] = 0.0
-    mask[:, 0] = 0.0
-    mask[:, -1] = 0.0
+    mask = np.ones(shape, dtype=int)
+    mask[0, :] = 0
+    mask[-1, :] = 0
+    mask[:, 0] = 0
+    mask[:, -1] = 0
     return mask
 
 
@@ -59,7 +59,7 @@ class TestGrid:
         nx, ny = 10, 5
         dx, dy = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x)
+        mask = get_test_mask(x.shape)
 
         g1 = Grid(x=x, y=y, mask=mask)
         assert np.all(g1.dx == dx * np.ones(x.shape))
@@ -72,7 +72,7 @@ class TestGrid:
         nx, ny = 10, 5
         dx, dy = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x)
+        mask = get_test_mask(x.shape)
 
         g2 = Grid(x=x.T, y=y.T, mask=mask.T, dim_x=1, dim_y=0)
         assert g2.len_x == nx
@@ -95,7 +95,7 @@ class TestGrid:
         nx, ny = 11, 6
         d_lon, d_lat = 1.0, 1.0
         lon, lat = get_x_y(nx, ny, d_lon, d_lat)
-        mask = get_test_mask(lon)
+        mask = get_test_mask(lon.shape)
         dx = d_lon * r * np.cos(lat * np.pi / 180) * np.pi / 180.0
         dy = d_lat * r * np.pi / 180.0
 
@@ -158,6 +158,59 @@ class TestStaggeredGrid:
         assert np.all(staggered_grid.eta.x == eta_grid.x)
         assert np.all(staggered_grid.eta.y == eta_grid.y)
 
+    @pytest.mark.parametrize(
+        "shift,order",
+        [
+            (GridShift.LL, "qveu"),
+            (GridShift.LR, "vque"),
+            (GridShift.UL, "uevq"),
+            (GridShift.UR, "euqv"),
+        ],
+    )
+    def test_mask(self, shift, order):
+        """Test derivation of land/ocean mask."""
+        grids = self.get_regular_staggered_grids()
+        q_grid, u_grid, v_grid, eta_grid = [grids[order.index(i)] for i in "quve"]
+        mask = get_test_mask(q_grid.x.shape)
+
+        u_mask = (
+            (mask == 1)
+            & (np.roll(mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
+        ).astype(int)
+        v_mask = (
+            (mask == 1)
+            & (np.roll(mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
+        ).astype(int)
+        q_mask = (
+            (mask == 1)
+            & (np.roll(mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
+            & (np.roll(mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
+            & (
+                np.roll(
+                    np.roll(mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]),
+                    axis=eta_grid.dim_x,
+                    shift=-1 * shift.value[0],
+                )
+                == 1
+            )
+        ).astype(int)
+
+        staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
+            shift=shift,
+            lon_start=eta_grid.x.min(),
+            lon_end=eta_grid.x.max(),
+            lat_start=eta_grid.y.min(),
+            lat_end=eta_grid.y.max(),
+            nx=eta_grid.len_x,
+            ny=eta_grid.len_y,
+            mask=mask,
+        )
+
+        assert np.all(staggered_grid.u.mask == u_mask)
+        assert np.all(staggered_grid.v.mask == v_mask)
+        assert np.all(staggered_grid.q.mask == q_mask)
+        assert np.all(staggered_grid.eta.mask == mask)
+
 
 class TestVariable:
     """Test Variable class."""
@@ -166,7 +219,7 @@ class TestVariable:
         """Test variable summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x)
+        mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
 
         d1 = np.zeros_like(g1.x) + 1.0
@@ -180,7 +233,7 @@ class TestVariable:
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x)
+        mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
         g2 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.0
@@ -195,7 +248,7 @@ class TestVariable:
         """Test missing summation implementation."""
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x)
+        mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.0
         v1 = Variable(d1, g1)
@@ -211,7 +264,7 @@ class TestState:
         """Test state summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x)
+        mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.0
         s1 = State(
