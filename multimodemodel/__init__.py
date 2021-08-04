@@ -6,10 +6,13 @@ water equation as python functions.
 
 from .datastructure import (
     Parameters,
-    Grid,
-    StaggeredGrid,
     Variable,
     State,
+)
+
+from .grid import (
+    Grid,
+    regular_lat_lon_c_grid,
 )
 
 from .integrator import (
