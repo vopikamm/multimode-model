@@ -60,8 +60,8 @@ class TestTerms:
 
         inc = swe.pressure_gradient_i(state, params)
 
-        assert np.all(inc.eta.data == np.zeros(x.shape))
-        assert np.all(inc.v.data == np.zeros(x.shape))
+        assert inc.eta.data is None
+        assert inc.v.data is None
         assert np.all(inc.u.data == result)
 
     def test_pressure_gradient_j(self):
@@ -84,8 +84,8 @@ class TestTerms:
 
         inc = swe.pressure_gradient_j(state, params)
 
-        assert np.all(inc.eta.data == 0.0)
-        assert np.all(inc.u.data == 0.0)
+        assert inc.eta.data is None
+        assert inc.u.data is None
         assert np.all(inc.v.data == result)
 
     def test_divergence_i(self):
@@ -110,8 +110,8 @@ class TestTerms:
 
         inc = swe.divergence_i(state, params)
 
-        assert np.all(inc.u.data == 0.0)
-        assert np.all(inc.v.data == 0.0)
+        assert inc.u.data is None
+        assert inc.v.data is None
         assert np.all(inc.eta.data == result)
 
     def test_divergence_j(self):
@@ -135,8 +135,8 @@ class TestTerms:
         )
 
         inc = swe.divergence_j(state, params)
-        assert np.all(inc.u.data == 0.0)
-        assert np.all(inc.v.data == 0.0)
+        assert inc.u.data is None
+        assert inc.v.data is None
         assert np.all(inc.eta.data == result)
 
     def test_coriolis_j(self):
@@ -167,8 +167,8 @@ class TestTerms:
         )
 
         inc = swe.coriolis_j(state, params)
-        assert np.all(inc.u.data == np.zeros(x.shape))
-        assert np.all(inc.eta.data == np.zeros(x.shape))
+        assert inc.u.data is None
+        assert inc.eta.data is None
         assert np.all(inc.v.data == result)
 
     def test_coriolis_i(self):
@@ -201,6 +201,6 @@ class TestTerms:
         inc = swe.coriolis_i(state, params)
         print(inc.u.data)
         print(result)
-        assert np.all(inc.v.data == np.zeros(y.shape))
-        assert np.all(inc.eta.data == np.zeros(y.shape))
+        assert inc.v.data is None
+        assert inc.eta.data is None
         assert np.all(inc.u.data == result)

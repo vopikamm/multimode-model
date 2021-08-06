@@ -229,6 +229,32 @@ class TestVariable:
         v3 = v1 + v2
         assert np.all(v3.data == 3.0)
 
+    def test_add_data_with_none(self):
+        """Test summing with None data."""
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        v1 = Variable(np.ones_like(g1.x), g1)
+        v2 = Variable(None, g1)
+        v3 = v1 + v2
+        assert np.all(v3.data == v1.data)
+        v3 = v2 + v1
+        assert np.all(v3.data == v1.data)
+
+    def test_add_none_with_none(self):
+        """Test summing with None data."""
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        v1 = Variable(None, g1)
+        v2 = Variable(None, g1)
+        v3 = v1 + v2
+        assert np.all(v3.data == v1.data)
+
     def test_grid_mismatch(self):
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
