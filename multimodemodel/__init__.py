@@ -25,11 +25,11 @@ from .integrator import (
 )
 
 from .kernel import (
-    _zonal_pressure_gradient,
-    coriolis_v,
-    coriolis_u,
-    meridional_divergence,
-    zonal_divergence,
-    meridional_pressure_gradient,
-    zonal_pressure_gradient,
+    _pressure_gradient_i,
+    coriolis_i,
+    coriolis_j,
+    divergence_j,
+    divergence_i,
+    pressure_gradient_j,
+    pressure_gradient_i,
 )

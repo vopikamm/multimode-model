@@ -6,6 +6,13 @@ import numpy as np
 
 
 @njit(inline="always")  # type: ignore
+def _expand_11_arguments(func, i, j, ni, nj, args):  # pragma: no cover
+    return func(
+        i, j, ni, nj, args[0], args[1], args[2], args[3], args[4], args[5], args[6]
+    )
+
+
+@njit(inline="always")  # type: ignore
 def _expand_10_arguments(func, i, j, ni, nj, args):  # pragma: no cover
     return func(i, j, ni, nj, args[0], args[1], args[2], args[3], args[4], args[5])
 
@@ -36,6 +43,7 @@ _arg_expand_map = {
     8: _expand_8_arguments,
     9: _expand_9_arguments,
     10: _expand_10_arguments,
+    11: _expand_11_arguments,
 }
 
 

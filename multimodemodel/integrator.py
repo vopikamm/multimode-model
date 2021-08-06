@@ -7,12 +7,12 @@ from collections import deque
 from .datastructure import Variable, Parameters, State
 from typing import Callable
 from .kernel import (
-    zonal_pressure_gradient,
-    meridional_pressure_gradient,
-    coriolis_u,
-    coriolis_v,
-    zonal_divergence,
-    meridional_divergence,
+    pressure_gradient_i,
+    pressure_gradient_j,
+    coriolis_j,
+    coriolis_i,
+    divergence_i,
+    divergence_j,
 )
 
 
@@ -95,13 +95,9 @@ def linearised_SWE(state: State, params: Parameters) -> State:
     forming the right-hand-side needed for any time stepping scheme.
     """
     RHS_state = (
-        (zonal_pressure_gradient(state, params) + coriolis_v(state, params))  # u_t
-        + (  # v_t
-            meridional_pressure_gradient(state, params) + coriolis_u(state, params)
-        )
-        + (  # eta_t
-            zonal_divergence(state, params) + meridional_divergence(state, params)
-        )
+        (pressure_gradient_i(state, params) + coriolis_i(state, params))  # u_t
+        + (pressure_gradient_j(state, params) + coriolis_j(state, params))  # v_t
+        + (divergence_i(state, params) + divergence_j(state, params))  # eta_t
     )
     return RHS_state
 
