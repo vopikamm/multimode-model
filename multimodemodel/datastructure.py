@@ -7,6 +7,7 @@ and their associated grids.
 import numpy as np
 from dataclasses import dataclass
 from .grid import Grid
+from typing import Union
 
 
 @dataclass
@@ -29,7 +30,7 @@ class Parameters:
 class Variable:
     """Variable class consisting of the data and a Grid instance."""
 
-    data: np.ndarray
+    data: Union[np.ndarray, None]
     grid: Grid
 
     def __add__(self, other):
@@ -41,7 +42,12 @@ class Variable:
         ):
             raise ValueError("Try to add variables defined on different grids.")
         try:
-            new_data = self.data + other.data
+            if self.data is None:
+                new_data = other.data
+            elif other.data is None:
+                new_data = self.data
+            else:
+                new_data = self.data + other.data
         except (TypeError, AttributeError):
             return NotImplemented
         return self.__class__(data=new_data, grid=self.grid)
