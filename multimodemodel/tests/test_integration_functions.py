@@ -34,13 +34,15 @@ class TestRHS:
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = get_test_mask(x)
+        mask_eta = get_test_mask(x)
+        mask_v = mask_eta * np.roll(mask_eta, 1, axis=1)
+        mask_u = mask_eta * np.roll(mask_eta, 1, axis=0)
         eta = np.zeros(x.shape)
         u = np.zeros(x.shape)
-        v = mask.copy()
+        v = mask_v.copy()
 
         d_u = (
-            mask
+            mask_u
             * f
             * (
                 np.roll(np.roll(v, 1, axis=0), -1, axis=1)
@@ -50,15 +52,14 @@ class TestRHS:
             )
             / 4.0
         )
-        d_eta = -H * mask * (np.roll(v, -1, axis=1) + (-1) * v) / dy
+        d_eta = -H * mask_eta * (np.roll(v, -1, axis=1) + (-1) * v) / dy
         d_v = np.zeros_like(u)
 
         params = swe.Parameters(H=H, g=g, f=f)
-        grid = swe.Grid(x, y, mask)
         state = swe.State(
-            u=swe.Variable(u, grid),
-            v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid),
+            u=swe.Variable(u, swe.Grid(x, y, mask_u)),
+            v=swe.Variable(v, swe.Grid(x, y, mask_v)),
+            eta=swe.Variable(eta, swe.Grid(x, y, mask_eta)),
         )
 
         assert np.all(swe.linearised_SWE(state, params).u.data == d_u)

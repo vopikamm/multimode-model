@@ -24,26 +24,24 @@ def get_test_mask(x):
 class TestTerms:
     """Test RHS terms."""
 
-    def test__zonal_pressure_gradient(self):
-        """Test _zonal_pressure_gradient."""
+    def test__pressure_gradient_i(self):
+        """Test _pressure_gradient_i."""
         g = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, _ = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
+        mask_u = mask * np.roll(mask, 1, axis=0)
         eta = np.copy(x)
         dx_a = dx * np.ones(x.shape)
-        dy_a = dy * np.ones(x.shape)
 
-        assert np.all(
-            swe._zonal_pressure_gradient(
-                ni, nj, eta, mask, g, dx_a, dy_a, dy_a  # type: ignore
-            )
-            == -g * (eta * mask - np.roll(eta * mask, 1, axis=0)) / dx
-        )
+        oracle = -g * (eta * mask - np.roll(eta * mask, 1, axis=0)) / dx_a * mask_u
+        result = swe._pressure_gradient_i(ni, nj, eta, g, dx_a, mask_u)  # type: ignore
 
-    def test_zonal_pressure_gradient(self):
-        """Test zonal_pressure_gradient."""
+        assert np.all(result == oracle)
+
+    def test_pressure_gradient_i(self):
+        """Test pressure_gradient_i."""
         g = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
@@ -60,14 +58,14 @@ class TestTerms:
             eta=swe.Variable(eta, grid),
         )
 
-        inc = swe.zonal_pressure_gradient(state, params)
+        inc = swe.pressure_gradient_i(state, params)
 
         assert np.all(inc.eta.data == np.zeros(x.shape))
         assert np.all(inc.v.data == np.zeros(x.shape))
         assert np.all(inc.u.data == result)
 
-    def test_meridional_pressure_gradient(self):
-        """Test meridional_pressure_gradient."""
+    def test_pressure_gradient_j(self):
+        """Test pressure_gradient_j."""
         g = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
@@ -84,61 +82,65 @@ class TestTerms:
             eta=swe.Variable(eta, grid),
         )
 
-        inc = swe.meridional_pressure_gradient(state, params)
+        inc = swe.pressure_gradient_j(state, params)
 
         assert np.all(inc.eta.data == 0.0)
         assert np.all(inc.u.data == 0.0)
         assert np.all(inc.v.data == result)
 
-    def test_zonal_divergence(self):
-        """Test zonal_divergence."""
+    def test_divergence_i(self):
+        """Test divergence_i."""
         H = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = get_test_mask(x)
-        u = np.copy(x) * mask
-        result = -H * mask * (np.roll(u, -1, axis=0) - u) / dx
+        mask_eta = get_test_mask(x)
+        mask_u = mask_eta * np.roll(mask_eta, 1, axis=0)
+        u = np.copy(x) * mask_u
+        result = -H * (np.roll(u, -1, axis=0) - u) / dx
 
         params = swe.Parameters(H=H)
-        grid = swe.Grid(x, y, mask)
+        grid_u = swe.Grid(x, y, mask_u)
+        grid_eta = swe.Grid(x, y, mask_eta)
         state = swe.State(
-            u=swe.Variable(u, grid),
-            v=swe.Variable(np.zeros(x.shape), grid),
-            eta=swe.Variable(np.zeros(x.shape), grid),
+            u=swe.Variable(u, grid_u),
+            v=swe.Variable(np.zeros(x.shape), grid_u),
+            eta=swe.Variable(np.zeros(x.shape), grid_eta),
         )
 
-        inc = swe.zonal_divergence(state, params)
+        inc = swe.divergence_i(state, params)
 
         assert np.all(inc.u.data == 0.0)
         assert np.all(inc.v.data == 0.0)
         assert np.all(inc.eta.data == result)
 
-    def test_meridional_divergence(self):
-        """Test meridional_divergence."""
+    def test_divergence_j(self):
+        """Test divergence_j."""
         H = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = get_test_mask(x)
-        v = np.copy(y) * mask
-        result = -H * mask * (np.roll(v, -1, axis=1) - v) / dy
+        mask_eta = get_test_mask(x)
+        mask_v = mask_eta * np.roll(mask_eta, 1, axis=1)
+        v = np.copy(y) * mask_v
+        result = -H * (np.roll(v, -1, axis=1) - v) / dy
 
         params = swe.Parameters(H=H)
-        grid = swe.Grid(x, y, mask)
+        grid_v = swe.Grid(x, y, mask_v)
+        grid_eta = swe.Grid(x, y, mask_eta)
         state = swe.State(
-            u=swe.Variable(np.zeros(y.shape), grid),
-            v=swe.Variable(v, grid),
-            eta=swe.Variable(np.zeros(y.shape), grid),
+            u=swe.Variable(np.zeros(y.shape), grid_v),
+            v=swe.Variable(v, grid_v),
+            eta=swe.Variable(np.zeros(y.shape), grid_eta),
         )
 
-        inc = swe.meridional_divergence(state, params)
+        inc = swe.divergence_j(state, params)
         assert np.all(inc.u.data == 0.0)
         assert np.all(inc.v.data == 0.0)
         assert np.all(inc.eta.data == result)
 
-    def test_coriolis_u(self):
-        """Test coriolis_u."""
+    def test_coriolis_j(self):
+        """Test coriolis_j."""
         f = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
@@ -164,13 +166,13 @@ class TestTerms:
             eta=swe.Variable(np.zeros(x.shape), grid),
         )
 
-        inc = swe.coriolis_u(state, params)
+        inc = swe.coriolis_j(state, params)
         assert np.all(inc.u.data == np.zeros(x.shape))
         assert np.all(inc.eta.data == np.zeros(x.shape))
         assert np.all(inc.v.data == result)
 
-    def test_coriolis_v(self):
-        """Test coriolis_v."""
+    def test_coriolis_i(self):
+        """Test coriolis_i."""
         f = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
@@ -196,7 +198,7 @@ class TestTerms:
             eta=swe.Variable(np.zeros(y.shape), grid),
         )
 
-        inc = swe.coriolis_v(state, params)
+        inc = swe.coriolis_i(state, params)
         print(inc.u.data)
         print(result)
         assert np.all(inc.v.data == np.zeros(y.shape))

@@ -11,61 +11,41 @@ from .datastructure import State, Variable, Parameters
 
 
 @_numba_2D_grid_iterator
-def _zonal_pressure_gradient(
+def _pressure_gradient_i(
     i: int,
     j: int,
     ni: int,
     nj: int,
     eta: np.ndarray,
-    mask: np.ndarray,
     g: float,
     dx_u: np.ndarray,
-    dy_u: np.ndarray,
-    dy_eta: np.ndarray,
+    mask_u: np.ndarray,
 ) -> float:  # pragma: no cover
-    return (
-        -g
-        * (
-            mask[i, j] * dy_eta[i, j] * eta[i, j]
-            - mask[i - 1, j] * dy_eta[i - 1, j] * eta[i - 1, j]
-        )
-        / dx_u[i, j]
-        / dy_u[i, j]
-    )
+    return -g * mask_u[i, j] * (eta[i, j] - eta[i - 1, j]) / dx_u[i, j]
 
 
 @_numba_2D_grid_iterator
-def _meridional_pressure_gradient(
+def _pressure_gradient_j(
     i: int,
     j: int,
     ni: int,
     nj: int,
     eta: np.ndarray,
-    mask: np.ndarray,
     g: float,
-    dx_v: np.ndarray,
     dy_v: np.ndarray,
-    dx_eta: np.ndarray,
+    mask_v: np.ndarray,
 ) -> float:  # pragma: no cover
-    return (
-        -g
-        * (
-            mask[i, j] * dx_eta[i, j] * eta[i, j]
-            - mask[i, j - 1] * dx_eta[i, j - 1] * eta[i, j - 1]
-        )
-        / dx_v[i, j]
-        / dy_v[i, j]
-    )
+    return -g * mask_v[i, j] * (eta[i, j] - eta[i, j - 1]) / dy_v[i, j]
 
 
 @_numba_2D_grid_iterator
-def _zonal_divergence(
+def _divergence_i(
     i: int,
     j: int,
     ni: int,
     nj: int,
     u: np.ndarray,
-    mask: np.ndarray,
+    mask_u: np.ndarray,
     H: float,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
@@ -74,20 +54,23 @@ def _zonal_divergence(
     ip1 = (i + 1) % ni
     return (
         -H
-        * (mask[ip1, j] * dy_u[ip1, j] * u[ip1, j] - mask[i, j] * dy_u[i, j] * u[i, j])
+        * (
+            mask_u[ip1, j] * dy_u[ip1, j] * u[ip1, j]
+            - mask_u[i, j] * dy_u[i, j] * u[i, j]
+        )
         / dx_eta[i, j]
         / dy_eta[i, j]
     )
 
 
 @_numba_2D_grid_iterator
-def _meridional_divergence(
+def _divergence_j(
     i: int,
     j: int,
     ni: int,
     nj: int,
     v: np.ndarray,
-    mask: np.ndarray,
+    mask_v: np.ndarray,
     H: float,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
@@ -96,41 +79,58 @@ def _meridional_divergence(
     jp1 = (j + 1) % nj
     return (
         -H
-        * (mask[i, jp1] * dx_v[i, jp1] * v[i, jp1] - mask[i, j] * dx_v[i, j] * v[i, j])
+        * (
+            mask_v[i, jp1] * dx_v[i, jp1] * v[i, jp1]
+            - mask_v[i, j] * dx_v[i, j] * v[i, j]
+        )
         / dx_eta[i, j]
         / dy_eta[i, j]
     )
 
 
 @_numba_2D_grid_iterator
-def _coriolis_u(
-    i: int, j: int, ni: int, nj: int, u: np.ndarray, mask: np.ndarray, f: float
+def _coriolis_j(
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    u: np.ndarray,
+    mask_u: np.ndarray,
+    mask_v: np.ndarray,
+    f: float,
 ) -> float:  # pragma: no cover
     ip1 = (i + 1) % ni
-    return (
+    return mask_v[i, j] * (
         -f
         * (
-            mask[i, j - 1] * u[i, j - 1]
-            + mask[i, j] * u[i, j]
-            + mask[ip1, j] * u[ip1, j]
-            + mask[ip1, j - 1] * u[ip1, j - 1]
+            mask_u[i, j - 1] * u[i, j - 1]
+            + mask_u[i, j] * u[i, j]
+            + mask_u[ip1, j] * u[ip1, j]
+            + mask_u[ip1, j - 1] * u[ip1, j - 1]
         )
         / 4.0
     )
 
 
 @_numba_2D_grid_iterator
-def _coriolis_v(
-    i: int, j: int, ni: int, nj: int, v: np.ndarray, mask: np.ndarray, f: float
+def _coriolis_i(
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    v: np.ndarray,
+    mask_v: np.ndarray,
+    mask_u: np.ndarray,
+    f: float,
 ) -> float:  # pragma: no cover
     jp1 = (j + 1) % nj
-    return (
+    return mask_u[i, j] * (
         f
         * (
-            mask[i - 1, j] * v[i - 1, j]
-            + mask[i, j] * v[i, j]
-            + mask[i, jp1] * v[i, jp1]
-            + mask[i - 1, jp1] * v[i - 1, jp1]
+            mask_v[i - 1, j] * v[i - 1, j]
+            + mask_v[i, j] * v[i, j]
+            + mask_v[i, jp1] * v[i, jp1]
+            + mask_v[i - 1, jp1] * v[i - 1, jp1]
         )
         / 4.0
     )
@@ -142,53 +142,49 @@ function output to dataclasses. Periodic boundary conditions are applied.
 """
 
 
-def zonal_pressure_gradient(state: State, params: Parameters) -> State:
-    """Compute the zonal pressure gradient.
+def pressure_gradient_i(state: State, params: Parameters) -> State:
+    """Compute the pressure gradient along the first dimension.
 
     Using centered differences in space.
     """
-    result = _zonal_pressure_gradient(
+    result = _pressure_gradient_i(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
         state.eta.data,  # type: ignore
-        state.eta.grid.mask,  # type: ignore
         params.g,  # type: ignore
         state.u.grid.dx,  # type: ignore
-        state.u.grid.dy,  # type: ignore
-        state.eta.grid.dy,  # type: ignore
+        state.u.grid.mask,  # type: ignore
     )
     return State(
-        u=Variable(state.u.grid.mask * result, state.u.grid),
+        u=Variable(result, state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
         eta=Variable(np.zeros_like(state.eta.data), state.eta.grid),
     )
 
 
-def meridional_pressure_gradient(state: State, params: Parameters) -> State:
-    """Compute the meridional pressure gradient.
+def pressure_gradient_j(state: State, params: Parameters) -> State:
+    """Compute the second component of the pressure gradient.
 
     Using centered differences in space.
     """
-    result = _meridional_pressure_gradient(
+    result = _pressure_gradient_j(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
         state.eta.data,  # type: ignore
-        state.eta.grid.mask,  # type: ignore
         params.g,  # type: ignore
-        state.v.grid.dx,  # type: ignore
         state.v.grid.dy,  # type: ignore
-        state.eta.grid.dx,  # type: ignore
+        state.v.grid.mask,  # type: ignore
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
-        v=Variable(state.u.grid.mask * result, state.v.grid),
+        v=Variable(result, state.v.grid),
         eta=Variable(np.zeros_like(state.eta.data), state.eta.grid),
     )
 
 
-def zonal_divergence(state: State, params: Parameters) -> State:
-    """Compute the zonal divergence with centered differences in space."""
-    result = _zonal_divergence(
+def divergence_i(state: State, params: Parameters) -> State:
+    """Compute first component of the divergence with centered differences in space."""
+    result = _divergence_i(
         state.u.grid.len_x,
         state.u.grid.len_y,
         state.u.data,  # type: ignore
@@ -201,13 +197,13 @@ def zonal_divergence(state: State, params: Parameters) -> State:
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(state.eta.grid.mask * result, state.eta.grid),
+        eta=Variable(result, state.eta.grid),
     )
 
 
-def meridional_divergence(state: State, params: Parameters) -> State:
-    """Compute the meridional divergence with centered differences in space."""
-    result = _meridional_divergence(
+def divergence_j(state: State, params: Parameters) -> State:
+    """Compute second component of divergence with centered differences in space."""
+    result = _divergence_j(
         state.v.grid.len_x,
         state.v.grid.len_y,
         state.v.data,  # type: ignore
@@ -220,43 +216,45 @@ def meridional_divergence(state: State, params: Parameters) -> State:
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
-        eta=Variable(state.eta.grid.mask * result, state.eta.grid),
+        eta=Variable(result, state.eta.grid),
     )
 
 
-def coriolis_u(state: State, params: Parameters) -> State:
-    """Compute meridional acceleration due to Coriolis force.
+def coriolis_j(state: State, params: Parameters) -> State:
+    """Compute acceleration due to Coriolis force along second dimension.
 
     An arithmetic four point average of u onto the v-grid is performed.
     """
-    result = _coriolis_u(
+    result = _coriolis_j(
         state.u.grid.len_x,
         state.u.grid.len_y,
         state.u.data,  # type: ignore
         state.u.grid.mask,  # type: ignore
+        state.v.grid.mask,  # type: ignore
         params.f,  # type: ignore
     )
     return State(
         u=Variable(np.zeros_like(state.u.data), state.u.grid),
-        v=Variable(state.v.grid.mask * result, state.v.grid),
+        v=Variable(result, state.v.grid),
         eta=Variable(np.zeros_like(state.v.data), state.eta.grid),
     )
 
 
-def coriolis_v(state: State, params: Parameters) -> State:
-    """Compute the zonal acceleration due to the Coriolis force.
+def coriolis_i(state: State, params: Parameters) -> State:
+    """Compute the acceleration due to the Coriolis force along the first dimension.
 
     An arithmetic four point average of v onto the u-grid is performed.
     """
-    result = _coriolis_v(
+    result = _coriolis_i(
         state.v.grid.len_x,
         state.v.grid.len_y,
         state.v.data,  # type: ignore
         state.v.grid.mask,  # type: ignore
+        state.u.grid.mask,  # type: ignore
         params.f,  # type: ignore
     )
     return State(
-        u=Variable(state.u.grid.mask * result, state.u.grid),
+        u=Variable(result, state.u.grid),
         v=Variable(np.zeros_like(state.v.data), state.v.grid),
         eta=Variable(np.zeros_like(state.v.data), state.eta.grid),
     )
