@@ -6,5 +6,6 @@ numpy
 pip
 pre-commit
 pytest
+pytest-benchmark
 pytest-cov
 python >= 3.7.0
