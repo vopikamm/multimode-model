@@ -4,3 +4,5 @@ cov.xml
 coverage.xml
 .coverage
 multimodemodel.egg-info
+.benchmarks
+.DS_store
