@@ -1,7 +1,8 @@
 """Just-in-time compiler logic."""
 from numba import njit
 from inspect import signature
-from typing import Tuple, Any
+from typing import Tuple, Any, Callable
+from functools import wraps
 import numpy as np
 
 
@@ -47,12 +48,32 @@ _arg_expand_map = {
 }
 
 
-def _numba_2D_grid_iterator(func):
+@njit(inline="always")  # type: ignore
+def _cyclic_shift(i: int, ni: int, shift: int = 1) -> int:  # pragma: no cover
+    """Shift index and wrap it around if necessary.
+
+    Note that negative indices are wrapped automatically.
+    """
+    if i + shift < ni:
+        return i + shift
+    else:
+        return shift - 1
+
+
+def _numba_2D_grid_iterator(func: Callable[..., float]):
+    """Evaluate func at every gridpoint of a horizontal domain slice.
+
+    func must take the indices of the grid point and the grid sice as
+    first arguments, e.g. func(i, j, ni, nj, other_args).
+    """
     jitted_func = njit(inline="always")(func)  # type: ignore
     exp_args = _arg_expand_map[len(signature(func).parameters)]
 
+    @wraps(func)
     @njit
-    def _interate_over_grid_2D(ni: int, nj: int, *args: Tuple[Any]):  # pragma: no cover
+    def _interate_over_grid_2D(
+        ni: int, nj: int, *args: Tuple[Any]
+    ) -> np.ndarray:  # pragma: no cover
         result = np.empty((ni, nj))
         for i in range(ni):
             for j in range(nj):

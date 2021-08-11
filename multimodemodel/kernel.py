@@ -6,7 +6,7 @@ computationally costly operations.
 """
 
 import numpy as np
-from .jit import _numba_2D_grid_iterator
+from .jit import _numba_2D_grid_iterator, _cyclic_shift
 from .datastructure import State, Variable, Parameters
 
 
@@ -21,6 +21,7 @@ def _pressure_gradient_i(
     dx_u: np.ndarray,
     mask_u: np.ndarray,
 ) -> float:  # pragma: no cover
+    """Compute the pressure gradient along the first dimension."""
     return -g * mask_u[i, j] * (eta[i, j] - eta[i - 1, j]) / dx_u[i, j]
 
 
@@ -35,6 +36,7 @@ def _pressure_gradient_j(
     dy_v: np.ndarray,
     mask_v: np.ndarray,
 ) -> float:  # pragma: no cover
+    """Compute the pressure gradient along the second dimension."""
     return -g * mask_v[i, j] * (eta[i, j] - eta[i, j - 1]) / dy_v[i, j]
 
 
@@ -51,7 +53,8 @@ def _divergence_i(
     dy_eta: np.ndarray,
     dy_u: np.ndarray,
 ) -> float:  # pragma: no cover
-    ip1 = (i + 1) % ni
+    """Compute the divergence of the flow along the first dimension."""
+    ip1 = _cyclic_shift(i, ni)
     return (
         -H
         * (
@@ -76,7 +79,8 @@ def _divergence_j(
     dy_eta: np.ndarray,
     dx_v: np.ndarray,
 ) -> float:  # pragma: no cover
-    jp1 = (j + 1) % nj
+    """Compute the divergence of the flow along the second dimension."""
+    jp1 = _cyclic_shift(j, nj)
     return (
         -H
         * (
@@ -99,7 +103,8 @@ def _coriolis_j(
     mask_v: np.ndarray,
     f: float,
 ) -> float:  # pragma: no cover
-    ip1 = (i + 1) % ni
+    """Compute the coriolis term along the second dimension."""
+    ip1 = _cyclic_shift(i, ni)
     return mask_v[i, j] * (
         -f
         * (
@@ -123,7 +128,8 @@ def _coriolis_i(
     mask_u: np.ndarray,
     f: float,
 ) -> float:  # pragma: no cover
-    jp1 = (j + 1) % nj
+    """Compute the coriolis term along the first dimension."""
+    jp1 = _cyclic_shift(j, nj, 1)
     return mask_u[i, j] * (
         f
         * (
@@ -138,7 +144,7 @@ def _coriolis_i(
 
 """
 Non jit-able functions. First level funcions connecting the jit-able
-function output to dataclasses. Periodic boundary conditions are applied.
+function output to dataclasses.
 """
 
 
@@ -183,7 +189,7 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
 
 
 def divergence_i(state: State, params: Parameters) -> State:
-    """Compute first component of the divergence with centered differences in space."""
+    """Compute divergence of flow along first dimension with centered differences."""
     result = _divergence_i(
         state.u.grid.len_x,
         state.u.grid.len_y,
@@ -202,7 +208,7 @@ def divergence_i(state: State, params: Parameters) -> State:
 
 
 def divergence_j(state: State, params: Parameters) -> State:
-    """Compute second component of divergence with centered differences in space."""
+    """Compute divergence of flow along second dimension with centered differences."""
     result = _divergence_j(
         state.v.grid.len_x,
         state.v.grid.len_y,
