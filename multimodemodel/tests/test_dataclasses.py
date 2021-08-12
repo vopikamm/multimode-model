@@ -80,6 +80,7 @@ class TestGrid:
         g = Grid(x, y)
         mask = get_test_mask(g.y.shape)
         assert np.all(g.mask == mask)
+        assert g.mask.dtype == np.int8  # type: ignore
 
     def test_grid_raises_on_mask_missmatch(self):
         """Test exception raises on mask shape missmatch."""
