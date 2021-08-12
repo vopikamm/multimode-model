@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
 
-from .jit import _numba_2D_grid_iterator
+from .jit import _numba_2D_grid_iterator_i8
 
 
 @unique
@@ -189,7 +189,7 @@ class Grid:
 
     @staticmethod
     def _get_default_mask(shape: npt._Shape):
-        mask = np.ones(shape, dtype=int)
+        mask = np.ones(shape, dtype=np.int8)
         mask[0, :] = 0
         mask[-1, :] = 0
         mask[:, 0] = 0
@@ -252,21 +252,21 @@ class StaggeredGrid:
         u_grid = Grid(
             u_x,
             u_y,
-            cls._u_mask_from_eta(*mask_args).astype(int),
+            cls._u_mask_from_eta(*mask_args),
             dim_x=eta_grid.dim_x,
             dim_y=eta_grid.dim_y,
         )
         v_grid = Grid(
             v_x,
             v_y,
-            cls._v_mask_from_eta(*mask_args).astype(int),
+            cls._v_mask_from_eta(*mask_args),
             dim_x=eta_grid.dim_x,
             dim_y=eta_grid.dim_y,
         )
         q_grid = Grid(
             q_x,
             q_y,
-            cls._q_mask_from_eta(*mask_args).astype(int),
+            cls._q_mask_from_eta(*mask_args),
             dim_x=eta_grid.dim_x,
             dim_y=eta_grid.dim_y,
         )
@@ -292,15 +292,13 @@ class StaggeredGrid:
         u_kwargs = kwargs.copy()
         u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
-        u_grid.mask = (
-            cls._u_mask_from_eta(  # type: ignore
-                u_grid.len_x,
-                u_grid.len_y,
-                eta_grid.mask,
-                shift.value[0],
-                shift.value[1],
-            )
-        ).astype(int)
+        u_grid.mask = cls._u_mask_from_eta(  # type: ignore
+            u_grid.len_x,
+            u_grid.len_y,
+            eta_grid.mask,
+            shift.value[0],
+            shift.value[1],
+        )
 
         v_y_start, v_y_end = (
             eta_grid.y.min() + shift.value[1] * dy.min() / 2,
@@ -309,15 +307,13 @@ class StaggeredGrid:
         v_kwargs = kwargs.copy()
         v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
         v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
-        v_grid.mask = (
-            cls._v_mask_from_eta(  # type: ignore
-                u_grid.len_x,
-                u_grid.len_y,
-                eta_grid.mask,
-                shift.value[0],
-                shift.value[1],
-            )
-        ).astype(int)
+        v_grid.mask = cls._v_mask_from_eta(  # type: ignore
+            u_grid.len_x,
+            u_grid.len_y,
+            eta_grid.mask,
+            shift.value[0],
+            shift.value[1],
+        )
 
         q_kwargs = kwargs.copy()
         q_kwargs.update(
@@ -329,20 +325,18 @@ class StaggeredGrid:
             )
         )
         q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
-        q_grid.mask = (
-            cls._q_mask_from_eta(  # type: ignore
-                u_grid.len_x,
-                u_grid.len_y,
-                eta_grid.mask,
-                shift.value[0],
-                shift.value[1],
-            )
-        ).astype(int)
+        q_grid.mask = cls._q_mask_from_eta(  # type: ignore
+            u_grid.len_x,
+            u_grid.len_y,
+            eta_grid.mask,
+            shift.value[0],
+            shift.value[1],
+        )
 
         return cls(eta_grid, u_grid, v_grid, q_grid)
 
     @staticmethod
-    @_numba_2D_grid_iterator
+    @_numba_2D_grid_iterator_i8
     def _u_mask_from_eta(
         i: int,
         j: int,
@@ -359,7 +353,7 @@ class StaggeredGrid:
             return 0
 
     @staticmethod
-    @_numba_2D_grid_iterator
+    @_numba_2D_grid_iterator_i8
     def _v_mask_from_eta(
         i: int,
         j: int,
@@ -376,7 +370,7 @@ class StaggeredGrid:
             return 0
 
     @staticmethod
-    @_numba_2D_grid_iterator
+    @_numba_2D_grid_iterator_i8
     def _q_mask_from_eta(
         i: int,
         j: int,
