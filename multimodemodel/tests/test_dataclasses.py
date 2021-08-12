@@ -11,8 +11,15 @@ from multimodemodel import (
     GridShift,
 )
 
+grid_order = {
+    GridShift.LL: "qveu",
+    GridShift.LR: "vque",
+    GridShift.UL: "uevq",
+    GridShift.UR: "euqv",
+}
 
-def get_x_y(nx, ny, dx, dy):
+
+def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0):
     """Return 2D coordinate arrays."""
     return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
 
@@ -67,6 +74,20 @@ class TestGrid:
         assert g1.len_x == nx
         assert g1.len_y == ny
 
+    def test_grid_default_mask(self):
+        """Test default grid setting."""
+        x, y = get_x_y()
+        g = Grid(x, y)
+        mask = get_test_mask(g.y.shape)
+        assert np.all(g.mask == mask)
+
+    def test_grid_raises_on_mask_missmatch(self):
+        """Test exception raises on mask shape missmatch."""
+        x, y = get_x_y()
+        mask = get_test_mask(y.shape)
+        with pytest.raises(ValueError, match="Mask shape not matching grid shape"):
+            _ = Grid(x, y, mask=mask[:, ::2])
+
     def test_dim_def(self):
         """Test dimension definition."""
         nx, ny = 10, 5
@@ -83,6 +104,18 @@ class TestGrid:
         assert g2.y.shape == (ny, nx)
         assert g2.dx.shape == (ny, nx)
         assert g2.dy.shape == (ny, nx)
+
+    def test_cartesian_grid(self):
+        """Test construction of cartesian grid."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x, y)
+        assert g.x.shape == g.y.shape == (nx, ny)
+        assert np.all(np.diff(g.x, 1, g.dim_x) == dx)
 
     def test_regular_lat_lon(self):
         """Test lat_lon grid generating classmethod.
@@ -114,7 +147,7 @@ class TestStaggeredGrid:
     def get_regular_staggered_grids(
         self, xs=0.0, xe=10.0, ys=0.0, ye=5.0, nx=11, ny=11
     ):
-        """Set up test grids."""
+        """Set up spherical test grids."""
         dx = (xe - xs) / (nx - 1)
         dy = (ye - ys) / (ny - 1)
         ll_grid = Grid.regular_lat_lon(xs, xe, ys, ye, nx, ny)
@@ -125,19 +158,59 @@ class TestStaggeredGrid:
         ul_grid = Grid.regular_lat_lon(xs, xe, ys + dy / 2, ye + dy / 2, nx, ny)
         return ll_grid, lr_grid, ur_grid, ul_grid
 
+    def get_cartesian_staggered_grids(self, x, y, dx, dy):
+        """Set up cartesian test grids."""
+        ll_grid = Grid.cartesian(x, y)
+        lr_grid = Grid.cartesian(x + dx / 2, y)
+        ul_grid = Grid.cartesian(x, y + dy / 2)
+        ur_grid = Grid.cartesian(x + dx / 2, y + dy / 2)
+        return ll_grid, lr_grid, ur_grid, ul_grid
+
     @pytest.mark.parametrize(
-        "shift,order",
+        "shift",
         [
-            (GridShift.LL, "qveu"),
-            (GridShift.LR, "vque"),
-            (GridShift.UL, "uevq"),
-            (GridShift.UR, "euqv"),
+            GridShift.LL,
+            GridShift.LR,
+            GridShift.UL,
+            GridShift.UR,
         ],
     )
-    def test_regular_c_grid(self, shift, order):
-        """Test staggering to Arakawa c-grid."""
+    def test_cartesian_c_grid(self, shift):
+        """Test staggering of cartesian grid to Arakawa c-grid."""
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        grids = self.get_cartesian_staggered_grids(x, y, dx, dy)
+        q_grid, u_grid, v_grid, eta_grid = [
+            grids[grid_order[shift].index(i)] for i in "quve"
+        ]
+        staggered_grid = StaggeredGrid.cartesian_c_grid(
+            eta_grid.x[:, 0], eta_grid.y[0, :], shift=shift
+        )
+        assert np.all(staggered_grid.q.x == q_grid.x)
+        assert np.all(staggered_grid.q.y == q_grid.y)
+        assert np.all(staggered_grid.u.x == u_grid.x)
+        assert np.all(staggered_grid.u.y == u_grid.y)
+        assert np.all(staggered_grid.v.x == v_grid.x)
+        assert np.all(staggered_grid.v.y == v_grid.y)
+        assert np.all(staggered_grid.eta.x == eta_grid.x)
+        assert np.all(staggered_grid.eta.y == eta_grid.y)
+
+    @pytest.mark.parametrize(
+        "shift",
+        [
+            GridShift.LL,
+            GridShift.LR,
+            GridShift.UL,
+            GridShift.UR,
+        ],
+    )
+    def test_regular_c_grid(self, shift):
+        """Test staggering of regular lon/lat grid to Arakawa c-grid."""
         grids = self.get_regular_staggered_grids()
-        q_grid, u_grid, v_grid, eta_grid = [grids[order.index(i)] for i in "quve"]
+        q_grid, u_grid, v_grid, eta_grid = [
+            grids[grid_order[shift].index(i)] for i in "quve"
+        ]
 
         staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
             shift=shift,
@@ -159,19 +232,19 @@ class TestStaggeredGrid:
         assert np.all(staggered_grid.eta.y == eta_grid.y)
 
     @pytest.mark.parametrize(
-        "shift,order",
+        "shift",
         [
-            (GridShift.LL, "qveu"),
-            (GridShift.LR, "vque"),
-            (GridShift.UL, "uevq"),
-            (GridShift.UR, "euqv"),
+            GridShift.LL,
+            GridShift.LR,
+            GridShift.UL,
+            GridShift.UR,
         ],
     )
-    def test_mask(self, shift, order):
+    def test_mask(self, shift):
         """Test derivation of land/ocean mask."""
         grids = self.get_regular_staggered_grids()
-        q_grid, u_grid, v_grid, eta_grid = [grids[order.index(i)] for i in "quve"]
-        mask = get_test_mask(q_grid.x.shape)
+        eta_grid, _, _, _ = [grids[grid_order[shift].index(i)] for i in "equv"]
+        mask = get_test_mask(eta_grid.x.shape)
 
         u_mask = (
             (mask == 1)
