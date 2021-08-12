@@ -1,8 +1,9 @@
 """Logic related to creation of grids."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any, Dict, Union
 import numpy as np
+import numpy.typing as npt
 from enum import Enum, unique
 
 from .jit import _numba_2D_grid_iterator
@@ -26,11 +27,37 @@ class GridShift(Enum):
 
 @dataclass
 class Grid:
-    """Grid informtation."""
+    """Grid information.
 
-    x: np.ndarray  # longitude on grid
-    y: np.ndarray  # latitude on grid
-    mask: np.ndarray  # ocean mask, 1 where ocean is, 0 where land is
+    A Grid object holds all information about coordinates of the grid points
+    and grid spacing, i.e. size of the grid box faces. For convenience there
+    are following class methods:
+
+    Classmethods
+    ------------
+    cartesian: creates a Cartesian grid, potentially with unequal spacing.
+    regular_lon_lat: create a regular spherical grid.
+
+    Arguments
+    ---------
+    (of the __init__ method)
+
+    x: np.ndarray
+      2D np.ndarray of x-coordinates on grid
+    y: np.ndarray
+      2D np.ndarray of y-coordinates on grid
+    mask: np.ndarray = None
+      optional. Ocean mask, 1 where ocean is, 0 where land is.
+      Default is a closed basin
+    dim_x: int = 0  # axis of x dimension in numpy array
+    dim_y: int = 1  # axis of y dimension in numpy array
+    """
+
+    x: np.ndarray  # 2D np.ndarray of x-coordinates on grid
+    y: np.ndarray  # 2D np.ndarray of y-coordinates on grid
+    mask: Union[
+        np.ndarray, None
+    ] = None  # ocean mask, 1 where ocean is, 0 where land is
     dim_x: int = 0  # x dimension in numpy array
     dim_y: int = 1  # y dimension in numpy array
     dx: np.ndarray = field(init=False)  # grid spacing in x
@@ -53,6 +80,42 @@ class Grid:
         return dx, dy
 
     @classmethod
+    def cartesian(
+        cls: Any,
+        x: np.ndarray,  # longitude on grid
+        y: np.ndarray,  # latitude on grid
+        mask: Union[
+            np.ndarray, None
+        ] = None,  # ocean mask, 1 where ocean is, 0 where land is
+        dim_x: int = 0,  # x dimension in numpy array
+    ):
+        """Generate a Cartesian grid.
+
+        Arguments
+        ---------
+        x: np.ndarray
+          1D Array of coordinates along x-dimension.
+        y: np.ndarray
+          1D Array of coordinates along y_dimension.
+        mask: np.ndarray | None
+          Optional ocean mask. Default is a closed domain.
+        dim_x: int = 0
+          Optional. Axis of the x-dimension.
+        """
+        indexing = ["ij", "xy"]
+        x_2D, y_2D = np.meshgrid(x, y, indexing=indexing[dim_x])
+
+        grid = cls(
+            x=x_2D,
+            y=y_2D,
+            mask=mask,
+            dim_x=dim_x,
+            dim_y=dim_x - 1,
+        )
+
+        return grid
+
+    @classmethod
     def regular_lat_lon(
         cls: Any,
         lon_start: float,
@@ -61,42 +124,77 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
-        mask: np.ndarray = None,
+        mask: Union[np.ndarray, None] = None,
         dim_x: int = 0,
-        r_earth: float = 6_371_000.0,
+        radius: float = 6_371_000.0,
     ):
-        """Generate a regular lat/lon grid."""
-        indexing = ["ij", "xy"]
+        """Generate a regular spherical grid.
+
+        Arguments
+        ---------
+        lon_start: float
+          Smallest longitude in degrees
+        lon_end: float
+          larges longitude in degrees
+        lat_start: float
+          Smallest latitude in degrees
+        lat_end: float
+          larges latitude in degrees
+        nx: int
+          Number of grid points along x dimension.
+        ny: int
+          Number of grid points along y dimension.
+        mask: np.ndarray | None
+          Optional ocean mask. Default is a closed domain.
+        dim_x: int = 0
+          Optional. Axis of the x-dimension.
+        radius: float = 6_371_000.0
+          Radius of the sphere, defaults to Earths' radius measured in meters.
+        """
         to_rad = np.pi / 180.0
         lon = np.linspace(lon_start, lon_end, nx)
         lat = np.linspace(lat_start, lat_end, ny)
-        longitude, latitude = np.meshgrid(lon, lat, indexing=indexing[dim_x])
 
-        if mask is None:
-            mask = np.ones(longitude.shape)
-            mask[0, :] = 0.0
-            mask[-1, :] = 0.0
-            mask[:, 0] = 0.0
-            mask[:, -1] = 0.0
-
-        grid = cls(
-            x=longitude,
-            y=latitude,
+        grid = cls.cartesian(
+            x=lon,
+            y=lat,
             mask=mask,
             dim_x=dim_x,
-            dim_y=1 - dim_x,
         )
 
-        grid.dx = r_earth * np.cos(grid.y * to_rad) * grid.dx * to_rad
-        grid.dy = r_earth * grid.dy * to_rad
+        # reset to have a dimension of length
+        grid.dx = radius * np.cos(grid.y * to_rad) * grid.dx * to_rad
+        grid.dy = radius * grid.dy * to_rad
 
         return grid
 
     def __post_init__(self) -> None:
-        """Set derived attributes of the grid."""
+        """Set derived attributes of the grid and validate."""
         self.dx, self.dy = self._compute_grid_spacing()
         self.len_x = self.x.shape[self.dim_x]
         self.len_y = self.x.shape[self.dim_y]
+
+        if self.mask is None:
+            self.mask = self._get_default_mask(self.x.shape)
+
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate Attributes of Grid class after init."""
+        if self.mask is not None and self.mask.shape != self.x.shape:
+            raise ValueError(
+                f"Mask shape not matching grid shape. "
+                f"Got {self.mask.shape} and {self.x.shape}."
+            )
+
+    @staticmethod
+    def _get_default_mask(shape: npt._Shape):
+        mask = np.ones(shape, dtype=int)
+        mask[0, :] = 0
+        mask[-1, :] = 0
+        mask[:, 0] = 0
+        mask[:, -1] = 0
+        return mask
 
 
 @dataclass
@@ -110,6 +208,69 @@ class StaggeredGrid:
     u: Grid
     v: Grid
     q: Grid
+
+    @classmethod
+    def cartesian_c_grid(
+        cls: Any,
+        x: np.ndarray,  # longitude on grid
+        y: np.ndarray,  # latitude on grid
+        mask: Union[
+            np.ndarray, None
+        ] = None,  # ocean mask, 1 where ocean is, 0 where land is
+        dim_x: int = 0,  # x dimension in numpy array
+        shift: GridShift = GridShift.LL,
+    ):
+        """Generate a Cartesian Arakawa C-Grid.
+
+        Arguments
+        ---------
+        x: np.ndarray
+          1D Array of coordinates along x-dimension.
+        y: np.ndarray
+          1D Array of coordinates along y_dimension.
+        mask: np.ndarray | None
+          Optional ocean mask. Default is a closed domain.
+        dim_x: int = 0
+          Optional. Axis of the x-dimension.
+        shift: GridShift = GridShift.LL
+          Direction of shift of staggered grids with respect to the eta-grid.
+          See `GridShift` for more details.
+        """
+        eta_grid = Grid.cartesian(x, y, mask, dim_x)
+
+        mask_args = (
+            eta_grid.len_x,
+            eta_grid.len_y,
+            eta_grid.mask,
+            shift.value[0],
+            shift.value[1],
+        )
+
+        u_x, u_y = (eta_grid.x + shift.value[0] * eta_grid.dx / 2, eta_grid.y)
+        v_x, v_y = (eta_grid.x, eta_grid.y + shift.value[1] * eta_grid.dy / 2)
+        q_x, q_y = (u_x, v_y)
+        u_grid = Grid(
+            u_x,
+            u_y,
+            cls._u_mask_from_eta(*mask_args).astype(int),
+            dim_x=eta_grid.dim_x,
+            dim_y=eta_grid.dim_y,
+        )
+        v_grid = Grid(
+            v_x,
+            v_y,
+            cls._v_mask_from_eta(*mask_args).astype(int),
+            dim_x=eta_grid.dim_x,
+            dim_y=eta_grid.dim_y,
+        )
+        q_grid = Grid(
+            q_x,
+            q_y,
+            cls._q_mask_from_eta(*mask_args).astype(int),
+            dim_x=eta_grid.dim_x,
+            dim_y=eta_grid.dim_y,
+        )
+        return StaggeredGrid(eta_grid, u_grid, v_grid, q_grid)
 
     @classmethod
     def regular_lat_lon_c_grid(
@@ -158,8 +319,15 @@ class StaggeredGrid:
             )
         ).astype(int)
 
-        q_kwargs = v_kwargs.copy()
-        q_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
+        q_kwargs = kwargs.copy()
+        q_kwargs.update(
+            dict(
+                lon_start=u_x_start,
+                lon_end=u_x_end,
+                lat_start=v_y_start,
+                lat_end=v_y_end,
+            )
+        )
         q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
         q_grid.mask = (
             cls._q_mask_from_eta(  # type: ignore
