@@ -231,7 +231,7 @@ class TestIntegration:
         assert np.all(d_state.eta.data == d_eta)
 
     def test_integrator(self):
-        """Test integrator."""
+        """Test integrate."""
         H, g, f = 1, 1, 1
         t_0, t_end, dt = 0, 1, 1
         dx, dy = 1, 2
@@ -254,15 +254,16 @@ class TestIntegration:
             v=swe.Variable(v_0, grid),
             eta=swe.Variable(eta_0, grid),
         )
-        state_1 = swe.integrator(
+        for state_1 in swe.integrate(
             state_0, params, scheme=swe.euler_forward, RHS=swe.linearised_SWE
-        )
+        ):
+            pass
         assert np.all(state_1.u.data == u_1)
         assert np.all(state_1.v.data == v_1)
         assert np.all(state_1.eta.data == eta_1)
 
     def test_integrator_raises_on_unknown_scheme(self):
-        """Test integrator raises on unknown scheme."""
+        """Test integrate raises on unknown scheme."""
         H, g, f = 1, 1, 1
         t_0, t_end, dt = 0, 1, 1
         dx, dy = 1, 2
@@ -283,6 +284,7 @@ class TestIntegration:
         )
 
         with pytest.raises(ValueError, match="Unsupported scheme"):
-            _ = swe.integrator(
+            for _ in swe.integrate(
                 state_0, params, scheme=(lambda x: state_0), RHS=swe.linearised_SWE
-            )
+            ):
+                pass

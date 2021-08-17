@@ -16,8 +16,8 @@ from .grid import (
     GridShift,
 )
 
-from .integrator import (
-    integrator,
+from .integrate import (
+    integrate,
     linearised_SWE,
     euler_forward,
     adams_bashforth2,
