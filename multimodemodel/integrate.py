@@ -1,6 +1,6 @@
 """Time integration schemes.
 
-To be used optional in integrator function.
+To be used optional in integrate function.
 """
 
 from collections import deque
@@ -102,12 +102,12 @@ def linearised_SWE(state: State, params: Parameters) -> State:
     return RHS_state
 
 
-def integrator(
+def integrate(
     state_0: State,
     params: Parameters,
     scheme: Callable[..., State] = adams_bashforth3,
     RHS: Callable[..., State] = linearised_SWE,
-) -> State:
+):
     """Integrate a system of differential equations.
 
     Only the last time step is returned.
@@ -121,12 +121,11 @@ def integrator(
     else:
         raise ValueError("Unsupported scheme provided.")
 
-    N = round((params.t_end - params.t_0) / params.dt)
+    N = int((params.t_end - params.t_0) // params.dt)
     state = deque([state_0], maxlen=1)
     rhs = deque([], maxlen=level)
 
     for _ in range(N):
         rhs.append(RHS(state[-1], params))
         state.append(state[-1] + scheme(rhs, params))
-
-    return state[-1]
+        yield state[-1]
