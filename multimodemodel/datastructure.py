@@ -9,6 +9,13 @@ from dataclasses import dataclass
 from .grid import Grid
 from typing import Union
 
+try:
+    import xarray as xarray
+
+    has_xarray = True
+except ModuleNotFoundError:  # pragma: no cover
+    has_xarray = False
+
 
 @dataclass
 class Parameters:
@@ -32,6 +39,36 @@ class Variable:
 
     data: Union[np.ndarray, None]
     grid: Grid
+
+    @property
+    def as_dataarray(self):
+        """Return variable as xarray.DataArray.
+
+        The DataArray object contains a copy of (not a reference to) the data of
+        the variable. The coordinates are multidimensional arrays to support
+        curvilinear grids and copied from the grids `x` and `y` attribute. Grid
+        points for which the mask of the grid equals to 0 are converted to NaNs.
+        """
+        if not has_xarray:
+            raise ModuleNotFoundError(  # pragma: no cover
+                "Cannot convert variable to xarray.DataArray. Xarray is not available."
+            )
+        if self.data is None:
+            data = np.zeros(self.grid.x.shape)
+        else:
+            # copy to prevent side effects on self.data
+            data = self.data.copy()
+
+        data[self.grid.mask == 0] = np.nan
+
+        return xarray.DataArray(
+            data=data,
+            coords={
+                "x": (("i", "j"), self.grid.x),
+                "y": (("i", "j"), self.grid.y),
+            },
+            dims=("i", "j"),
+        )
 
     def __add__(self, other):
         """Add data of to variables."""

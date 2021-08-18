@@ -1,4 +1,4 @@
-"""Test the behaviour of the dataclasses."""
+"""Test the behavior of the dataclasses."""
 import numpy as np
 import pytest
 
@@ -10,6 +10,15 @@ from multimodemodel import (
     StaggeredGrid,
     GridShift,
 )
+
+try:
+    import xarray as xr
+
+    xr_version = xr.__version__
+    has_xarray = True
+except ModuleNotFoundError:
+    has_xarray = False
+
 
 grid_order = {
     GridShift.LL: "qveu",
@@ -355,6 +364,59 @@ class TestVariable:
         with pytest.raises(TypeError) as excinfo:
             _ = v1 + 1.0
         assert "unsupported operand type(s)" in str(excinfo.value)
+
+
+@pytest.mark.xarray
+@pytest.mark.skipif(not has_xarray, reason="Xarray not available.")
+class TestVariableAsDataArray:
+    """Test Variable to xarray.DataArray conversion."""
+
+    nx, ny, dx, dy = 10, 5, 1, 2
+
+    def _gen_var(self, data=None, mask=None):
+        x, y = get_x_y(self.nx, self.ny, self.dx, self.dy)
+        g1 = Grid(x, y, mask=mask)
+        return Variable(data, g1)
+
+    def test_None_data_is_zero(self):
+        """Test handling of None as data."""
+        v = self._gen_var(data=None)
+        assert (v.as_dataarray == 0).where(v.grid.mask).all()
+
+    def test_attribute_is_read_only(self):
+        """Test read-only property."""
+        v = self._gen_var()
+        with pytest.raises(AttributeError, match="can't set attribute"):
+            v.as_dataarray = None  # type: ignore
+
+    def test_mask_applied(self):
+        """Test if mask is applied properly."""
+        v = self._gen_var()
+        assert np.isnan(v.as_dataarray.where(v.grid.mask == 0)).all()
+
+    def test_data_assignment(self):
+        """Test assignment of data."""
+        v = self._gen_var(
+            data=np.random.randn(self.nx, self.ny), mask=np.ones((self.nx, self.ny))
+        )
+        assert (v.as_dataarray == v.data).all()
+
+    def test_coords_and_dims(self):
+        """Test coordinate and dimension definition."""
+        v = self._gen_var()
+        v_da = v.as_dataarray
+
+        assert (v_da.x == v.grid.x).all()
+        assert (v_da.y == v.grid.y).all()
+        assert v_da.dims == v_da.x.dims == v_da.y.dims == ("i", "j")
+
+    def test_masking_has_no_side_effects(self):
+        """Test coordinate and dimension definition."""
+        data = np.ones((self.nx, self.ny))
+        v = self._gen_var(data=data)
+        _ = v.as_dataarray
+
+        assert np.all(v.data == data)
 
 
 class TestState:
