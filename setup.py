@@ -24,9 +24,13 @@ setup(
     author_email="mclaus@geomar.de",
     # license='MIT',
     packages=["multimodemodel"],
+    python_requires=">=3.7",
     install_requires=[
         "numba >= 0.50.1",
         "numpy",
     ],
+    extras_require={
+        "xarray": ["xarray"],
+    }
     # zip_safe=False
 )

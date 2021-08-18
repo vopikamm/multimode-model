@@ -17,7 +17,7 @@ test:
   needs: []
   script:
   - micromamba install -y -n base -c conda-forge -f requirements.txt pytest-cov
-  - pip install -e .
+  - pip install -e .[xarray]
   - py.test -v -k "not benchmark" --cov --cov-report term-missing --junitxml=report.xml multimodemodel
   artifacts:
     when: always

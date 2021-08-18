@@ -2,8 +2,6 @@ black
 flake8
 ipykernel
 matplotlib
-numba >= 0.50.1
-numpy
 pip
 pre-commit
 pytest
