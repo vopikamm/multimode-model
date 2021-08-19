@@ -1,4 +1,6 @@
-"""Test the behaviour of the term functions."""
+"""Test the behavior of the term functions."""
+from multimodemodel.grid import StaggeredGrid
+from multimodemodel.coriolis import f_constant
 import numpy as np
 from collections import deque
 import multimodemodel as swe
@@ -29,21 +31,27 @@ class TestRHS:
 
     def test_linearised_SWE(self):
         """Test LSWE."""
-        H, g, f = 1.0, 2.0, 4.0
+        H, g, f0 = 1.0, 2.0, 4.0
         dx, dy = 1.0, 2.0
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask_eta = get_test_mask(x)
-        mask_v = mask_eta * np.roll(mask_eta, 1, axis=1)
-        mask_u = mask_eta * np.roll(mask_eta, 1, axis=0)
-        eta = np.zeros(x.shape)
-        u = np.zeros(x.shape)
-        v = mask_v.copy()
 
-        d_u = (
-            mask_u
-            * f
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask_eta)
+
+        eta = x * y * c_grid.eta.mask
+        u = 2.0 * x * y * c_grid.u.mask
+        v = 3.0 * x * y * c_grid.v.mask
+
+        s = swe.State(
+            u=swe.Variable(u, c_grid.u),
+            v=swe.Variable(v, c_grid.v),
+            eta=swe.Variable(eta, c_grid.eta),
+        )
+
+        d_u = c_grid.u.mask * (
+            f_constant(f0)(c_grid.u.y)
             * (
                 np.roll(np.roll(v, 1, axis=0), -1, axis=1)
                 + np.roll(v, 1, axis=0)
@@ -51,20 +59,32 @@ class TestRHS:
                 + v
             )
             / 4.0
+            - g * (eta - np.roll(eta, 1, axis=0)) / dx
         )
-        d_eta = -H * mask_eta * (np.roll(v, -1, axis=1) + (-1) * v) / dy
-        d_v = np.zeros_like(u)
-
-        params = swe.Parameters(H=H, g=g, f=f)
-        state = swe.State(
-            u=swe.Variable(u, swe.Grid(x, y, mask_u)),
-            v=swe.Variable(v, swe.Grid(x, y, mask_v)),
-            eta=swe.Variable(eta, swe.Grid(x, y, mask_eta)),
+        d_v = c_grid.v.mask * (
+            -f_constant(f0)(c_grid.v.y)
+            * (
+                np.roll(np.roll(u, -1, axis=0), 1, axis=1)
+                + np.roll(u, -1, axis=0)
+                + np.roll(u, 1, axis=1)
+                + u
+            )
+            / 4.0
+            - g * (eta - np.roll(eta, 1, axis=1)) / dy
+        )
+        d_eta = (
+            -H
+            * mask_eta
+            * ((np.roll(u, -1, axis=0) - u) / dx + (np.roll(v, -1, axis=1) - v) / dy)
         )
 
-        assert np.all(swe.linearised_SWE(state, params).u.data == d_u)
-        assert np.all(swe.linearised_SWE(state, params).v.data == d_v)
-        assert np.all(swe.linearised_SWE(state, params).eta.data == d_eta)
+        params = swe.Parameters(H=H, g=g, coriolis=f_constant(f0))
+        params.compute_f(c_grid)
+
+        ds = swe.linearised_SWE(s, params)
+        assert np.all(ds.u.data == d_u)
+        assert np.all(ds.v.data == d_v)
+        assert np.all(ds.eta.data == d_eta)
 
 
 class TestIntegration:
@@ -72,42 +92,34 @@ class TestIntegration:
 
     def test_euler_forward(self):
         """Test euler_forward."""
-        H, g, f = 1, 2, 3
-        dt = 1
+        dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
-        eta = 1 * np.ones(x.shape)
-        u = 2 * np.ones(x.shape)
-        v = 3 * np.ones(x.shape)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        params = swe.Parameters(dt=dt)
 
-        d_u = 9 * np.ones(v.shape)
-        d_v = -6 * np.ones(u.shape)
-        d_eta = np.zeros_like(u)
-
-        params = swe.Parameters(H=H, g=g, f=f, dt=dt)
-        grid = swe.Grid(x, y, mask)
-        state = swe.State(
-            u=swe.Variable(u, grid),
-            v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid),
+        ds = swe.State(
+            u=swe.Variable(2 * np.ones(x.shape), c_grid.u),
+            v=swe.Variable(3 * np.ones(x.shape), c_grid.v),
+            eta=swe.Variable(1 * np.ones(x.shape), c_grid.eta),
         )
-        rhs = deque([swe.linearised_SWE(state, params)], maxlen=1)
 
-        assert np.all(swe.euler_forward(rhs, params).u.data == d_u)
-        assert np.all(swe.euler_forward(rhs, params).v.data == d_v)
-        assert np.all(swe.euler_forward(rhs, params).eta.data == d_eta)
+        ds_test = swe.euler_forward(deque([ds], maxlen=1), params)
+        assert np.all(ds_test.u.data == dt * ds.u.data)
+        assert np.all(ds_test.v.data == dt * ds.v.data)
+        assert np.all(ds_test.eta.data == dt * ds.eta.data)
 
     def test_adams_bashforth2_euler_forward_dropin(self):
-        """Test adams_bashforth2 mcomputational initial condition."""
+        """Test adams_bashforth2 computational initial condition."""
         params = swe.Parameters(dt=2.0)
         dx, dy = 1, 2
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
+        mask = get_test_mask(x)
         grid = swe.Grid(x, y, mask)
 
         state1 = swe.State(
@@ -128,74 +140,106 @@ class TestIntegration:
 
     def test_adams_bashforth2(self):
         """Test adams_bashforth2."""
-        params = swe.Parameters(dt=2.0)
+        dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
-        grid = swe.Grid(x, y, mask)
+        mask = get_test_mask(x)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        params = swe.Parameters(dt=dt)
 
-        state1 = swe.State(
-            u=swe.Variable(3 * np.ones(x.shape), grid),
-            v=swe.Variable(3 * np.ones(x.shape), grid),
-            eta=swe.Variable(3 * np.ones(x.shape), grid),
+        ds1 = swe.State(
+            u=swe.Variable(1 * np.ones(x.shape), c_grid.u),
+            v=swe.Variable(2 * np.ones(x.shape), c_grid.v),
+            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta),
         )
-        state2 = swe.State(
-            u=swe.Variable(np.ones(x.shape), grid),
-            v=swe.Variable(np.ones(x.shape), grid),
-            eta=swe.Variable(np.ones(x.shape), grid),
+        ds2 = swe.State(
+            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u),
+            v=swe.Variable(5 * np.ones(x.shape), c_grid.v),
+            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta),
         )
 
-        d_u = np.zeros(x.shape)
-        d_v = np.zeros(x.shape)
-        d_eta = np.zeros(x.shape)
+        ds3 = swe.State(
+            u=swe.Variable(
+                dt * (3 / 2 * ds2.u.data - 1 / 2 * ds1.u.data),
+                c_grid.u,
+            ),
+            v=swe.Variable(
+                dt * (3 / 2 * ds2.v.data - 1 / 2 * ds1.v.data),
+                c_grid.v,
+            ),
+            eta=swe.Variable(
+                dt * (3 / 2 * ds2.eta.data - 1 / 2 * ds1.eta.data),
+                c_grid.eta,
+            ),
+        )
 
-        rhs = deque([state1, state2], maxlen=3)
+        rhs = deque([ds1, ds2], maxlen=3)
 
         d_state = swe.adams_bashforth2(rhs, params)
 
-        assert np.all(d_state.u.data == d_u)
-        assert np.all(d_state.v.data == d_v)
-        assert np.all(d_state.eta.data == d_eta)
+        assert np.all(d_state.u.data == ds3.u.data)
+        assert np.all(d_state.v.data == ds3.v.data)
+        assert np.all(d_state.eta.data == ds3.eta.data)
 
     def test_adams_bashforth3(self):
         """Test adams_bashforth3."""
-        H, g, f = 1, 1, 1
-        dt = 1
+        dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
-        eta = 1 * np.ones(x.shape)
-        u = 1 * np.ones(x.shape)
-        v = 1 * np.ones(x.shape)
+        mask = get_test_mask(x)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        params = swe.Parameters(dt=dt)
 
-        d_u = 1 * np.ones(v.shape)
-        d_v = -1 * np.ones(u.shape)
-        d_eta = np.zeros_like(u)
-
-        params = swe.Parameters(H=H, g=g, f=f, dt=dt)
-        grid = swe.Grid(x, y, mask)
-        state = swe.State(
-            u=swe.Variable(u, grid),
-            v=swe.Variable(v, grid),
-            eta=swe.Variable(eta, grid),
+        ds1 = swe.State(
+            u=swe.Variable(1 * np.ones(x.shape), c_grid.u),
+            v=swe.Variable(2 * np.ones(x.shape), c_grid.v),
+            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta),
+        )
+        ds2 = swe.State(
+            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u),
+            v=swe.Variable(5 * np.ones(x.shape), c_grid.v),
+            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta),
         )
 
-        rhs = deque(
-            [
-                swe.linearised_SWE(state, params),
-                swe.linearised_SWE(state, params),
-                swe.linearised_SWE(state, params),
-            ],
-            maxlen=3,
+        ds3 = swe.State(
+            u=swe.Variable(7 * np.ones(x.shape), c_grid.u),
+            v=swe.Variable(8 * np.ones(x.shape), c_grid.v),
+            eta=swe.Variable(9 * np.ones(x.shape), c_grid.eta),
         )
 
-        assert np.all(swe.adams_bashforth3(rhs, params).u.data == d_u)
-        assert np.all(swe.adams_bashforth3(rhs, params).v.data == d_v)
-        assert np.all(swe.adams_bashforth3(rhs, params).eta.data == d_eta)
+        ds4 = swe.State(
+            u=swe.Variable(
+                dt
+                * (23 / 12 * ds3.u.data - 16 / 12 * ds2.u.data + 5 / 12 * ds1.u.data),
+                c_grid.u,
+            ),
+            v=swe.Variable(
+                dt
+                * (23 / 12 * ds3.v.data - 16 / 12 * ds2.v.data + 5 / 12 * ds1.v.data),
+                c_grid.v,
+            ),
+            eta=swe.Variable(
+                dt
+                * (
+                    23 / 12 * ds3.eta.data
+                    - 16 / 12 * ds2.eta.data
+                    + 5 / 12 * ds1.eta.data
+                ),
+                c_grid.eta,
+            ),
+        )
+
+        rhs = deque([ds1, ds2, ds3], maxlen=3)
+
+        d_state = swe.adams_bashforth3(rhs, params)
+
+        assert np.allclose(d_state.u.data, ds4.u.data)
+        assert np.allclose(d_state.v.data, ds4.v.data)
+        assert np.allclose(d_state.eta.data, ds4.eta.data)
 
     def test_adams_bashforth3_adams_bashforth2_dropin(self):
         """Test adams_bashforth2."""
@@ -236,8 +280,10 @@ class TestIntegration:
         t_0, t_end, dt = 0, 1, 1
         dx, dy = 1, 2
         ni, nj = 10, 5
+
         x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
+        mask = np.ones_like(x)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
 
         eta_0 = 1 * np.ones(x.shape)
         u_0 = 1 * np.ones(x.shape)
@@ -247,12 +293,14 @@ class TestIntegration:
         u_1 = 2 * np.ones(x.shape)
         v_1 = 0 * np.ones(x.shape)
 
-        params = swe.Parameters(H=H, g=g, f=f, t_0=t_0, t_end=t_end, dt=dt)
-        grid = swe.Grid(x, y, mask)
+        params = swe.Parameters(
+            H=H, g=g, coriolis=f_constant(f), t_0=t_0, t_end=t_end, dt=dt
+        )
+        params.compute_f(c_grid)
         state_0 = swe.State(
-            u=swe.Variable(u_0, grid),
-            v=swe.Variable(v_0, grid),
-            eta=swe.Variable(eta_0, grid),
+            u=swe.Variable(u_0, c_grid.u),
+            v=swe.Variable(v_0, c_grid.v),
+            eta=swe.Variable(eta_0, c_grid.eta),
         )
         for state_1 in swe.integrate(
             state_0, params, scheme=swe.euler_forward, RHS=swe.linearised_SWE
@@ -275,7 +323,9 @@ class TestIntegration:
         u_0 = 1 * np.ones(x.shape)
         v_0 = 1 * np.ones(x.shape)
 
-        params = swe.Parameters(H=H, g=g, f=f, t_0=t_0, t_end=t_end, dt=dt)
+        params = swe.Parameters(
+            H=H, g=g, coriolis=f_constant(f), t_0=t_0, t_end=t_end, dt=dt
+        )
         grid = swe.Grid(x, y, mask)
         state_0 = swe.State(
             u=swe.Variable(u_0, grid),
@@ -285,6 +335,6 @@ class TestIntegration:
 
         with pytest.raises(ValueError, match="Unsupported scheme"):
             for _ in swe.integrate(
-                state_0, params, scheme=(lambda x: state_0), RHS=swe.linearised_SWE
+                state_0, params, scheme=(lambda x: x), RHS=swe.linearised_SWE
             ):
                 pass

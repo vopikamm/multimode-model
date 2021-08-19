@@ -102,6 +102,7 @@ class Grid:
         dim_x: int = 0
           Optional. Axis of the x-dimension.
         """
+        assert x.ndim == y.ndim == 1
         indexing = ["ij", "xy"]
         x_2D, y_2D = np.meshgrid(x, y, indexing=indexing[dim_x])
 

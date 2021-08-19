@@ -12,6 +12,7 @@ from multimodemodel import (
     coriolis_j,
     divergence_i,
     divergence_j,
+    f_on_sphere,
 )
 
 
@@ -29,7 +30,7 @@ def _get_grids():
 
 def _get_params():
     return Parameters(
-        f=1e-4,
+        coriolis=f_on_sphere(1.0),
     )
 
 
@@ -49,6 +50,7 @@ def test_benchmark_term(benchmark, func):
     """Benchmark pressure_gradient_i."""
     c_grid = _get_grids()
     params = _get_params()
+    params.compute_f(c_grid)
 
     state = State(
         u=Variable(c_grid.u.x.copy(), c_grid.u),
