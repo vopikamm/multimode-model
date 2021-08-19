@@ -78,8 +78,7 @@ class TestRHS:
             * ((np.roll(u, -1, axis=0) - u) / dx + (np.roll(v, -1, axis=1) - v) / dy)
         )
 
-        params = swe.Parameters(H=H, g=g, coriolis=f_constant(f0))
-        params.compute_f(c_grid)
+        params = swe.Parameters(H=H, g=g, coriolis_func=f_constant(f0), on_grid=c_grid)
 
         ds = swe.linearised_SWE(s, params)
         assert np.all(ds.u.data == d_u)
@@ -294,9 +293,14 @@ class TestIntegration:
         v_1 = 0 * np.ones(x.shape)
 
         params = swe.Parameters(
-            H=H, g=g, coriolis=f_constant(f), t_0=t_0, t_end=t_end, dt=dt
+            H=H,
+            g=g,
+            t_0=t_0,
+            t_end=t_end,
+            dt=dt,
+            coriolis_func=f_constant(f),
+            on_grid=c_grid,
         )
-        params.compute_f(c_grid)
         state_0 = swe.State(
             u=swe.Variable(u_0, c_grid.u),
             v=swe.Variable(v_0, c_grid.v),
@@ -318,19 +322,25 @@ class TestIntegration:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
 
         eta_0 = 1 * np.ones(x.shape)
         u_0 = 1 * np.ones(x.shape)
         v_0 = 1 * np.ones(x.shape)
 
         params = swe.Parameters(
-            H=H, g=g, coriolis=f_constant(f), t_0=t_0, t_end=t_end, dt=dt
+            H=H,
+            g=g,
+            coriolis_func=f_constant(f),
+            on_grid=c_grid,
+            t_0=t_0,
+            t_end=t_end,
+            dt=dt,
         )
-        grid = swe.Grid(x, y, mask)
         state_0 = swe.State(
-            u=swe.Variable(u_0, grid),
-            v=swe.Variable(v_0, grid),
-            eta=swe.Variable(eta_0, grid),
+            u=swe.Variable(u_0, c_grid.u),
+            v=swe.Variable(v_0, c_grid.v),
+            eta=swe.Variable(eta_0, c_grid.eta),
         )
 
         with pytest.raises(ValueError, match="Unsupported scheme"):

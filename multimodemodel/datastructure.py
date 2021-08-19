@@ -5,9 +5,9 @@ and their associated grids.
 """
 
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, InitVar
 from .grid import Grid, StaggeredGrid
-from .coriolis import CoriolisFunc, f_constant
+from .coriolis import CoriolisFunc
 from typing import Dict, Optional
 
 try:
@@ -36,17 +36,22 @@ class Parameters:
       Depth of the fluid or thickness of the undisturbed layer in m
     rho_0: float = 1024.0
       Reference density of sea water in kg / m^3
-    coriolis: CoriolisFunc = f_constant(f=0.0)
-      Function used to compute the coriolis parameter on each subgrid
-      of a staggered grid. The signature of these functions must match
-      `f(y: numpy.ndarray) -> numpy.ndarray`
-      and they are called with the y coordinate of the respective grid.
     dt: float = 1.0
       Time step length in s
     t_0: float = 0.0
       Starting time of the model in seconds
     t_end: float = 3600.0
       End time of the model in seconds
+    coriolis_func: Optional[CoriolisFunc] = None
+      Function used to compute the coriolis parameter on each subgrid
+      of a staggered grid. The signature of this function must match
+      `coriolis_func(y: numpy.ndarray) -> numpy.ndarray`
+      and they are called with the y coordinate of the respective grid.
+    on_grid: Optional[StaggeredGrid] = None
+      StaggeredGrid object providing the necessary grid information if a
+      parameter depends on space, such as the Coriolis parameter. Only
+      required if such a parameter is part of the system to solve.
+
 
     Attributes
     ----------
@@ -58,13 +63,35 @@ class Parameters:
     g: float = 9.81  # gravitational force m/s^2
     H: float = 1000.0  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
-    coriolis: CoriolisFunc = f_constant(f=0.0)
     dt: float = 1.0  # time stepping in s
     t_0: float = 0.0  # starting time
     t_end: float = 3600.0  # end time
-    f: Dict[str, np.ndarray] = field(init=False)
+    coriolis_func: InitVar[Optional[CoriolisFunc]] = None
+    on_grid: InitVar[Optional[StaggeredGrid]] = None
+    _f: Dict[str, np.ndarray] = field(init=False)
 
-    def compute_f(self, grids: StaggeredGrid) -> None:
+    def __post_init__(
+        self,
+        coriolis_func: Optional[CoriolisFunc],
+        on_grid: Optional[StaggeredGrid],
+    ):
+        """Initialize derived fields."""
+        self._f = self._compute_f(coriolis_func, on_grid)
+
+    @property
+    def f(self) -> Dict[str, np.ndarray]:
+        """Getter of the dictionary holding the Coriolis parameter."""
+        if not self._f:
+            raise RuntimeError(
+                "Coriolis parameter not available. "
+                "Parameters object must be created with both `coriolis_func` "
+                "and `on_grid` argument."
+            )
+        return self._f
+
+    def _compute_f(
+        self, coriolis_func: Optional[CoriolisFunc], grids: Optional[StaggeredGrid]
+    ) -> Dict[str, np.ndarray]:
         """Compute the coriolis parameter for all subgrids.
 
         This method needs to be called before a rotating system
@@ -75,11 +102,10 @@ class Parameters:
         grids: StaggeredGrid
           Grids on which the coriolis parameter shall be provided.
         """
-        self.f = dict(
-            u=self.coriolis(grids.u.y),
-            v=self.coriolis(grids.v.y),
-            eta=self.coriolis(grids.eta.y),
-        )
+        if coriolis_func is None or grids is None:
+            return {}
+        _f = {name: coriolis_func(grid["y"]) for name, grid in asdict(grids).items()}
+        return _f
 
 
 @dataclass
