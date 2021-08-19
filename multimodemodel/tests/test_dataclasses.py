@@ -53,17 +53,36 @@ class TestParameters:
     @pytest.mark.parametrize("f0", [0.0, 1.0])
     def test_coriolis_computation(self, f0):
         """Test coriolis parameter computation."""
-        p = Parameters(coriolis=f_constant(f=f0))
-
         nx, ny = 20, 10
         dx, dy = 1.0, 0.25
         x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
         staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
 
-        p.compute_f(staggered_grid)
+        p = Parameters(coriolis_func=f_constant(f=f0), on_grid=staggered_grid)
 
         for var in ("u", "v", "eta"):
             assert np.all(p.f[var] == f0)
+
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    @pytest.mark.parametrize("g", (True, False))
+    def test_raise_on_missing_coriolis_argument(self, f, g):
+        """Test error thrown on missing argument."""
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+
+        if g:
+            staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+        else:
+            staggered_grid = None
+
+        p = Parameters(coriolis_func=f, on_grid=staggered_grid)
+
+        if f is None or g is None:
+            with pytest.raises(
+                RuntimeError, match="Coriolis parameter not available.*"
+            ):
+                _ = p.f
 
 
 class TestGrid:
