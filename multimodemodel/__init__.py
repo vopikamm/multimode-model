@@ -33,3 +33,10 @@ from .kernel import (
     pressure_gradient_j,
     pressure_gradient_i,
 )
+
+from .coriolis import (
+    CoriolisFunc,
+    f_constant,
+    beta_plane,
+    f_on_sphere,
+)

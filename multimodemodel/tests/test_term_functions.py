@@ -1,5 +1,8 @@
-"""Test the behaviour of the term functions."""
+"""Test the behavior of the term functions."""
+from multimodemodel.coriolis import f_constant
+from multimodemodel.grid import StaggeredGrid
 import numpy as np
+import pytest
 import multimodemodel as swe
 
 
@@ -139,16 +142,31 @@ class TestTerms:
         assert inc.v.data is None
         assert np.all(inc.eta.data == result)
 
-    def test_coriolis_j(self):
+    @pytest.mark.parametrize(
+        "coriolis_func",
+        [
+            swe.f_constant(0.0),
+            swe.f_constant(1.0),
+            swe.beta_plane(0.0, 1.0, 5),
+            swe.f_on_sphere(1.0),
+        ],
+    )
+    def test_coriolis_j(self, coriolis_func):
         """Test coriolis_j."""
-        f = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        u = np.ones(x.shape) * mask
+
+        params = swe.Parameters(coriolis=coriolis_func)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0, :], mask)
+        params.compute_f(c_grid)
+
+        u = np.ones(x.shape) * c_grid.u.mask
+
         result = (
-            -mask
+            -c_grid.v.mask
+            * coriolis_func(c_grid.v.y)
             * (
                 np.roll(np.roll(u, -1, axis=0), 1, axis=1)
                 + np.roll(u, -1, axis=0)
@@ -158,12 +176,10 @@ class TestTerms:
             / 4.0
         )
 
-        params = swe.Parameters(f=f)
-        grid = swe.Grid(x, y, mask)
         state = swe.State(
-            u=swe.Variable(u, grid),
-            v=swe.Variable(np.zeros(x.shape), grid),
-            eta=swe.Variable(np.zeros(x.shape), grid),
+            u=swe.Variable(u, c_grid.u),
+            v=swe.Variable(None, c_grid.v),
+            eta=swe.Variable(None, c_grid.eta),
         )
 
         inc = swe.coriolis_j(state, params)
@@ -171,16 +187,31 @@ class TestTerms:
         assert inc.eta.data is None
         assert np.all(inc.v.data == result)
 
-    def test_coriolis_i(self):
+    @pytest.mark.parametrize(
+        "coriolis_func",
+        [
+            swe.f_constant(0.0),
+            swe.f_constant(1.0),
+            swe.beta_plane(0.0, 1.0, 5),
+            swe.f_on_sphere(1.0),
+        ],
+    )
+    def test_coriolis_i(self, coriolis_func):
         """Test coriolis_i."""
-        f = 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        v = np.ones(y.shape) * mask
+
+        params = swe.Parameters(coriolis=coriolis_func)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0, :], mask)
+        params.compute_f(c_grid)
+
+        v = np.ones(y.shape) * c_grid.v.mask
+
         result = (
-            mask
+            c_grid.u.mask
+            * coriolis_func(c_grid.u.y)
             * (
                 np.roll(np.roll(v, 1, axis=0), -1, axis=1)
                 + np.roll(v, 1, axis=0)
@@ -190,12 +221,10 @@ class TestTerms:
             / 4.0
         )
 
-        params = swe.Parameters(f=f)
-        grid = swe.Grid(x, y, mask)
         state = swe.State(
-            u=swe.Variable(np.zeros(y.shape), grid),
-            v=swe.Variable(v, grid),
-            eta=swe.Variable(np.zeros(y.shape), grid),
+            u=swe.Variable(None, c_grid.u),
+            v=swe.Variable(v, c_grid.v),
+            eta=swe.Variable(None, c_grid.eta),
         )
 
         inc = swe.coriolis_i(state, params)
@@ -204,3 +233,31 @@ class TestTerms:
         assert inc.v.data is None
         assert inc.eta.data is None
         assert np.all(inc.u.data == result)
+
+    @pytest.mark.parametrize(
+        "term",
+        (
+            swe.pressure_gradient_i,
+            swe.pressure_gradient_j,
+            swe.coriolis_i,
+            swe.coriolis_j,
+            swe.divergence_i,
+            swe.divergence_j,
+        ),
+    )
+    def test_none_input(self, term):
+        """Test for None input compatibility."""
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+        x, y = get_x_y(ni, nj, dx, dy)
+        params = swe.Parameters(coriolis=f_constant(1.0))
+        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0, :])
+        params.compute_f(c_grid)
+
+        state = swe.State(
+            u=swe.Variable(None, c_grid.u),
+            v=swe.Variable(None, c_grid.v),
+            eta=swe.Variable(None, c_grid.eta),
+        )
+
+        _ = term(state, params)

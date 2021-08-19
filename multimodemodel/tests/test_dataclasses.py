@@ -9,6 +9,7 @@ from multimodemodel import (
     State,
     StaggeredGrid,
     GridShift,
+    f_constant,
 )
 
 try:
@@ -49,22 +50,20 @@ def get_test_mask(shape):
 class TestParameters:
     """Test Parameters class."""
 
-    def test_default_values(self):
-        """Test default values."""
-        p = Parameters()
-        defaults = {
-            "f": 0.0,
-            "g": 9.81,
-            "beta": 2.0 / (24 * 3600),
-            "H": 1000.0,
-            "dt": 1.0,
-            "t_0": 0.0,
-            "t_end": 3600.0,
-            "write": 20.0,
-            "r": 6_371_000.0,
-        }
-        for var, val in defaults.items():
-            assert p.__getattribute__(var) == val
+    @pytest.mark.parametrize("f0", [0.0, 1.0])
+    def test_coriolis_computation(self, f0):
+        """Test coriolis parameter computation."""
+        p = Parameters(coriolis=f_constant(f=f0))
+
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p.compute_f(staggered_grid)
+
+        for var in ("u", "v", "eta"):
+            assert np.all(p.f[var] == f0)
 
 
 class TestGrid:
@@ -366,7 +365,7 @@ class TestVariable:
         assert "unsupported operand type(s)" in str(excinfo.value)
 
 
-@pytest.mark.xarray
+# @pytest.mark.xarray
 @pytest.mark.skipif(not has_xarray, reason="Xarray not available.")
 class TestVariableAsDataArray:
     """Test Variable to xarray.DataArray conversion."""

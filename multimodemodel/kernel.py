@@ -101,12 +101,12 @@ def _coriolis_j(
     u: np.ndarray,
     mask_u: np.ndarray,
     mask_v: np.ndarray,
-    f: float,
+    f: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the second dimension."""
     ip1 = _cyclic_shift(i, ni)
     return mask_v[i, j] * (
-        -f
+        -f[i, j]
         * (
             mask_u[i, j - 1] * u[i, j - 1]
             + mask_u[i, j] * u[i, j]
@@ -126,12 +126,12 @@ def _coriolis_i(
     v: np.ndarray,
     mask_v: np.ndarray,
     mask_u: np.ndarray,
-    f: float,
+    f: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the first dimension."""
     jp1 = _cyclic_shift(j, nj, 1)
     return mask_u[i, j] * (
-        f
+        f[i, j]
         * (
             mask_v[i - 1, j] * v[i - 1, j]
             + mask_v[i, j] * v[i, j]
@@ -156,7 +156,7 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
     result = _pressure_gradient_i(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.data,  # type: ignore
+        state.eta.save_data,  # type: ignore
         params.g,  # type: ignore
         state.u.grid.dx,  # type: ignore
         state.u.grid.mask,  # type: ignore
@@ -176,7 +176,7 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
     result = _pressure_gradient_j(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.data,  # type: ignore
+        state.eta.save_data,  # type: ignore
         params.g,  # type: ignore
         state.v.grid.dy,  # type: ignore
         state.v.grid.mask,  # type: ignore
@@ -193,7 +193,7 @@ def divergence_i(state: State, params: Parameters) -> State:
     result = _divergence_i(
         state.u.grid.len_x,
         state.u.grid.len_y,
-        state.u.data,  # type: ignore
+        state.u.save_data,  # type: ignore
         state.u.grid.mask,  # type: ignore
         params.H,  # type: ignore
         state.eta.grid.dx,  # type: ignore
@@ -212,7 +212,7 @@ def divergence_j(state: State, params: Parameters) -> State:
     result = _divergence_j(
         state.v.grid.len_x,
         state.v.grid.len_y,
-        state.v.data,  # type: ignore
+        state.v.save_data,  # type: ignore
         state.v.grid.mask,  # type: ignore
         params.H,  # type: ignore
         state.eta.grid.dx,  # type: ignore
@@ -234,10 +234,10 @@ def coriolis_j(state: State, params: Parameters) -> State:
     result = _coriolis_j(
         state.u.grid.len_x,
         state.u.grid.len_y,
-        state.u.data,  # type: ignore
+        state.u.save_data,  # type: ignore
         state.u.grid.mask,  # type: ignore
         state.v.grid.mask,  # type: ignore
-        params.f,  # type: ignore
+        params.f["v"],  # type: ignore
     )
     return State(
         u=Variable(None, state.u.grid),
@@ -254,10 +254,10 @@ def coriolis_i(state: State, params: Parameters) -> State:
     result = _coriolis_i(
         state.v.grid.len_x,
         state.v.grid.len_y,
-        state.v.data,  # type: ignore
+        state.v.save_data,  # type: ignore
         state.v.grid.mask,  # type: ignore
         state.u.grid.mask,  # type: ignore
-        params.f,  # type: ignore
+        params.f["u"],  # type: ignore
     )
     return State(
         u=Variable(result, state.u.grid),
