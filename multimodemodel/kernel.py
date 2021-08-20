@@ -156,7 +156,7 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
     result = _pressure_gradient_i(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.save_data,  # type: ignore
+        state.eta.safe_data,  # type: ignore
         params.g,  # type: ignore
         state.u.grid.dx,  # type: ignore
         state.u.grid.mask,  # type: ignore
@@ -176,7 +176,7 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
     result = _pressure_gradient_j(
         state.eta.grid.len_x,
         state.eta.grid.len_y,
-        state.eta.save_data,  # type: ignore
+        state.eta.safe_data,  # type: ignore
         params.g,  # type: ignore
         state.v.grid.dy,  # type: ignore
         state.v.grid.mask,  # type: ignore
@@ -193,7 +193,7 @@ def divergence_i(state: State, params: Parameters) -> State:
     result = _divergence_i(
         state.u.grid.len_x,
         state.u.grid.len_y,
-        state.u.save_data,  # type: ignore
+        state.u.safe_data,  # type: ignore
         state.u.grid.mask,  # type: ignore
         params.H,  # type: ignore
         state.eta.grid.dx,  # type: ignore
@@ -212,7 +212,7 @@ def divergence_j(state: State, params: Parameters) -> State:
     result = _divergence_j(
         state.v.grid.len_x,
         state.v.grid.len_y,
-        state.v.save_data,  # type: ignore
+        state.v.safe_data,  # type: ignore
         state.v.grid.mask,  # type: ignore
         params.H,  # type: ignore
         state.eta.grid.dx,  # type: ignore
@@ -234,7 +234,7 @@ def coriolis_j(state: State, params: Parameters) -> State:
     result = _coriolis_j(
         state.u.grid.len_x,
         state.u.grid.len_y,
-        state.u.save_data,  # type: ignore
+        state.u.safe_data,  # type: ignore
         state.u.grid.mask,  # type: ignore
         state.v.grid.mask,  # type: ignore
         params.f["v"],  # type: ignore
@@ -254,7 +254,7 @@ def coriolis_i(state: State, params: Parameters) -> State:
     result = _coriolis_i(
         state.v.grid.len_x,
         state.v.grid.len_y,
-        state.v.save_data,  # type: ignore
+        state.v.safe_data,  # type: ignore
         state.v.grid.mask,  # type: ignore
         state.u.grid.mask,  # type: ignore
         params.f["u"],  # type: ignore

@@ -130,7 +130,7 @@ class Variable:
             )
 
         # copy to prevent side effects on self.data
-        data = self.save_data.copy()
+        data = self.safe_data.copy()
 
         data[self.grid.mask == 0] = np.nan
 
@@ -144,7 +144,7 @@ class Variable:
         )
 
     @property
-    def save_data(self) -> np.ndarray:
+    def safe_data(self) -> np.ndarray:
         """Return self.data or, if it is None, a zero array of appropriate shape."""
         if self.data is None:
             return np.zeros(self.grid.x.shape)
