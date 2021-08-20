@@ -24,9 +24,9 @@ def euler_forward(rhs: deque, params: Parameters) -> State:
     state is passed to this function. Returns the increment
     dstate = next_state - current_state.
     """
-    du = params.dt * rhs[-1].u.data
-    dv = params.dt * rhs[-1].v.data
-    deta = params.dt * rhs[-1].eta.data
+    du = params.dt * rhs[-1].u.safe_data
+    dv = params.dt * rhs[-1].v.safe_data
+    deta = params.dt * rhs[-1].eta.safe_data
 
     return State(
         u=Variable(du, rhs[-1].u.grid),
@@ -45,9 +45,9 @@ def adams_bashforth2(rhs: deque, params: Parameters) -> State:
     if len(rhs) < 2:
         return euler_forward(rhs, params)
 
-    du = (params.dt / 2) * (3 * rhs[-1].u.data - rhs[-2].u.data)
-    dv = (params.dt / 2) * (3 * rhs[-1].v.data - rhs[-2].v.data)
-    deta = (params.dt / 2) * (3 * rhs[-1].eta.data - rhs[-2].eta.data)
+    du = (params.dt / 2) * (3 * rhs[-1].u.safe_data - rhs[-2].u.safe_data)
+    dv = (params.dt / 2) * (3 * rhs[-1].v.safe_data - rhs[-2].v.safe_data)
+    deta = (params.dt / 2) * (3 * rhs[-1].eta.safe_data - rhs[-2].eta.safe_data)
 
     return State(
         u=Variable(du, rhs[-1].u.grid),
@@ -67,13 +67,15 @@ def adams_bashforth3(rhs: deque, params: Parameters) -> State:
         return adams_bashforth2(rhs, params)
 
     du = (params.dt / 12) * (
-        23 * rhs[-1].u.data - 16 * rhs[-2].u.data + 5 * rhs[-3].u.data
+        23 * rhs[-1].u.safe_data - 16 * rhs[-2].u.safe_data + 5 * rhs[-3].u.safe_data
     )
     dv = (params.dt / 12) * (
-        23 * rhs[-1].v.data - 16 * rhs[-2].v.data + 5 * rhs[-3].v.data
+        23 * rhs[-1].v.safe_data - 16 * rhs[-2].v.safe_data + 5 * rhs[-3].v.safe_data
     )
     deta = (params.dt / 12) * (
-        23 * rhs[-1].eta.data - 16 * rhs[-2].eta.data + 5 * rhs[-3].eta.data
+        23 * rhs[-1].eta.safe_data
+        - 16 * rhs[-2].eta.safe_data
+        + 5 * rhs[-3].eta.safe_data
     )
 
     return State(
