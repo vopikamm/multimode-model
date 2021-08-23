@@ -89,6 +89,24 @@ class TestRHS:
 class TestIntegration:
     """Test time integration schemes."""
 
+    def test_time_stepping_function_raises_on_zero_or_less(self):
+        """Test if time_stepping_function raises on invalid input."""
+        with pytest.raises(
+            ValueError, match="n_rhs and n_state both needs to be larger than 0."
+        ):
+
+            @swe.time_stepping_function(0, 1)
+            def test():  # pragma: no cover
+                pass
+
+        with pytest.raises(
+            ValueError, match="n_rhs and n_state both needs to be larger than 0."
+        ):
+
+            @swe.time_stepping_function(1, 0)
+            def test2():  # pragma: no cover
+                pass
+
     def test_euler_forward(self):
         """Test euler_forward."""
         dt = 5.0
@@ -317,39 +335,23 @@ class TestIntegration:
         assert np.all(state_1.v.data == v_1)
         assert np.all(state_1.eta.data == eta_1)
 
-    def test_integrator_raises_on_unknown_scheme(self):
+    def test_integrate_raises_on_missing_scheme_attr(self):
         """Test integrate raises on unknown scheme."""
-        H, g, f = 1, 1, 1
-        t_end, dt = 1, 1
-        dx, dy = 1, 2
-        ni, nj = 10, 5
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        p = swe.Parameters()
+        state_0 = swe.State(u=None, v=None, eta=None)
 
-        eta_0 = 1 * np.ones(x.shape)
-        u_0 = 1 * np.ones(x.shape)
-        v_0 = 1 * np.ones(x.shape)
+        def rhs(state, params):  # pragma: no cover
+            return state
 
-        params = swe.Parameters(
-            H=H,
-            g=g,
-            coriolis_func=f_constant(f),
-            on_grid=c_grid,
-        )
-        state_0 = swe.State(
-            u=swe.Variable(u_0, c_grid.u),
-            v=swe.Variable(v_0, c_grid.v),
-            eta=swe.Variable(eta_0, c_grid.eta),
-        )
-
-        with pytest.raises(ValueError, match="Unsupported scheme"):
+        with pytest.raises(
+            AttributeError, match="declare the function with time_stepping_function"
+        ):
             for _ in swe.integrate(
                 state_0,
-                params,
+                p,
                 scheme=(lambda x: x),
-                RHS=swe.linearised_SWE,
-                step=dt,
-                time=t_end,
+                RHS=rhs,
+                step=1.0,
+                time=1.0,
             ):
                 pass
