@@ -98,7 +98,7 @@ class TestIntegration:
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
         c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
-        params = swe.Parameters(dt=dt)
+        params = swe.Parameters()
 
         ds = swe.State(
             u=swe.Variable(2 * np.ones(x.shape), c_grid.u),
@@ -106,15 +106,16 @@ class TestIntegration:
             eta=swe.Variable(1 * np.ones(x.shape), c_grid.eta),
         )
 
-        ds_test = swe.euler_forward(deque([ds], maxlen=1), params)
+        ds_test = swe.euler_forward(deque([ds], maxlen=1), params, dt)
         assert np.all(ds_test.u.data == dt * ds.u.data)
         assert np.all(ds_test.v.data == dt * ds.v.data)
         assert np.all(ds_test.eta.data == dt * ds.eta.data)
 
     def test_adams_bashforth2_euler_forward_dropin(self):
         """Test adams_bashforth2 computational initial condition."""
-        params = swe.Parameters(dt=2.0)
+        params = swe.Parameters()
         dx, dy = 1, 2
+        dt = 2.0
         ni, nj = 10, 5
 
         x, y = get_x_y(ni, nj, dx, dy)
@@ -127,11 +128,11 @@ class TestIntegration:
             eta=swe.Variable(np.ones(x.shape), grid),
         )
 
-        d_u = params.dt * np.ones(x.shape)
+        d_u = dt * np.ones(x.shape)
 
         rhs = deque([state1], maxlen=3)
 
-        d_state = swe.adams_bashforth2(rhs, params)
+        d_state = swe.adams_bashforth2(rhs, params, step=dt)
 
         assert np.all(d_state.u.data == d_u)
         assert np.all(d_state.v.data == d_u)
@@ -146,7 +147,7 @@ class TestIntegration:
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
-        params = swe.Parameters(dt=dt)
+        params = swe.Parameters()
 
         ds1 = swe.State(
             u=swe.Variable(1 * np.ones(x.shape), c_grid.u),
@@ -176,7 +177,7 @@ class TestIntegration:
 
         rhs = deque([ds1, ds2], maxlen=3)
 
-        d_state = swe.adams_bashforth2(rhs, params)
+        d_state = swe.adams_bashforth2(rhs, params, step=dt)
 
         assert np.all(d_state.u.data == ds3.u.data)
         assert np.all(d_state.v.data == ds3.v.data)
@@ -191,7 +192,7 @@ class TestIntegration:
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
-        params = swe.Parameters(dt=dt)
+        params = swe.Parameters()
 
         ds1 = swe.State(
             u=swe.Variable(1 * np.ones(x.shape), c_grid.u),
@@ -234,7 +235,7 @@ class TestIntegration:
 
         rhs = deque([ds1, ds2, ds3], maxlen=3)
 
-        d_state = swe.adams_bashforth3(rhs, params)
+        d_state = swe.adams_bashforth3(rhs, params, step=dt)
 
         assert np.allclose(d_state.u.data, ds4.u.data)
         assert np.allclose(d_state.v.data, ds4.v.data)
@@ -242,7 +243,7 @@ class TestIntegration:
 
     def test_adams_bashforth3_adams_bashforth2_dropin(self):
         """Test adams_bashforth2."""
-        params = swe.Parameters(dt=2.0)
+        params = swe.Parameters()
         dx, dy = 1, 2
         ni, nj = 10, 5
 
@@ -267,7 +268,7 @@ class TestIntegration:
 
         rhs = deque([state1, state2], maxlen=3)
 
-        d_state = swe.adams_bashforth3(rhs, params)
+        d_state = swe.adams_bashforth3(rhs, params, step=2.0)
 
         assert np.all(d_state.u.data == d_u)
         assert np.all(d_state.v.data == d_v)
@@ -276,7 +277,7 @@ class TestIntegration:
     def test_integrator(self):
         """Test integrate."""
         H, g, f = 1, 1, 1
-        t_0, t_end, dt = 0, 1, 1
+        t_end, dt = 1, 1
         dx, dy = 1, 2
         ni, nj = 10, 5
 
@@ -295,9 +296,6 @@ class TestIntegration:
         params = swe.Parameters(
             H=H,
             g=g,
-            t_0=t_0,
-            t_end=t_end,
-            dt=dt,
             coriolis_func=f_constant(f),
             on_grid=c_grid,
         )
@@ -307,7 +305,12 @@ class TestIntegration:
             eta=swe.Variable(eta_0, c_grid.eta),
         )
         for state_1 in swe.integrate(
-            state_0, params, scheme=swe.euler_forward, RHS=swe.linearised_SWE
+            state_0,
+            params,
+            scheme=swe.euler_forward,
+            RHS=swe.linearised_SWE,
+            step=dt,
+            time=t_end,
         ):
             pass
         assert np.all(state_1.u.data == u_1)
@@ -317,7 +320,7 @@ class TestIntegration:
     def test_integrator_raises_on_unknown_scheme(self):
         """Test integrate raises on unknown scheme."""
         H, g, f = 1, 1, 1
-        t_0, t_end, dt = 0, 1, 1
+        t_end, dt = 1, 1
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
@@ -333,9 +336,6 @@ class TestIntegration:
             g=g,
             coriolis_func=f_constant(f),
             on_grid=c_grid,
-            t_0=t_0,
-            t_end=t_end,
-            dt=dt,
         )
         state_0 = swe.State(
             u=swe.Variable(u_0, c_grid.u),
@@ -345,6 +345,11 @@ class TestIntegration:
 
         with pytest.raises(ValueError, match="Unsupported scheme"):
             for _ in swe.integrate(
-                state_0, params, scheme=(lambda x: x), RHS=swe.linearised_SWE
+                state_0,
+                params,
+                scheme=(lambda x: x),
+                RHS=swe.linearised_SWE,
+                step=dt,
+                time=t_end,
             ):
                 pass

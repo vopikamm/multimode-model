@@ -5,7 +5,7 @@ To be used optional in integrate function.
 
 from collections import deque
 from .datastructure import Variable, Parameters, State
-from typing import Callable
+from typing import Callable, Generator
 from .kernel import (
     pressure_gradient_i,
     pressure_gradient_j,
@@ -16,7 +16,7 @@ from .kernel import (
 )
 
 
-def euler_forward(rhs: deque, params: Parameters) -> State:
+def euler_forward(rhs: deque, params: Parameters, step: float) -> State:
     """Compute increment using Euler forward scheme.
 
     Used for the time integration. One previous state
@@ -24,9 +24,9 @@ def euler_forward(rhs: deque, params: Parameters) -> State:
     state is passed to this function. Returns the increment
     dstate = next_state - current_state.
     """
-    du = params.dt * rhs[-1].u.safe_data
-    dv = params.dt * rhs[-1].v.safe_data
-    deta = params.dt * rhs[-1].eta.safe_data
+    du = step * rhs[-1].u.safe_data
+    dv = step * rhs[-1].v.safe_data
+    deta = step * rhs[-1].eta.safe_data
 
     return State(
         u=Variable(du, rhs[-1].u.grid),
@@ -35,7 +35,7 @@ def euler_forward(rhs: deque, params: Parameters) -> State:
     )
 
 
-def adams_bashforth2(rhs: deque, params: Parameters) -> State:
+def adams_bashforth2(rhs: deque, params: Parameters, step: float) -> State:
     """Compute increment using two-level Adams-Bashforth scheme.
 
     Used for the time integration.
@@ -43,11 +43,11 @@ def adams_bashforth2(rhs: deque, params: Parameters) -> State:
     scheme is used. Returns the increment dstate = next_state - current_state.
     """
     if len(rhs) < 2:
-        return euler_forward(rhs, params)
+        return euler_forward(rhs, params, step)
 
-    du = (params.dt / 2) * (3 * rhs[-1].u.safe_data - rhs[-2].u.safe_data)
-    dv = (params.dt / 2) * (3 * rhs[-1].v.safe_data - rhs[-2].v.safe_data)
-    deta = (params.dt / 2) * (3 * rhs[-1].eta.safe_data - rhs[-2].eta.safe_data)
+    du = (step / 2) * (3 * rhs[-1].u.safe_data - rhs[-2].u.safe_data)
+    dv = (step / 2) * (3 * rhs[-1].v.safe_data - rhs[-2].v.safe_data)
+    deta = (step / 2) * (3 * rhs[-1].eta.safe_data - rhs[-2].eta.safe_data)
 
     return State(
         u=Variable(du, rhs[-1].u.grid),
@@ -56,7 +56,7 @@ def adams_bashforth2(rhs: deque, params: Parameters) -> State:
     )
 
 
-def adams_bashforth3(rhs: deque, params: Parameters) -> State:
+def adams_bashforth3(rhs: deque, params: Parameters, step: float) -> State:
     """Compute increment using three-level Adams-Bashforth scheme.
 
     Used for the time integration. Three previous states necessary.
@@ -64,15 +64,15 @@ def adams_bashforth3(rhs: deque, params: Parameters) -> State:
     Returns the increment dstate = next_state - current_state.
     """
     if len(rhs) < 3:
-        return adams_bashforth2(rhs, params)
+        return adams_bashforth2(rhs, params, step)
 
-    du = (params.dt / 12) * (
+    du = (step / 12) * (
         23 * rhs[-1].u.safe_data - 16 * rhs[-2].u.safe_data + 5 * rhs[-3].u.safe_data
     )
-    dv = (params.dt / 12) * (
+    dv = (step / 12) * (
         23 * rhs[-1].v.safe_data - 16 * rhs[-2].v.safe_data + 5 * rhs[-3].v.safe_data
     )
-    deta = (params.dt / 12) * (
+    deta = (step / 12) * (
         23 * rhs[-1].eta.safe_data
         - 16 * rhs[-2].eta.safe_data
         + 5 * rhs[-3].eta.safe_data
@@ -105,14 +105,41 @@ def linearised_SWE(state: State, params: Parameters) -> State:
 
 
 def integrate(
-    state_0: State,
+    initial_state: State,
     params: Parameters,
+    RHS: Callable[..., State],
     scheme: Callable[..., State] = adams_bashforth3,
-    RHS: Callable[..., State] = linearised_SWE,
-):
+    step: float = 1.0,  # time stepping in s
+    time: float = 3600.0,  # end time
+) -> Generator[State, None, None]:
     """Integrate a system of differential equations.
 
-    Only the last time step is returned.
+    The function returns a generator which can be iterated over.
+
+    Arguments
+    ---------
+    initial_state: State
+      Initial conditions of the prognostic variables
+    params: Parameters
+      Parameters of the governing equations
+    RHS: Callable[..., State]
+      Function defining the set of equations to integrate
+    scheme: Callable[..., State] = adams_bashforth3
+      Time integration scheme to use
+    step: float = 1.0
+      Length of time step
+    time: float = 3600.0
+      Integration time. Will be reduced to the next integral multiple of `step`
+
+    Example
+    -------
+    Integrate the set of linear shallow water equations:
+    ```python
+    integrator = integrate(init_state, params, linearised_swe, step=1., time=10e4)
+
+    for next_state in integrator:
+        pass
+    ```
     """
     if scheme is euler_forward:
         level = 1
@@ -123,11 +150,11 @@ def integrate(
     else:
         raise ValueError("Unsupported scheme provided.")
 
-    N = int((params.t_end - params.t_0) // params.dt)
-    state = deque([state_0], maxlen=1)
+    N = int(time // step)
+    state = deque([initial_state], maxlen=1)
     rhs = deque([], maxlen=level)
 
     for _ in range(N):
         rhs.append(RHS(state[-1], params))
-        state.append(state[-1] + scheme(rhs, params))
+        state.append(state[-1] + scheme(rhs, params, step))
         yield state[-1]

@@ -36,12 +36,6 @@ class Parameters:
       Depth of the fluid or thickness of the undisturbed layer in m
     rho_0: float = 1024.0
       Reference density of sea water in kg / m^3
-    dt: float = 1.0
-      Time step length in s
-    t_0: float = 0.0
-      Starting time of the model in seconds
-    t_end: float = 3600.0
-      End time of the model in seconds
     coriolis_func: Optional[CoriolisFunc] = None
       Function used to compute the coriolis parameter on each subgrid
       of a staggered grid. The signature of this function must match
@@ -63,9 +57,6 @@ class Parameters:
     g: float = 9.81  # gravitational force m/s^2
     H: float = 1000.0  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
-    dt: float = 1.0  # time stepping in s
-    t_0: float = 0.0  # starting time
-    t_end: float = 3600.0  # end time
     coriolis_func: InitVar[Optional[CoriolisFunc]] = None
     on_grid: InitVar[Optional[StaggeredGrid]] = None
     _f: Dict[str, np.ndarray] = field(init=False)
