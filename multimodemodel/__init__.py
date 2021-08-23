@@ -19,6 +19,9 @@ from .grid import (
 from .integrate import (
     integrate,
     linearised_SWE,
+    TimeSteppingFunction,
+    StateIncrement,
+    time_stepping_function,
     euler_forward,
     adams_bashforth2,
     adams_bashforth3,

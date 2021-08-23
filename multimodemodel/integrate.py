@@ -5,7 +5,8 @@ To be used optional in integrate function.
 
 from collections import deque
 from .datastructure import Variable, Parameters, State
-from typing import Callable, Generator
+from typing import Callable, Generator, NewType
+from functools import wraps
 from .kernel import (
     pressure_gradient_i,
     pressure_gradient_j,
@@ -15,8 +16,31 @@ from .kernel import (
     divergence_j,
 )
 
+StateIncrement = NewType("StateIncrement", State)
+TimeSteppingFunction = Callable[[deque, Parameters, float], StateIncrement]
 
-def euler_forward(rhs: deque, params: Parameters, step: float) -> State:
+
+def time_stepping_function(
+    n_rhs: int, n_state: int
+) -> Callable[[TimeSteppingFunction], TimeSteppingFunction]:
+    """Decorate function by adding n_rhs and n_state attributes."""
+    if n_state < 1 or n_rhs < 1:
+        raise ValueError("n_rhs and n_state both needs to be larger than 0.")
+
+    def decorator(func: TimeSteppingFunction) -> TimeSteppingFunction:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+
+        wrapper.n_rhs = n_rhs
+        wrapper.n_state = n_state
+        return wrapper
+
+    return decorator
+
+
+@time_stepping_function(n_rhs=1, n_state=1)
+def euler_forward(rhs: deque[State], params: Parameters, step: float) -> StateIncrement:
     """Compute increment using Euler forward scheme.
 
     Used for the time integration. One previous state
@@ -28,14 +52,19 @@ def euler_forward(rhs: deque, params: Parameters, step: float) -> State:
     dv = step * rhs[-1].v.safe_data
     deta = step * rhs[-1].eta.safe_data
 
-    return State(
-        u=Variable(du, rhs[-1].u.grid),
-        v=Variable(dv, rhs[-1].v.grid),
-        eta=Variable(deta, rhs[-1].eta.grid),
+    return StateIncrement(
+        State(
+            u=Variable(du, rhs[-1].u.grid),
+            v=Variable(dv, rhs[-1].v.grid),
+            eta=Variable(deta, rhs[-1].eta.grid),
+        )
     )
 
 
-def adams_bashforth2(rhs: deque, params: Parameters, step: float) -> State:
+@time_stepping_function(n_rhs=2, n_state=1)
+def adams_bashforth2(
+    rhs: deque[State], params: Parameters, step: float
+) -> StateIncrement:
     """Compute increment using two-level Adams-Bashforth scheme.
 
     Used for the time integration.
@@ -49,14 +78,19 @@ def adams_bashforth2(rhs: deque, params: Parameters, step: float) -> State:
     dv = (step / 2) * (3 * rhs[-1].v.safe_data - rhs[-2].v.safe_data)
     deta = (step / 2) * (3 * rhs[-1].eta.safe_data - rhs[-2].eta.safe_data)
 
-    return State(
-        u=Variable(du, rhs[-1].u.grid),
-        v=Variable(dv, rhs[-1].v.grid),
-        eta=Variable(deta, rhs[-1].eta.grid),
+    return StateIncrement(
+        State(
+            u=Variable(du, rhs[-1].u.grid),
+            v=Variable(dv, rhs[-1].v.grid),
+            eta=Variable(deta, rhs[-1].eta.grid),
+        )
     )
 
 
-def adams_bashforth3(rhs: deque, params: Parameters, step: float) -> State:
+@time_stepping_function(n_rhs=3, n_state=1)
+def adams_bashforth3(
+    rhs: deque[State], params: Parameters, step: float
+) -> StateIncrement:
     """Compute increment using three-level Adams-Bashforth scheme.
 
     Used for the time integration. Three previous states necessary.
@@ -78,10 +112,12 @@ def adams_bashforth3(rhs: deque, params: Parameters, step: float) -> State:
         + 5 * rhs[-3].eta.safe_data
     )
 
-    return State(
-        u=Variable(du, rhs[-1].u.grid),
-        v=Variable(dv, rhs[-1].v.grid),
-        eta=Variable(deta, rhs[-1].eta.grid),
+    return StateIncrement(
+        State(
+            u=Variable(du, rhs[-1].u.grid),
+            v=Variable(dv, rhs[-1].v.grid),
+            eta=Variable(deta, rhs[-1].eta.grid),
+        )
     )
 
 
@@ -108,7 +144,7 @@ def integrate(
     initial_state: State,
     params: Parameters,
     RHS: Callable[..., State],
-    scheme: Callable[..., State] = adams_bashforth3,
+    scheme: TimeSteppingFunction = adams_bashforth3,
     step: float = 1.0,  # time stepping in s
     time: float = 3600.0,  # end time
 ) -> Generator[State, None, None]:
@@ -141,18 +177,17 @@ def integrate(
         pass
     ```
     """
-    if scheme is euler_forward:
-        level = 1
-    elif scheme is adams_bashforth2:
-        level = 2
-    elif scheme is adams_bashforth3:
-        level = 3
-    else:
-        raise ValueError("Unsupported scheme provided.")
-
     N = int(time // step)
-    state = deque([initial_state], maxlen=1)
-    rhs = deque([], maxlen=level)
+
+    try:
+        state = deque([initial_state], maxlen=scheme.n_state)
+        rhs = deque([], maxlen=scheme.n_rhs)
+    except AttributeError:
+        raise AttributeError(
+            f"Either n_state or n_rhs attribute missing for {scheme.__name__}. "
+            "Consider to declare the function with time_stepping_function "
+            "decorator."
+        )
 
     for _ in range(N):
         rhs.append(RHS(state[-1], params))
