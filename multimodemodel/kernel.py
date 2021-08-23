@@ -22,7 +22,7 @@ def _pressure_gradient_i(
     mask_u: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the pressure gradient along the first dimension."""
-    return -g * mask_u[i, j] * (eta[i, j] - eta[i - 1, j]) / dx_u[i, j]
+    return -g * mask_u[j, i] * (eta[j, i] - eta[j, i - 1]) / dx_u[j, i]
 
 
 @_numba_2D_grid_iterator
@@ -37,7 +37,7 @@ def _pressure_gradient_j(
     mask_v: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the pressure gradient along the second dimension."""
-    return -g * mask_v[i, j] * (eta[i, j] - eta[i, j - 1]) / dy_v[i, j]
+    return -g * mask_v[j, i] * (eta[j, i] - eta[j - 1, i]) / dy_v[j, i]
 
 
 @_numba_2D_grid_iterator
@@ -54,15 +54,15 @@ def _divergence_i(
     dy_u: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the first dimension."""
-    ip1 = _cyclic_shift(i, ni)
+    ip1 = _cyclic_shift(i, ni, 1)
     return (
         -H
         * (
-            mask_u[ip1, j] * dy_u[ip1, j] * u[ip1, j]
-            - mask_u[i, j] * dy_u[i, j] * u[i, j]
+            mask_u[j, ip1] * dy_u[j, ip1] * u[j, ip1]
+            - mask_u[j, i] * dy_u[j, i] * u[j, i]
         )
-        / dx_eta[i, j]
-        / dy_eta[i, j]
+        / dx_eta[j, i]
+        / dy_eta[j, i]
     )
 
 
@@ -80,15 +80,15 @@ def _divergence_j(
     dx_v: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the second dimension."""
-    jp1 = _cyclic_shift(j, nj)
+    jp1 = _cyclic_shift(j, nj, 1)
     return (
         -H
         * (
-            mask_v[i, jp1] * dx_v[i, jp1] * v[i, jp1]
-            - mask_v[i, j] * dx_v[i, j] * v[i, j]
+            mask_v[jp1, i] * dx_v[jp1, i] * v[jp1, i]
+            - mask_v[j, i] * dx_v[j, i] * v[j, i]
         )
-        / dx_eta[i, j]
-        / dy_eta[i, j]
+        / dx_eta[j, i]
+        / dy_eta[j, i]
     )
 
 
@@ -104,14 +104,14 @@ def _coriolis_j(
     f: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the second dimension."""
-    ip1 = _cyclic_shift(i, ni)
-    return mask_v[i, j] * (
-        -f[i, j]
+    ip1 = _cyclic_shift(i, ni, 1)
+    return mask_v[j, i] * (
+        -f[j, i]
         * (
-            mask_u[i, j - 1] * u[i, j - 1]
-            + mask_u[i, j] * u[i, j]
-            + mask_u[ip1, j] * u[ip1, j]
-            + mask_u[ip1, j - 1] * u[ip1, j - 1]
+            mask_u[j - 1, i] * u[j - 1, i]
+            + mask_u[j, i] * u[j, i]
+            + mask_u[j, ip1] * u[j, ip1]
+            + mask_u[j - 1, ip1] * u[j - 1, ip1]
         )
         / 4.0
     )
@@ -130,13 +130,13 @@ def _coriolis_i(
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the first dimension."""
     jp1 = _cyclic_shift(j, nj, 1)
-    return mask_u[i, j] * (
-        f[i, j]
+    return mask_u[j, i] * (
+        f[j, i]
         * (
-            mask_v[i - 1, j] * v[i - 1, j]
-            + mask_v[i, j] * v[i, j]
-            + mask_v[i, jp1] * v[i, jp1]
-            + mask_v[i - 1, jp1] * v[i - 1, jp1]
+            mask_v[j, i - 1] * v[j, i - 1]
+            + mask_v[j, i] * v[j, i]
+            + mask_v[jp1, i] * v[jp1, i]
+            + mask_v[jp1, i - 1] * v[jp1, i - 1]
         )
         / 4.0
     )

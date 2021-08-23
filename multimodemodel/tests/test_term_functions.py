@@ -6,9 +6,14 @@ import pytest
 import multimodemodel as swe
 
 
-def get_x_y(nx, ny, dx, dy):
+def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0):
     """Return 2D coordinate arrays."""
-    return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
+    x = np.arange(nx) * dx
+    y = np.arange(ny) * dy
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    assert np.all(X[0, :] == x)
+    assert np.all(Y[:, 0] == y)
+    return X, Y
 
 
 def get_test_mask(x):
@@ -34,12 +39,13 @@ class TestTerms:
         ni, nj = 10, 5
         x, _ = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        mask_u = mask * np.roll(mask, 1, axis=0)
+        mask_u = mask * np.roll(mask, 1, axis=-1)
         eta = np.copy(x)
         dx_a = dx * np.ones(x.shape)
 
-        oracle = -g * (eta * mask - np.roll(eta * mask, 1, axis=0)) / dx_a * mask_u
+        oracle = -g * (eta * mask - np.roll(eta * mask, 1, axis=-1)) / dx_a * mask_u
         result = swe._pressure_gradient_i(ni, nj, eta, g, dx_a, mask_u)  # type: ignore
+        print(oracle, result, x.shape)
 
         assert np.all(result == oracle)
 
@@ -51,7 +57,7 @@ class TestTerms:
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         eta = np.copy(x) * mask
-        result = -g * mask * (eta - np.roll(eta, 1, axis=0)) / dx
+        result = -g * mask * (eta - np.roll(eta, 1, axis=-1)) / dx
 
         params = swe.Parameters(g=g)
         grid = swe.Grid(x, y, mask)
@@ -75,7 +81,7 @@ class TestTerms:
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         eta = np.copy(y)
-        result = -g * mask * (eta - np.roll(eta, 1, axis=1)) / dy
+        result = -g * mask * (eta - np.roll(eta, 1, axis=-2)) / dy
 
         params = swe.Parameters(g=g)
         grid = swe.Grid(x, y, mask)
@@ -98,9 +104,9 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask_eta = get_test_mask(x)
-        mask_u = mask_eta * np.roll(mask_eta, 1, axis=0)
+        mask_u = mask_eta * np.roll(mask_eta, 1, axis=-1)
         u = np.copy(x) * mask_u
-        result = -H * (np.roll(u, -1, axis=0) - u) / dx
+        result = -H * (np.roll(u, -1, axis=-1) - u) / dx
 
         params = swe.Parameters(H=H)
         grid_u = swe.Grid(x, y, mask_u)
@@ -124,9 +130,9 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask_eta = get_test_mask(x)
-        mask_v = mask_eta * np.roll(mask_eta, 1, axis=1)
+        mask_v = mask_eta * np.roll(mask_eta, 1, axis=-2)
         v = np.copy(y) * mask_v
-        result = -H * (np.roll(v, -1, axis=1) - v) / dy
+        result = -H * (np.roll(v, -1, axis=-2) - v) / dy
 
         params = swe.Parameters(H=H)
         grid_v = swe.Grid(x, y, mask_v)
@@ -157,7 +163,7 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0, :], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[0, :], y[:, 0], mask)
 
         params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
 
@@ -167,9 +173,9 @@ class TestTerms:
             -c_grid.v.mask
             * coriolis_func(c_grid.v.y)
             * (
-                np.roll(np.roll(u, -1, axis=0), 1, axis=1)
-                + np.roll(u, -1, axis=0)
-                + np.roll(u, 1, axis=1)
+                np.roll(np.roll(u, -1, axis=-1), 1, axis=-2)
+                + np.roll(u, -1, axis=-1)
+                + np.roll(u, 1, axis=-2)
                 + u
             )
             / 4.0
@@ -201,7 +207,7 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0, :], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x[0, :], y[:, 0], mask)
 
         params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
 
@@ -211,9 +217,9 @@ class TestTerms:
             c_grid.u.mask
             * coriolis_func(c_grid.u.y)
             * (
-                np.roll(np.roll(v, 1, axis=0), -1, axis=1)
-                + np.roll(v, 1, axis=0)
-                + np.roll(v, -1, axis=1)
+                np.roll(np.roll(v, 1, axis=-1), -1, axis=-2)
+                + np.roll(v, 1, axis=-1)
+                + np.roll(v, -1, axis=-2)
                 + v
             )
             / 4.0
@@ -248,7 +254,7 @@ class TestTerms:
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0, :])
+        c_grid = StaggeredGrid.cartesian_c_grid(x[0, :], y[:, 0])
         params = swe.Parameters(coriolis_func=f_constant(1.0), on_grid=c_grid)
 
         state = swe.State(

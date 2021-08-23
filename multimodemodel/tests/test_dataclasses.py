@@ -31,7 +31,12 @@ grid_order = {
 
 def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0):
     """Return 2D coordinate arrays."""
-    return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
+    x = np.arange(nx) * dx
+    y = np.arange(ny) * dy
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    assert np.all(X[0, :] == x)
+    assert np.all(Y[:, 0] == y)
+    return X, Y
 
 
 def get_test_mask(shape):
@@ -123,7 +128,7 @@ class TestGrid:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
 
-        g2 = Grid(x=x.T, y=y.T, mask=mask.T, dim_x=1, dim_y=0)
+        g2 = Grid(x=x, y=y, mask=mask)
         assert g2.len_x == nx
         assert g2.len_y == ny
         assert np.all(g2.dx == dx)
@@ -142,8 +147,9 @@ class TestGrid:
         y = np.arange(0, ny * dy, dy)
 
         g = Grid.cartesian(x, y)
-        assert g.x.shape == g.y.shape == (nx, ny)
+        assert g.x.shape == g.y.shape == (ny, nx)
         assert np.all(np.diff(g.x, 1, g.dim_x) == dx)
+        assert np.all(np.diff(g.y, 1, g.dim_y) == dy)
 
     def test_regular_lat_lon(self):
         """Test lat_lon grid generating classmethod.
@@ -213,7 +219,7 @@ class TestStaggeredGrid:
             grids[grid_order[shift].index(i)] for i in "quve"
         ]
         staggered_grid = StaggeredGrid.cartesian_c_grid(
-            eta_grid.x[:, 0], eta_grid.y[0, :], shift=shift
+            eta_grid.x[0, :], eta_grid.y[:, 0], shift=shift
         )
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
@@ -415,7 +421,7 @@ class TestVariableAsDataArray:
     def test_data_assignment(self):
         """Test assignment of data."""
         v = self._gen_var(
-            data=np.random.randn(self.nx, self.ny), mask=np.ones((self.nx, self.ny))
+            data=np.random.randn(self.ny, self.nx), mask=np.ones((self.ny, self.nx))
         )
         assert (v.as_dataarray == v.data).all()
 
@@ -430,7 +436,7 @@ class TestVariableAsDataArray:
 
     def test_masking_has_no_side_effects(self):
         """Test coordinate and dimension definition."""
-        data = np.ones((self.nx, self.ny))
+        data = np.ones((self.ny, self.nx))
         v = self._gen_var(data=data)
         _ = v.as_dataarray
 
