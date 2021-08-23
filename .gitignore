@@ -6,3 +6,4 @@ coverage.xml
 multimodemodel.egg-info
 .benchmarks
 .DS_store
+*-checkpoint.ipynb
