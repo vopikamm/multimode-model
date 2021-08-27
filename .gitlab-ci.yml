@@ -12,18 +12,41 @@ sast:
 include:
 - template: Security/SAST.gitlab-ci.yml
 
-test:
+test_3.9:
   stage: test
   needs: []
   script:
-  - micromamba install -y -n base -c conda-forge -f requirements.txt pytest-cov
-  - pip install -e .[xarray]
+  - micromamba install -y -n base -c conda-forge python=3.9.0 pip
+  - pip install -e .[test,xarray]
   - py.test -v -k "not benchmark" --cov --cov-report term-missing --junitxml=report.xml multimodemodel
   artifacts:
     when: always
     reports:
       junit: report.xml
 
+test_3.8:
+  stage: test
+  needs: []
+  script:
+  - micromamba install -y -n base -c conda-forge python=3.8.0 pip
+  - pip install -e .[test,xarray]
+  - py.test -v -k "not benchmark" multimodemodel
+  # artifacts:
+  #   when: always
+  #   reports:
+  #     junit: report.xml
+
+test_3.7:
+  stage: test
+  needs: []
+  script:
+  - micromamba install -y -n base -c conda-forge python=3.7.0 pip
+  - pip install -e .[test,xarray]
+  - py.test -v -k "not benchmark" multimodemodel
+  # artifacts:
+  #   when: always
+  #   reports:
+  #     junit: report.xml
 
 lint:
   stage: test
