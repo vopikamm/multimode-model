@@ -153,9 +153,10 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
 
     Using centered differences in space.
     """
+    u_grid = state.u.grid
     result = _pressure_gradient_i(
-        state.eta.grid.len_x,
-        state.eta.grid.len_y,
+        u_grid.shape[u_grid.dim_x],
+        u_grid.shape[u_grid.dim_y],
         state.eta.safe_data,  # type: ignore
         params.g,  # type: ignore
         state.u.grid.dx,  # type: ignore
@@ -173,9 +174,10 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
 
     Using centered differences in space.
     """
+    v_grid = state.v.grid
     result = _pressure_gradient_j(
-        state.eta.grid.len_x,
-        state.eta.grid.len_y,
+        v_grid.shape[v_grid.dim_x],
+        v_grid.shape[v_grid.dim_y],
         state.eta.safe_data,  # type: ignore
         params.g,  # type: ignore
         state.v.grid.dy,  # type: ignore
@@ -190,9 +192,10 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
 
 def divergence_i(state: State, params: Parameters) -> State:
     """Compute divergence of flow along first dimension with centered differences."""
+    u_grid = state.u.grid
     result = _divergence_i(
-        state.u.grid.len_x,
-        state.u.grid.len_y,
+        u_grid.shape[u_grid.dim_x],
+        u_grid.shape[u_grid.dim_y],
         state.u.safe_data,  # type: ignore
         state.u.grid.mask,  # type: ignore
         params.H,  # type: ignore
@@ -209,9 +212,10 @@ def divergence_i(state: State, params: Parameters) -> State:
 
 def divergence_j(state: State, params: Parameters) -> State:
     """Compute divergence of flow along second dimension with centered differences."""
+    v_grid = state.v.grid
     result = _divergence_j(
-        state.v.grid.len_x,
-        state.v.grid.len_y,
+        v_grid.shape[v_grid.dim_x],
+        v_grid.shape[v_grid.dim_y],
         state.v.safe_data,  # type: ignore
         state.v.grid.mask,  # type: ignore
         params.H,  # type: ignore
@@ -231,9 +235,10 @@ def coriolis_j(state: State, params: Parameters) -> State:
 
     An arithmetic four point average of u onto the v-grid is performed.
     """
+    v_grid = state.v.grid
     result = _coriolis_j(
-        state.u.grid.len_x,
-        state.u.grid.len_y,
+        v_grid.shape[v_grid.dim_x],
+        v_grid.shape[v_grid.dim_y],
         state.u.safe_data,  # type: ignore
         state.u.grid.mask,  # type: ignore
         state.v.grid.mask,  # type: ignore
@@ -251,9 +256,10 @@ def coriolis_i(state: State, params: Parameters) -> State:
 
     An arithmetic four point average of v onto the u-grid is performed.
     """
+    u_grid = state.u.grid
     result = _coriolis_i(
-        state.v.grid.len_x,
-        state.v.grid.len_y,
+        u_grid.shape[u_grid.dim_x],
+        u_grid.shape[u_grid.dim_y],
         state.v.safe_data,  # type: ignore
         state.v.grid.mask,  # type: ignore
         state.u.grid.mask,  # type: ignore

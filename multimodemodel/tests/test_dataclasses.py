@@ -103,8 +103,8 @@ class TestGrid:
         g1 = Grid(x=x, y=y, mask=mask)
         assert np.all(g1.dx == dx * np.ones(x.shape))
         assert np.all(g1.dy == dy * np.ones(y.shape))
-        assert g1.len_x == nx
-        assert g1.len_y == ny
+        assert g1.shape[g1.dim_x] == nx
+        assert g1.shape[g1.dim_y] == ny
 
     def test_grid_default_mask(self):
         """Test default grid setting."""
@@ -129,8 +129,8 @@ class TestGrid:
         mask = get_test_mask(x.shape)
 
         g2 = Grid(x=x, y=y, mask=mask)
-        assert g2.len_x == nx
-        assert g2.len_y == ny
+        assert g2.shape[g2.dim_x] == nx
+        assert g2.shape[g2.dim_y] == ny
         assert np.all(g2.dx == dx)
         assert np.all(g2.dy == dy)
         assert g2.x.shape == (ny, nx)
@@ -252,8 +252,8 @@ class TestStaggeredGrid:
             lon_end=eta_grid.x.max(),
             lat_start=eta_grid.y.min(),
             lat_end=eta_grid.y.max(),
-            nx=eta_grid.len_x,
-            ny=eta_grid.len_y,
+            nx=eta_grid.shape[eta_grid.dim_x],
+            ny=eta_grid.shape[eta_grid.dim_y],
         )
 
         assert np.all(staggered_grid.q.x == q_grid.x)
@@ -308,8 +308,8 @@ class TestStaggeredGrid:
             lon_end=eta_grid.x.max(),
             lat_start=eta_grid.y.min(),
             lat_end=eta_grid.y.max(),
-            nx=eta_grid.len_x,
-            ny=eta_grid.len_y,
+            nx=eta_grid.shape[eta_grid.dim_x],
+            ny=eta_grid.shape[eta_grid.dim_y],
             mask=mask,  # type: ignore
         )
 

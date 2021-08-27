@@ -1,7 +1,7 @@
 """Logic related to creation of grids."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Optional
 import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
@@ -46,20 +46,31 @@ class Grid:
       2D np.ndarray of x-coordinates on grid
     y: np.ndarray
       2D np.ndarray of y-coordinates on grid
-    mask: np.ndarray = None
-      optional. Ocean mask, 1 where ocean is, 0 where land is.
+    mask: Optional[np.ndarray] = None
+      Ocean mask, 1 where ocean is, 0 where land is.
       Default is a closed basin
+
+    Attributes
+    ----------
+    dx: np.ndarray
+      Grid spacing in x.
+    dy: np.ndarray
+      Grid spacing in y.
+    shape: npt._Shape
+      Tuple of int defining the shape of the grid.
+
+    dim_x: int =-1
+      Axis of x-dimension
+    dim_y: int =-2
+      Axis of y-dimension
     """
 
     x: np.ndarray  # 2D np.ndarray of x-coordinates on grid
     y: np.ndarray  # 2D np.ndarray of y-coordinates on grid
-    mask: Union[
-        np.ndarray, None
-    ] = None  # ocean mask, 1 where ocean is, 0 where land is
+    mask: Optional[np.ndarray] = None  # ocean mask, 1 where ocean is, 0 where land is
     dx: np.ndarray = field(init=False)  # grid spacing in x
     dy: np.ndarray = field(init=False)  # grid spacing in y
-    len_x: int = field(init=False)  # length of array in x dimension
-    len_y: int = field(init=False)  # length of array in y dimension
+    shape: npt._Shape = field(init=False)  # length of array in x dimension
 
     dim_x: int = field(init=False, default=-1)
     dim_y: int = field(init=False, default=-2)
@@ -67,11 +78,10 @@ class Grid:
     def __post_init__(self) -> None:
         """Set derived attributes of the grid and validate."""
         self.dx, self.dy = self._compute_grid_spacing()
-        self.len_x = self.x.shape[self.dim_x]
-        self.len_y = self.x.shape[self.dim_y]
+        self.shape = self.x.shape
 
         if self.mask is None:
-            self.mask = self._get_default_mask(self.x.shape)
+            self.mask = self._get_default_mask(self.shape)
 
         self._validate()
 
@@ -222,8 +232,8 @@ class StaggeredGrid:
         eta_grid = Grid.cartesian(x, y, mask)
 
         mask_args = (
-            eta_grid.len_x,
-            eta_grid.len_y,
+            eta_grid.shape[eta_grid.dim_x],
+            eta_grid.shape[eta_grid.dim_y],
             eta_grid.mask,
             shift.value[0],
             shift.value[1],
@@ -270,8 +280,8 @@ class StaggeredGrid:
         u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
         u_grid.mask = cls._u_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
+            u_grid.shape[u_grid.dim_x],
+            u_grid.shape[u_grid.dim_y],
             eta_grid.mask,
             shift.value[0],
             shift.value[1],
@@ -285,8 +295,8 @@ class StaggeredGrid:
         v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
         v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
         v_grid.mask = cls._v_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
+            v_grid.shape[v_grid.dim_x],
+            v_grid.shape[v_grid.dim_y],
             eta_grid.mask,
             shift.value[0],
             shift.value[1],
@@ -303,8 +313,8 @@ class StaggeredGrid:
         )
         q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
         q_grid.mask = cls._q_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
+            q_grid.shape[q_grid.dim_x],
+            q_grid.shape[q_grid.dim_y],
             eta_grid.mask,
             shift.value[0],
             shift.value[1],
