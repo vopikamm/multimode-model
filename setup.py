@@ -31,6 +31,9 @@ setup(
     ],
     extras_require={
         "xarray": ["xarray"],
+        "test": ["pytest", "pytest-benchmark", "pytest-cov"],
+        "lint": ["flake8", "black"],
+        "examples": ["ipython", "matplotlib", "xarray"],
     }
     # zip_safe=False
 )

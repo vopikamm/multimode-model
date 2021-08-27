@@ -11,11 +11,17 @@ from .coriolis import CoriolisFunc
 from typing import Dict, Optional
 
 try:
-    import xarray as xarray
+    import xarray
 
     has_xarray = True
 except ModuleNotFoundError:  # pragma: no cover
     has_xarray = False
+
+    # for type hinting
+    class xarray:
+        """Necessary for type hinting to work."""
+
+        DataArray = None
 
 
 @dataclass
@@ -125,7 +131,7 @@ class Variable:
 
         data[self.grid.mask == 0] = np.nan
 
-        return xarray.DataArray(
+        return xarray.DataArray(  # type: ignore
             data=data,
             coords={
                 "x": (("i", "j"), self.grid.x),
