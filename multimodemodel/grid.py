@@ -1,7 +1,7 @@
 """Logic related to creation of grids."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Union, Optional
+from typing import Any, Dict, Optional
 import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
@@ -100,8 +100,8 @@ class Grid:
         cls: Any,
         x: np.ndarray,  # longitude on grid
         y: np.ndarray,  # latitude on grid
-        mask: Union[
-            np.ndarray, None
+        mask: Optional[
+            np.ndarray
         ] = None,  # ocean mask, 1 where ocean is, 0 where land is
     ):
         """Generate a Cartesian grid.
@@ -112,7 +112,7 @@ class Grid:
           1D Array of coordinates along x-dimension.
         y: np.ndarray
           1D Array of coordinates along y_dimension.
-        mask: np.ndarray | None
+        mask: Optional[np.ndarray] = None
           Optional ocean mask. Default is a closed domain.
         """
         assert x.ndim == y.ndim == 1
@@ -135,7 +135,7 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
-        mask: Union[np.ndarray, None] = None,
+        mask: Optional[np.ndarray] = None,
         radius: float = 6_371_000.0,
     ):
         """Generate a regular spherical grid.
@@ -210,8 +210,8 @@ class StaggeredGrid:
         cls: Any,
         x: np.ndarray,  # longitude on grid
         y: np.ndarray,  # latitude on grid
-        mask: Union[
-            np.ndarray, None
+        mask: Optional[
+            np.ndarray
         ] = None,  # ocean mask, 1 where ocean is, 0 where land is
         shift: GridShift = GridShift.LL,
     ):
