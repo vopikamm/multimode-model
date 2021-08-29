@@ -60,7 +60,7 @@ class TestTerms:
         result = -g * mask * (eta - np.roll(eta, 1, axis=-1)) / dx
 
         params = swe.Parameters(g=g)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x=x, y=y, mask=mask)
         state = swe.State(
             u=swe.Variable(np.zeros(x.shape), grid),
             v=swe.Variable(np.zeros(x.shape), grid),
@@ -84,7 +84,7 @@ class TestTerms:
         result = -g * mask * (eta - np.roll(eta, 1, axis=-2)) / dy
 
         params = swe.Parameters(g=g)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x=x, y=y, mask=mask)
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid),
             v=swe.Variable(np.zeros(y.shape), grid),
@@ -109,8 +109,8 @@ class TestTerms:
         result = -H * (np.roll(u, -1, axis=-1) - u) / dx
 
         params = swe.Parameters(H=H)
-        grid_u = swe.Grid(x, y, mask_u)
-        grid_eta = swe.Grid(x, y, mask_eta)
+        grid_u = swe.Grid(x=x, y=y, mask=mask_u)
+        grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
         state = swe.State(
             u=swe.Variable(u, grid_u),
             v=swe.Variable(np.zeros(x.shape), grid_u),
@@ -135,8 +135,8 @@ class TestTerms:
         result = -H * (np.roll(v, -1, axis=-2) - v) / dy
 
         params = swe.Parameters(H=H)
-        grid_v = swe.Grid(x, y, mask_v)
-        grid_eta = swe.Grid(x, y, mask_eta)
+        grid_v = swe.Grid(x=x, y=y, mask=mask_v)
+        grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
         state = swe.State(
             u=swe.Variable(np.zeros(y.shape), grid_v),
             v=swe.Variable(v, grid_v),
@@ -163,7 +163,7 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[0, :], y[:, 0], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
 
         params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
 
@@ -207,7 +207,7 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[0, :], y[:, 0], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
 
         params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
 
@@ -254,7 +254,7 @@ class TestTerms:
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[0, :], y[:, 0])
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
         params = swe.Parameters(coriolis_func=f_constant(1.0), on_grid=c_grid)
 
         state = swe.State(

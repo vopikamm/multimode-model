@@ -61,7 +61,7 @@ class TestParameters:
         nx, ny = 20, 10
         dx, dy = 1.0, 0.25
         x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
-        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
 
         p = Parameters(coriolis_func=f_constant(f=f0), on_grid=staggered_grid)
 
@@ -77,7 +77,7 @@ class TestParameters:
         x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
 
         if g:
-            staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+            staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
         else:
             staggered_grid = None
 
@@ -119,7 +119,7 @@ class TestGrid:
         x, y = get_x_y()
         mask = get_test_mask(y.shape)
         with pytest.raises(ValueError, match="Mask shape not matching grid shape"):
-            _ = Grid(x, y, mask=mask[:, ::2])
+            _ = Grid(x=x, y=y, mask=mask[:, ::2])
 
     def test_dim_def(self):
         """Test dimension definition."""
@@ -219,7 +219,7 @@ class TestStaggeredGrid:
             grids[grid_order[shift].index(i)] for i in "quve"
         ]
         staggered_grid = StaggeredGrid.cartesian_c_grid(
-            eta_grid.x[0, :], eta_grid.y[:, 0], shift=shift
+            x=eta_grid.x[0, :], y=eta_grid.y[:, 0], shift=shift
         )
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
@@ -327,7 +327,7 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask)
+        g1 = Grid(x=x, y=y, mask=mask)
 
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
@@ -341,7 +341,7 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask)
+        g1 = Grid(x=x, y=y, mask=mask)
 
         v1 = Variable(np.ones_like(g1.x), g1)
         v2 = Variable(None, g1)
@@ -355,7 +355,7 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask)
+        g1 = Grid(x=x, y=y, mask=mask)
 
         v1 = Variable(None, g1)
         v2 = Variable(None, g1)
@@ -367,8 +367,8 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask)
-        g2 = Grid(x, y, mask)
+        g1 = Grid(x=x, y=y, mask=mask)
+        g2 = Grid(x=x, y=y, mask=mask)
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
         v1 = Variable(d1, g1)
@@ -382,7 +382,7 @@ class TestVariable:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask)
+        g1 = Grid(x=x, y=y, mask=mask)
         d1 = np.zeros_like(g1.x) + 1.0
         v1 = Variable(d1, g1)
         with pytest.raises(TypeError) as excinfo:
@@ -399,7 +399,7 @@ class TestVariableAsDataArray:
 
     def _gen_var(self, data=None, mask=None):
         x, y = get_x_y(self.nx, self.ny, self.dx, self.dy)
-        g1 = Grid(x, y, mask=mask)
+        g1 = Grid(x=x, y=y, mask=mask)
         return Variable(data, g1)
 
     def test_None_data_is_zero(self):
@@ -451,7 +451,7 @@ class TestState:
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask)
+        g1 = Grid(x=x, y=y, mask=mask)
         d1 = np.zeros_like(g1.x) + 1.0
         s1 = State(
             u=Variable(d1, g1),
