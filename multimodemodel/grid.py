@@ -1,7 +1,7 @@
 """Logic related to creation of grids."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
@@ -115,7 +115,6 @@ class Grid:
 
     def _compute_vertical_grid_spacing(self):
         """Compute grid box size along z."""
-        print(self.z)
         if self.z is None:
             return None
         dz = np.diff(self.z, axis=0)
@@ -125,8 +124,9 @@ class Grid:
     @classmethod
     def cartesian(
         cls: Any,
-        x: np.ndarray,  # longitude on grid
-        y: np.ndarray,  # latitude on grid
+        x: np.ndarray,  # x coordinate
+        y: np.ndarray,  # y coordinate
+        z: Optional[np.ndarray] = None,  # z coordinate
         mask: Optional[
             np.ndarray
         ] = None,  # ocean mask, 1 where ocean is, 0 where land is
@@ -136,9 +136,11 @@ class Grid:
         Arguments
         ---------
         x: np.ndarray
-          1D Array of coordinates along x-dimension.
+          1D Array of coordinates along x dimension.
         y: np.ndarray
-          1D Array of coordinates along y_dimension.
+          1D Array of coordinates along y dimension.
+        z: Optional[np.ndarray] = None,
+          1D Array of coordinates along z dimension.
         mask: Optional[np.ndarray] = None
           Optional ocean mask. Default is a closed domain.
         """
@@ -148,6 +150,7 @@ class Grid:
         grid = cls(
             x=x_2D,
             y=y_2D,
+            z=z,
             mask=mask,
         )
 
@@ -162,6 +165,7 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
+        z: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         radius: float = 6_371_000.0,
     ):
@@ -181,6 +185,8 @@ class Grid:
           Number of grid points along x dimension.
         ny: int
           Number of grid points along y dimension.
+        z: Optional[np.ndarray] = None
+          Optional 1D coordinate array along vertical dimension.
         mask: np.ndarray | None
           Optional ocean mask. Default is a closed domain.
         radius: float = 6_371_000.0
@@ -193,6 +199,7 @@ class Grid:
         grid = cls.cartesian(
             x=lon,
             y=lat,
+            z=z,
             mask=mask,
         )
 
@@ -254,31 +261,27 @@ class StaggeredGrid:
         """
         eta_grid = Grid.cartesian(**grid_kwargs)  # type: ignore
 
-        mask_args = (
-            eta_grid.shape[eta_grid.dim_x],
-            eta_grid.shape[eta_grid.dim_y],
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
-        )
-
         u_x, u_y = (eta_grid.x + shift.value[0] * eta_grid.dx / 2, eta_grid.y)
         v_x, v_y = (eta_grid.x, eta_grid.y + shift.value[1] * eta_grid.dy / 2)
         q_x, q_y = (u_x, v_y)
+        z = eta_grid.z
         u_grid = Grid(
             x=u_x,
             y=u_y,
-            mask=cls._u_mask_from_eta(*mask_args),
+            z=z,
+            mask=cls._compute_mask(cls._u_mask_from_eta, eta_grid, shift),
         )
         v_grid = Grid(
             x=v_x,
             y=v_y,
-            mask=cls._v_mask_from_eta(*mask_args),
+            z=z,
+            mask=cls._compute_mask(cls._v_mask_from_eta, eta_grid, shift),
         )
         q_grid = Grid(
             x=q_x,
             y=q_y,
-            mask=cls._q_mask_from_eta(*mask_args),
+            z=z,
+            mask=cls._compute_mask(cls._q_mask_from_eta, eta_grid, shift),
         )
         return StaggeredGrid(eta_grid, u_grid, v_grid, q_grid)
 
@@ -302,12 +305,10 @@ class StaggeredGrid:
         u_kwargs = kwargs.copy()
         u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
-        u_grid.mask = cls._u_mask_from_eta(  # type: ignore
-            u_grid.shape[u_grid.dim_x],
-            u_grid.shape[u_grid.dim_y],
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        u_grid.mask = cls._compute_mask(
+            cls._u_mask_from_eta,  # type: ignore
+            eta_grid,
+            shift,
         )
 
         v_y_start, v_y_end = (
@@ -317,12 +318,10 @@ class StaggeredGrid:
         v_kwargs = kwargs.copy()
         v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
         v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
-        v_grid.mask = cls._v_mask_from_eta(  # type: ignore
-            v_grid.shape[v_grid.dim_x],
-            v_grid.shape[v_grid.dim_y],
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        v_grid.mask = cls._compute_mask(
+            cls._v_mask_from_eta,  # type: ignore
+            eta_grid,
+            shift,
         )
 
         q_kwargs = kwargs.copy()
@@ -335,15 +334,36 @@ class StaggeredGrid:
             )
         )
         q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
-        q_grid.mask = cls._q_mask_from_eta(  # type: ignore
-            q_grid.shape[q_grid.dim_x],
-            q_grid.shape[q_grid.dim_y],
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        q_grid.mask = cls._compute_mask(
+            cls._q_mask_from_eta,  # type: ignore
+            eta_grid,
+            shift,
         )
 
         return cls(eta_grid, u_grid, v_grid, q_grid)
+
+    @staticmethod
+    def _compute_mask(
+        func: Callable[..., np.ndarray], from_grid: Grid, shift: GridShift
+    ):
+        if from_grid.mask.ndim <= 2:  # type: ignore
+            return func(
+                from_grid.shape[from_grid.dim_x],
+                from_grid.shape[from_grid.dim_y],
+                from_grid.mask,
+                shift.value[0],
+                shift.value[1],
+            )
+        res = np.empty_like(from_grid.mask)  # type: ignore
+        for k in range(from_grid.shape[from_grid.dim_z]):
+            res[k] = func(
+                from_grid.shape[from_grid.dim_x],
+                from_grid.shape[from_grid.dim_y],
+                from_grid.mask[k],  # type: ignore
+                shift.value[0],
+                shift.value[1],
+            )
+        return res
 
     @staticmethod
     @_numba_2D_grid_iterator_i8
