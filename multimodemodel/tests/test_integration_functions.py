@@ -34,6 +34,7 @@ class TestRHS:
         H, g, f0 = 1.0, 2.0, 4.0
         dx, dy = 1.0, 2.0
         ni, nj = 10, 5
+        t = 0.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask_eta = get_test_mask(x)
@@ -45,9 +46,9 @@ class TestRHS:
         v = 3.0 * x * y * c_grid.v.mask
 
         s = swe.State(
-            u=swe.Variable(u, c_grid.u),
-            v=swe.Variable(v, c_grid.v),
-            eta=swe.Variable(eta, c_grid.eta),
+            u=swe.Variable(u, c_grid.u, t),
+            v=swe.Variable(v, c_grid.v, t),
+            eta=swe.Variable(eta, c_grid.eta, t),
         )
 
         d_u = c_grid.u.mask * (
@@ -112,6 +113,7 @@ class TestIntegration:
         dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
+        t = 0.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
@@ -119,15 +121,16 @@ class TestIntegration:
         params = swe.Parameters()
 
         ds = swe.State(
-            u=swe.Variable(2 * np.ones(x.shape), c_grid.u),
-            v=swe.Variable(3 * np.ones(x.shape), c_grid.v),
-            eta=swe.Variable(1 * np.ones(x.shape), c_grid.eta),
+            u=swe.Variable(2 * np.ones(x.shape), c_grid.u, t),
+            v=swe.Variable(3 * np.ones(x.shape), c_grid.v, t),
+            eta=swe.Variable(1 * np.ones(x.shape), c_grid.eta, t),
         )
 
         ds_test = swe.euler_forward(deque([ds], maxlen=1), params, dt)
-        assert np.all(ds_test.u.data == dt * ds.u.data)
-        assert np.all(ds_test.v.data == dt * ds.v.data)
-        assert np.all(ds_test.eta.data == dt * ds.eta.data)
+        assert np.all(ds_test.u.data == dt * ds.u.safe_data)
+        assert np.all(ds_test.v.data == dt * ds.v.safe_data)
+        assert np.all(ds_test.eta.data == dt * ds.eta.safe_data)
+        assert np.all(ds_test.eta.time == dt)
 
     def test_adams_bashforth2_euler_forward_dropin(self):
         """Test adams_bashforth2 computational initial condition."""
@@ -135,15 +138,16 @@ class TestIntegration:
         dx, dy = 1, 2
         dt = 2.0
         ni, nj = 10, 5
+        t = 0.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
         grid = swe.Grid(x, y, mask)
 
         state1 = swe.State(
-            u=swe.Variable(np.ones(x.shape), grid),
-            v=swe.Variable(np.ones(x.shape), grid),
-            eta=swe.Variable(np.ones(x.shape), grid),
+            u=swe.Variable(np.ones(x.shape), grid, t),
+            v=swe.Variable(np.ones(x.shape), grid, t),
+            eta=swe.Variable(np.ones(x.shape), grid, t),
         )
 
         d_u = dt * np.ones(x.shape)
@@ -161,6 +165,7 @@ class TestIntegration:
         dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
+        t1, t2, t3 = 0.0, 5.0, 10.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
@@ -168,28 +173,27 @@ class TestIntegration:
         params = swe.Parameters()
 
         ds1 = swe.State(
-            u=swe.Variable(1 * np.ones(x.shape), c_grid.u),
-            v=swe.Variable(2 * np.ones(x.shape), c_grid.v),
-            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta),
+            u=swe.Variable(1 * np.ones(x.shape), c_grid.u, t1),
+            v=swe.Variable(2 * np.ones(x.shape), c_grid.v, t1),
+            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta, t1),
         )
         ds2 = swe.State(
-            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u),
-            v=swe.Variable(5 * np.ones(x.shape), c_grid.v),
-            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta),
+            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
+            v=swe.Variable(5 * np.ones(x.shape), c_grid.v, t2),
+            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta, t2),
         )
 
         ds3 = swe.State(
             u=swe.Variable(
-                dt * (3 / 2 * ds2.u.data - 1 / 2 * ds1.u.data),
-                c_grid.u,
+                dt * (3 / 2 * ds2.u.safe_data - 1 / 2 * ds1.u.safe_data), c_grid.u, t3
             ),
             v=swe.Variable(
-                dt * (3 / 2 * ds2.v.data - 1 / 2 * ds1.v.data),
-                c_grid.v,
+                dt * (3 / 2 * ds2.v.safe_data - 1 / 2 * ds1.v.safe_data), c_grid.v, t3
             ),
             eta=swe.Variable(
-                dt * (3 / 2 * ds2.eta.data - 1 / 2 * ds1.eta.data),
+                dt * (3 / 2 * ds2.eta.safe_data - 1 / 2 * ds1.eta.safe_data),
                 c_grid.eta,
+                t3,
             ),
         )
 
@@ -206,6 +210,7 @@ class TestIntegration:
         dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
+        t1, t2, t3, t4 = 0.0, 5.0, 10.0, 15.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
@@ -213,41 +218,52 @@ class TestIntegration:
         params = swe.Parameters()
 
         ds1 = swe.State(
-            u=swe.Variable(1 * np.ones(x.shape), c_grid.u),
-            v=swe.Variable(2 * np.ones(x.shape), c_grid.v),
-            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta),
+            u=swe.Variable(1 * np.ones(x.shape), c_grid.u, t1),
+            v=swe.Variable(2 * np.ones(x.shape), c_grid.v, t1),
+            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta, t1),
         )
         ds2 = swe.State(
-            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u),
-            v=swe.Variable(5 * np.ones(x.shape), c_grid.v),
-            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta),
+            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
+            v=swe.Variable(5 * np.ones(x.shape), c_grid.v, t2),
+            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta, t2),
         )
 
         ds3 = swe.State(
-            u=swe.Variable(7 * np.ones(x.shape), c_grid.u),
-            v=swe.Variable(8 * np.ones(x.shape), c_grid.v),
-            eta=swe.Variable(9 * np.ones(x.shape), c_grid.eta),
+            u=swe.Variable(7 * np.ones(x.shape), c_grid.u, t3),
+            v=swe.Variable(8 * np.ones(x.shape), c_grid.v, t3),
+            eta=swe.Variable(9 * np.ones(x.shape), c_grid.eta, t3),
         )
 
         ds4 = swe.State(
             u=swe.Variable(
                 dt
-                * (23 / 12 * ds3.u.data - 16 / 12 * ds2.u.data + 5 / 12 * ds1.u.data),
+                * (
+                    23 / 12 * ds3.u.safe_data
+                    - 16 / 12 * ds2.u.safe_data
+                    + 5 / 12 * ds1.u.safe_data
+                ),
                 c_grid.u,
+                t4,
             ),
             v=swe.Variable(
                 dt
-                * (23 / 12 * ds3.v.data - 16 / 12 * ds2.v.data + 5 / 12 * ds1.v.data),
+                * (
+                    23 / 12 * ds3.v.safe_data
+                    - 16 / 12 * ds2.v.safe_data
+                    + 5 / 12 * ds1.v.safe_data
+                ),
                 c_grid.v,
+                t4,
             ),
             eta=swe.Variable(
                 dt
                 * (
-                    23 / 12 * ds3.eta.data
-                    - 16 / 12 * ds2.eta.data
-                    + 5 / 12 * ds1.eta.data
+                    23 / 12 * ds3.eta.safe_data
+                    - 16 / 12 * ds2.eta.safe_data
+                    + 5 / 12 * ds1.eta.safe_data
                 ),
                 c_grid.eta,
+                t4,
             ),
         )
 
@@ -255,29 +271,30 @@ class TestIntegration:
 
         d_state = swe.adams_bashforth3(rhs, params, step=dt)
 
-        assert np.allclose(d_state.u.data, ds4.u.data)
-        assert np.allclose(d_state.v.data, ds4.v.data)
-        assert np.allclose(d_state.eta.data, ds4.eta.data)
+        assert np.allclose(d_state.u.data, ds4.u.safe_data)
+        assert np.allclose(d_state.v.data, ds4.v.safe_data)
+        assert np.allclose(d_state.eta.data, ds4.eta.safe_data)
 
     def test_adams_bashforth3_adams_bashforth2_dropin(self):
         """Test adams_bashforth2."""
         params = swe.Parameters()
         dx, dy = 1, 2
         ni, nj = 10, 5
+        t1, t2 = 0.0, 5.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
         grid = swe.Grid(x, y, mask)
 
         state1 = swe.State(
-            u=swe.Variable(3 * np.ones(x.shape), grid),
-            v=swe.Variable(3 * np.ones(x.shape), grid),
-            eta=swe.Variable(3 * np.ones(x.shape), grid),
+            u=swe.Variable(3 * np.ones(x.shape), grid, t1),
+            v=swe.Variable(3 * np.ones(x.shape), grid, t1),
+            eta=swe.Variable(3 * np.ones(x.shape), grid, t1),
         )
         state2 = swe.State(
-            u=swe.Variable(np.ones(x.shape), grid),
-            v=swe.Variable(np.ones(x.shape), grid),
-            eta=swe.Variable(np.ones(x.shape), grid),
+            u=swe.Variable(np.ones(x.shape), grid, t2),
+            v=swe.Variable(np.ones(x.shape), grid, t2),
+            eta=swe.Variable(np.ones(x.shape), grid, t2),
         )
 
         d_u = np.zeros(x.shape)
@@ -298,6 +315,7 @@ class TestIntegration:
         t_end, dt = 1, 1
         dx, dy = 1, 2
         ni, nj = 10, 5
+        t = 0.0
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones_like(x)
@@ -318,9 +336,9 @@ class TestIntegration:
             on_grid=c_grid,
         )
         state_0 = swe.State(
-            u=swe.Variable(u_0, c_grid.u),
-            v=swe.Variable(v_0, c_grid.v),
-            eta=swe.Variable(eta_0, c_grid.eta),
+            u=swe.Variable(u_0, c_grid.u, t),
+            v=swe.Variable(v_0, c_grid.v, t),
+            eta=swe.Variable(eta_0, c_grid.eta, t),
         )
         for state_1 in swe.integrate(
             state_0,

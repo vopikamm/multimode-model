@@ -319,26 +319,29 @@ class TestVariable:
     def test_add_data(self):
         """Test variable summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
+        t1, t2 = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
 
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
-        v1 = Variable(d1, g1)
-        v2 = Variable(d2, g1)
+        v1 = Variable(d1, g1, t1)
+        v2 = Variable(d2, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == 3.0)
+        assert v3.time == 3.0
 
     def test_add_data_with_none(self):
         """Test summing with None data."""
         nx, ny, dx, dy = 10, 5, 1, 2
+        t1, t2 = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
 
-        v1 = Variable(np.ones_like(g1.x), g1)
-        v2 = Variable(None, g1)
+        v1 = Variable(np.ones_like(g1.x), g1, t1)
+        v2 = Variable(None, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == v1.data)
         v3 = v2 + v1
@@ -347,26 +350,28 @@ class TestVariable:
     def test_add_none_with_none(self):
         """Test summing with None data."""
         nx, ny, dx, dy = 10, 5, 1, 2
+        t1, t2 = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
 
-        v1 = Variable(None, g1)
-        v2 = Variable(None, g1)
+        v1 = Variable(None, g1, t1)
+        v2 = Variable(None, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == v1.data)
 
     def test_grid_mismatch(self):
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
+        t1, t2 = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
         g2 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
-        v1 = Variable(d1, g1)
-        v2 = Variable(d2, g2)
+        v1 = Variable(d1, g1, t1)
+        v2 = Variable(d2, g2, t2)
         with pytest.raises(ValueError) as excinfo:
             _ = v1 + v2
         assert "Try to add variables defined on different grids." in str(excinfo.value)
@@ -374,11 +379,12 @@ class TestVariable:
     def test_not_implemented_add(self):
         """Test missing summation implementation."""
         nx, ny, dx, dy = 10, 5, 1, 2
+        t1 = 1.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.0
-        v1 = Variable(d1, g1)
+        v1 = Variable(d1, g1, t1)
         with pytest.raises(TypeError) as excinfo:
             _ = v1 + 1.0
         assert "unsupported operand type(s)" in str(excinfo.value)
@@ -390,16 +396,17 @@ class TestVariableAsDataArray:
     """Test Variable to xarray.DataArray conversion."""
 
     nx, ny, dx, dy = 10, 5, 1, 2
+    t = 1.0
 
     def _gen_var(self, data=None, mask=None):
         x, y = get_x_y(self.nx, self.ny, self.dx, self.dy)
         g1 = Grid(x, y, mask=mask)
-        return Variable(data, g1)
+        return Variable(data, g1, self.t)
 
     def test_None_data_is_zero(self):
         """Test handling of None as data."""
         v = self._gen_var(data=None)
-        assert (v.as_dataarray == 0).where(v.grid.mask).all()
+        assert (v.as_dataarray.isel(time=0) == 0).where(v.grid.mask).all()
 
     def test_attribute_is_read_only(self):
         """Test read-only property."""
@@ -410,14 +417,14 @@ class TestVariableAsDataArray:
     def test_mask_applied(self):
         """Test if mask is applied properly."""
         v = self._gen_var()
-        assert np.isnan(v.as_dataarray.where(v.grid.mask == 0)).all()
+        assert np.isnan(v.as_dataarray.isel(time=0).where(v.grid.mask == 0)).all()
 
     def test_data_assignment(self):
         """Test assignment of data."""
         v = self._gen_var(
             data=np.random.randn(self.nx, self.ny), mask=np.ones((self.nx, self.ny))
         )
-        assert (v.as_dataarray == v.data).all()
+        assert (v.as_dataarray.isel(time=0) == v.data).all()
 
     def test_coords_and_dims(self):
         """Test coordinate and dimension definition."""
@@ -426,7 +433,8 @@ class TestVariableAsDataArray:
 
         assert (v_da.x == v.grid.x).all()
         assert (v_da.y == v.grid.y).all()
-        assert v_da.dims == v_da.x.dims == v_da.y.dims == ("i", "j")
+        assert v_da.dims == ("i", "j", "time")
+        assert v_da.x.dims == v_da.y.dims == ("i", "j")
 
     def test_masking_has_no_side_effects(self):
         """Test coordinate and dimension definition."""
@@ -443,17 +451,23 @@ class TestState:
     def test_add(self):
         """Test state summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
+        t1, t2 = 1.0, 2.0
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
         d1 = np.zeros_like(g1.x) + 1.0
         s1 = State(
-            u=Variable(d1, g1),
-            v=Variable(d1, g1),
-            eta=Variable(d1, g1),
+            u=Variable(d1, g1, t1),
+            v=Variable(d1, g1, t1),
+            eta=Variable(d1, g1, t1),
         )
-        s2 = State(Variable(d1 * 2, g1), Variable(d1 * 2, g1), Variable(d1 * 2, g1))
+        s2 = State(
+            u=Variable(d1 * 2, g1, t2),
+            v=Variable(d1 * 2, g1, t2),
+            eta=Variable(d1 * 2, g1, t2),
+        )
         s3 = s1 + s2
         assert np.all(s3.u.data == 3.0)
         assert np.all(s3.v.data == 3.0)
         assert np.all(s3.eta.data == 3.0)
+        assert np.all(s3.eta.time == 3.0)

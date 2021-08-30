@@ -162,9 +162,9 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
         state.u.grid.mask,  # type: ignore
     )
     return State(
-        u=Variable(result, state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(None, state.eta.grid),
+        u=Variable(result, state.u.grid, state.u.time),
+        v=Variable(None, state.v.grid, state.v.time),
+        eta=Variable(None, state.eta.grid, state.eta.time),
     )
 
 
@@ -182,9 +182,9 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
         state.v.grid.mask,  # type: ignore
     )
     return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(result, state.v.grid),
-        eta=Variable(None, state.eta.grid),
+        u=Variable(None, state.u.grid, state.u.time),
+        v=Variable(result, state.v.grid, state.v.time),
+        eta=Variable(None, state.eta.grid, state.eta.time),
     )
 
 
@@ -201,9 +201,9 @@ def divergence_i(state: State, params: Parameters) -> State:
         state.u.grid.dy,  # type: ignore
     )
     return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(result, state.eta.grid),
+        u=Variable(None, state.u.grid, state.u.time),
+        v=Variable(None, state.v.grid, state.v.time),
+        eta=Variable(result, state.eta.grid, state.eta.time),
     )
 
 
@@ -220,9 +220,9 @@ def divergence_j(state: State, params: Parameters) -> State:
         state.v.grid.dx,  # type: ignore
     )
     return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(result, state.eta.grid),
+        u=Variable(None, state.u.grid, state.u.time),
+        v=Variable(None, state.v.grid, state.v.time),
+        eta=Variable(result, state.eta.grid, state.eta.time),
     )
 
 
@@ -240,9 +240,9 @@ def coriolis_j(state: State, params: Parameters) -> State:
         params.f["v"],  # type: ignore
     )
     return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(result, state.v.grid),
-        eta=Variable(None, state.eta.grid),
+        u=Variable(None, state.u.grid, state.u.time),
+        v=Variable(result, state.v.grid, state.v.time),
+        eta=Variable(None, state.eta.grid, state.eta.time),
     )
 
 
@@ -260,7 +260,7 @@ def coriolis_i(state: State, params: Parameters) -> State:
         params.f["u"],  # type: ignore
     )
     return State(
-        u=Variable(result, state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(None, state.eta.grid),
+        u=Variable(result, state.u.grid, state.u.time),
+        v=Variable(None, state.v.grid, state.v.time),
+        eta=Variable(None, state.eta.grid, state.eta.time),
     )

@@ -50,9 +50,9 @@ def test_benchmark_term(benchmark, func):
     params = _get_params(c_grid)
 
     state = State(
-        u=Variable(c_grid.u.x.copy(), c_grid.u),
-        v=Variable(c_grid.v.x.copy(), c_grid.v),
-        eta=Variable(c_grid.eta.x.copy(), c_grid.eta),
+        u=Variable(c_grid.u.x.copy(), c_grid.u, time=0.0),
+        v=Variable(c_grid.v.x.copy(), c_grid.v, time=0.0),
+        eta=Variable(c_grid.eta.x.copy(), c_grid.eta, time=0.0),
     )
 
     _ = benchmark(func, state, params)

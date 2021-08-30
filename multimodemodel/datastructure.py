@@ -105,6 +105,8 @@ class Variable:
 
     data: Optional[np.ndarray]
     grid: Grid
+    # time: Union[np.datetime64, np.timedelta64]
+    time: float
 
     @property
     def as_dataarray(self) -> xarray.DataArray:  # type: ignore
@@ -122,6 +124,7 @@ class Variable:
 
         # copy to prevent side effects on self.data
         data = self.safe_data.copy()
+        data = np.expand_dims(data, axis=2)
 
         data[self.grid.mask == 0] = np.nan
 
@@ -130,8 +133,9 @@ class Variable:
             coords={
                 "x": (("i", "j"), self.grid.x),
                 "y": (("i", "j"), self.grid.y),
+                "time": np.array([np.datetime64(round(self.time), "s")]),
             },
-            dims=("i", "j"),
+            dims=("i", "j", "time"),
         )
 
     @property
@@ -143,13 +147,14 @@ class Variable:
             return self.data
 
     def __add__(self, other):
-        """Add data of to variables."""
+        """Add data of two variables."""
         if (
             # one is subclass of the other
             (isinstance(self, type(other)) or isinstance(other, type(self)))
             and self.grid is not other.grid
         ):
             raise ValueError("Try to add variables defined on different grids.")
+
         try:
             if self.data is None:
                 new_data = other.data
@@ -159,7 +164,10 @@ class Variable:
                 new_data = self.data + other.data
         except (TypeError, AttributeError):
             return NotImplemented
-        return self.__class__(data=new_data, grid=self.grid)
+
+        new_time = self.time + other.time
+
+        return self.__class__(data=new_data, grid=self.grid, time=new_time)
 
 
 @dataclass

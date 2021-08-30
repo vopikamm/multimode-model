@@ -3,6 +3,7 @@
 To be used optional in integrate function.
 """
 
+# import numpy as np
 from collections import deque
 from .datastructure import Variable, Parameters, State
 from typing import Callable, Generator, NewType
@@ -54,9 +55,9 @@ def euler_forward(rhs: deque[State], params: Parameters, step: float) -> StateIn
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid),
-            v=Variable(dv, rhs[-1].v.grid),
-            eta=Variable(deta, rhs[-1].eta.grid),
+            u=Variable(du, rhs[-1].u.grid, step),
+            v=Variable(dv, rhs[-1].v.grid, step),
+            eta=Variable(deta, rhs[-1].eta.grid, step),
         )
     )
 
@@ -80,9 +81,9 @@ def adams_bashforth2(
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid),
-            v=Variable(dv, rhs[-1].v.grid),
-            eta=Variable(deta, rhs[-1].eta.grid),
+            u=Variable(du, rhs[-1].u.grid, step),
+            v=Variable(dv, rhs[-1].v.grid, step),
+            eta=Variable(deta, rhs[-1].eta.grid, step),
         )
     )
 
@@ -114,9 +115,9 @@ def adams_bashforth3(
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid),
-            v=Variable(dv, rhs[-1].v.grid),
-            eta=Variable(deta, rhs[-1].eta.grid),
+            u=Variable(du, rhs[-1].u.grid, step),
+            v=Variable(dv, rhs[-1].v.grid, step),
+            eta=Variable(deta, rhs[-1].eta.grid, step),
         )
     )
 
