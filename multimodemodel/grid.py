@@ -204,10 +204,10 @@ class Grid:
 
     def _validate(self) -> None:
         """Validate Attributes of Grid class after init."""
-        if self.mask is not None and self.mask.shape != self.x.shape:
+        if self.mask is not None and self.mask.shape != self.shape:
             raise ValueError(
                 f"Mask shape not matching grid shape. "
-                f"Got {self.mask.shape} and {self.x.shape}."
+                f"Got {self.mask.shape} and {self.shape}."
             )
         assert self.x.ndim == 2
         assert self.y.ndim == 2
