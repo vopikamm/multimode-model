@@ -65,7 +65,7 @@ class TestGrid:
         assert g1.z is None
         assert g1.shape[g1.dim_x] == nx
         assert g1.shape[g1.dim_y] == ny
-        assert len(g1.shape) == 2
+        assert g1.ndim == 2
 
     def test_post_init_3D(self):
         """Test post_init."""
@@ -85,7 +85,7 @@ class TestGrid:
         assert g1.shape[g1.dim_x] == nx
         assert g1.shape[g1.dim_y] == ny
         assert g1.shape[g1.dim_z] == nz
-        assert len(g1.shape) == 3
+        assert g1.ndim == 3
 
     def test_grid_default_mask(self):
         """Test default grid setting."""

@@ -60,9 +60,13 @@ class Grid:
       Grid spacing in y.
     dz: np.ndarray
       Grid spacing in z.
+
+    Properties
+    ----------
     shape: npt._Shape
       Tuple of int defining the shape of the grid.
-
+    ndim: int
+      Number of dimensions on which the grid is defined
     dim_x: int =-1
       Axis of x-dimension
     dim_y: int =-2
@@ -78,24 +82,43 @@ class Grid:
     dx: np.ndarray = field(init=False)  # grid spacing in x
     dy: np.ndarray = field(init=False)  # grid spacing in y
     dz: Optional[np.ndarray] = field(init=False)
-    shape: npt._Shape = field(init=False)  # length of array in x dimension
-
-    dim_x: int = field(init=False, default=-1)
-    dim_y: int = field(init=False, default=-2)
-    dim_z: int = field(init=False, default=-3)
 
     def __post_init__(self) -> None:
         """Set derived attributes of the grid and validate."""
         self.dx, self.dy, self.dz = self._compute_grid_spacing()
 
-        self.shape = self.x.shape
-        if self.z is not None:
-            self.shape = self.z.shape + self.shape
-
         if self.mask is None:
             self.mask = self._get_default_mask(self.shape)
 
         self._validate()
+
+    @property
+    def shape(self) -> npt._Shape:
+        """Return shape tuple of grid."""
+        if self.z is None:
+            return self.x.shape
+        else:
+            return self.z.shape + self.x.shape
+
+    @property
+    def ndim(self) -> int:
+        """Return number of dimensions."""
+        return len(self.shape)
+
+    @property
+    def dim_x(self) -> int:
+        """Return axis of x dimension."""
+        return -1
+
+    @property
+    def dim_y(self) -> int:
+        """Return axis of x dimension."""
+        return -2
+
+    @property
+    def dim_z(self) -> int:
+        """Return axis of x dimension."""
+        return -3
 
     def _compute_grid_spacing(self):
         dx, dy = self._compute_horizontal_grid_spacing()
