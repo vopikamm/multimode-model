@@ -146,6 +146,21 @@ def linearised_SWE(state: State, params: Parameters) -> State:
     return RHS_state
 
 
+def non_rotating_swe(state, params):
+    """Compute RHS of the linearised shallow water equations without rotation.
+
+    The equations are evaluated on a C-grid. Output is a state type variable
+    forming the right-hand-side needed for any time stepping scheme.
+    """
+    rhs = (
+        pressure_gradient_i(state, params)
+        + pressure_gradient_j(state, params)
+        + divergence_i(state, params)
+        + divergence_j(state, params)
+    )
+    return rhs
+
+
 def integrate(
     initial_state: State,
     params: Parameters,
