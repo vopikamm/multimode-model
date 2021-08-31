@@ -90,7 +90,6 @@ class Grid:
 
         self.shape = self.x.shape
         if self.z is not None:
-            assert self.z.ndim == 1
             self.shape = self.z.shape + self.shape
 
         if self.mask is None:
