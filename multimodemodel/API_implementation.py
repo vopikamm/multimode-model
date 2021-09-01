@@ -2,7 +2,6 @@
 from .domain_split_API import Domain, Border, Solver, Tailor
 from .datastructure import State, Variable, np, Parameters
 from .grid import Grid
-from .integrate import non_rotating_swe
 from dask.distributed import Client, Future
 
 
@@ -229,15 +228,42 @@ class Tail(Tailor):
         return DomainState(u, v, eta, base.get_iteration(), base.get_id())
 
 
-class ShallowWater(Solver):
-    """Implement Solver class from API for solving shallow water equations."""
+class GeneralSolver(Solver):
+    """Implement Solver class from API for use with any provided function.
 
-    def _integrate(self, domain: Domain) -> DomainState:
-        return DomainState.make_from_State(
-            non_rotating_swe(domain, Parameters()),
-            domain.increment_iteration(),
-            domain.get_id(),
-        )
+    Currently it performs only Euler forward scheme.
+    """
+
+    def __init__(self, solution, params: Parameters = Parameters(), step: float = 1):
+        """Initialize GeneralSolver object providing function to compute next iterations.
+
+        Arguments
+        ---------
+        solution
+            function that takes State and Parameters and returns State.
+            It is used to compute next iteration.
+            Functions like linearised_SWE are highly recommended.
+
+        params: Parameters
+            Object with parameter, passed to solution function along DomainState object.
+
+        step: float
+            Quanta of time in the integration process.
+        """
+        self.step = step
+        self.params = params
+        self.slv = solution
+
+    def _integrate(self, domain: DomainState) -> DomainState:
+        inc = self.slv(domain, self.params)
+        new_u = (domain.u.safe_data + self.step * inc.u.safe_data).copy()
+        new_v = (domain.v.safe_data + self.step * inc.v.safe_data).copy()
+        new_eta = (domain.eta.safe_data + self.step * inc.eta.safe_data).copy()
+        return DomainState(Variable(new_u, domain.u.grid),
+                           Variable(new_v, domain.v.grid),
+                           Variable(new_eta, domain.eta.grid),
+                           domain.increment_iteration(),
+                           domain.get_id())
 
     def integration(self, domain: Domain) -> Domain:
         """Implement integration method from API."""
