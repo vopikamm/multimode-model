@@ -1,4 +1,5 @@
 black
+dask
 flake8
 ipykernel
 matplotlib

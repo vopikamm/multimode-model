@@ -1,8 +1,9 @@
 """Implementation of domain split API."""
 from .domain_split_API import Domain, Border, Solver, Tailor
 from .datastructure import State, Variable, np, Parameters
-from .grid import Grid
+from .grid import Grid, StaggeredGrid
 from dask.distributed import Client, Future
+from collections import deque
 
 
 def _new_grid(x: np.array, y: np.array, mask: np.array) -> Grid:
@@ -25,7 +26,13 @@ class DomainState(State, Domain):
     """Implements Domain interface on State class."""
 
     def __init__(
-        self, u: Variable, v: Variable, eta: Variable, it: int = 0, id: int = 0
+            self,
+            u: Variable,
+            v: Variable,
+            eta: Variable,
+            ancestors: deque = deque([], 3),
+            it: int = 0,
+            id: int = 0
     ):
         """Create new DomainState instance from references on Variable objects."""
         self.u = u
@@ -33,11 +40,12 @@ class DomainState(State, Domain):
         self.eta = eta
         self.id = id
         self.it = it
+        self.ancestors = ancestors
 
     @classmethod
-    def make_from_State(cls, s: State, it: int, id: int = 0):
+    def make_from_State(cls, s: State, anc: deque, it: int, id: int = 0):
         """Make DomainState object from State objects, without copying Variables."""
-        return cls(s.u, s.v, s.eta, it, id)
+        return cls(s.u, s.v, s.eta, anc, it, id)
 
     def set_id(self, id):
         """Set id value."""
@@ -113,6 +121,7 @@ class DomainState(State, Domain):
             _new_variable(u, u_x, u_y, u_mask),
             _new_variable(v, v_x, v_y, v_mask),
             _new_variable(eta, eta_x, eta_y, eta_mask),
+            deque([], others[0].ancestors.maxlen),
             others[0].get_iteration(),
             others[0].get_id(),
         )
@@ -121,11 +130,25 @@ class DomainState(State, Domain):
 class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
 
-    def __init__(self, base: Domain, width: int, direction: bool, dim: int):
-        """Create BorderState instance from DomainState."""
+    def __init__(
+            self,
+            u: Variable,
+            v: Variable,
+            eta: Variable,
+            ancestors: deque,
+            width: int,
+            dim: int,
+            iteration: int,
+            id: int = 0
+    ):
+        """Create BorderState in the same way as DomainState."""
+        super().__init__(u, v, eta, ancestors, iteration, id)
         self.width = width
         self.dim = dim
 
+    @classmethod
+    def create_border(cls, base: DomainState, width: int, direction: bool, dim: int):
+        """Create BorderState instance from DomainState."""
         u, v, eta = base.get_data()
 
         u_x = u.grid.x
@@ -145,7 +168,7 @@ class BorderState(DomainState, Border):
 
         place = u.shape[dim] - width
         if direction:
-            super().__init__(
+            return BorderState(
                 _new_variable(
                     u[:, place:], u_x[:, place:], u_y[:, place:], u_mask[:, place:]
                 ),
@@ -158,11 +181,14 @@ class BorderState(DomainState, Border):
                     eta_y[:, place:],
                     eta_mask[:, place:],
                 ),
+                deque([], base.ancestors.maxlen),
+                width,
+                dim,
                 base.get_iteration(),
                 base.get_id(),
             )
         else:
-            super().__init__(
+            return BorderState(
                 _new_variable(
                     u[:, :width], u_x[:, :width], u_y[:, :width], u_mask[:, :width]
                 ),
@@ -175,6 +201,9 @@ class BorderState(DomainState, Border):
                     eta_y[:, :width],
                     eta_mask[:, :width],
                 ),
+                deque([], base.ancestors.maxlen),
+                width,
+                dim,
                 base.get_iteration(),
                 base.get_id(),
             )
@@ -191,11 +220,12 @@ class BorderState(DomainState, Border):
 class Tail(Tailor):
     """Implement Tailor class from API."""
 
-    def make_borders(self, base: Domain, width: int, dim: int) -> (Border, Border):
+    def make_borders(self, base: DomainState, width: int, dim: int) -> (Border, Border):
         """Implement make_borders method from API."""
-        return BorderState(base, width, False, dim), BorderState(base, width, True, dim)
+        return (BorderState.create_border(base, width, False, dim),
+                BorderState.create_border(base, width, True, dim))
 
-    def stitch(self, base: Domain, borders: tuple, dims: tuple) -> Domain:
+    def stitch(self, base: DomainState, borders: tuple, dims: tuple) -> Domain:
         """Implement stitch method from API."""
         u, v, eta = (_copy_variable(v) for v in base.get_data())
         l_border, r_border = borders[0]
@@ -211,13 +241,14 @@ class Tail(Tailor):
                 )
             )
 
-        u.data[:, (u.data.shape[1] - r_border.get_width()):] = r_border.get_data()[
+        sh = u.safe_data.shape[1]
+        u.data[:, (sh - r_border.get_width()):] = r_border.get_data()[
             0
         ].safe_data.copy()
-        v.data[:, (u.data.shape[1] - r_border.get_width()):] = r_border.get_data()[
+        v.data[:, (sh - r_border.get_width()):] = r_border.get_data()[
             1
         ].safe_data.copy()
-        eta.data[:, (u.data.shape[1] - r_border.get_width()):] = r_border.get_data()[
+        eta.data[:, (sh - r_border.get_width()):] = r_border.get_data()[
             2
         ].safe_data.copy()
 
@@ -225,7 +256,8 @@ class Tail(Tailor):
         v.data[:, : l_border.get_width()] = l_border.get_data()[1].safe_data.copy()
         eta.data[:, : l_border.get_width()] = l_border.get_data()[2].safe_data.copy()
 
-        return DomainState(u, v, eta, base.get_iteration(), base.get_id())
+        return DomainState(u, v, eta, base.ancestors,
+                           base.get_iteration(), base.get_id())
 
 
 class GeneralSolver(Solver):
@@ -234,7 +266,7 @@ class GeneralSolver(Solver):
     Currently it performs only Euler forward scheme.
     """
 
-    def __init__(self, solution, params: Parameters = Parameters(), step: float = 1):
+    def __init__(self, solution, schema, params=Parameters(), step: float = 1):
         """Initialize GeneralSolver object providing function to compute next iterations.
 
         Arguments
@@ -243,6 +275,9 @@ class GeneralSolver(Solver):
             function that takes State and Parameters and returns State.
             It is used to compute next iteration.
             Functions like linearised_SWE are highly recommended.
+
+        schema
+            integration schema like fourier_forward or adams_bashforth3
 
         params: Parameters
             Object with parameter, passed to solution function along DomainState object.
@@ -253,19 +288,41 @@ class GeneralSolver(Solver):
         self.step = step
         self.params = params
         self.slv = solution
+        self.sch = schema
 
     def _integrate(self, domain: DomainState) -> DomainState:
-        inc = self.slv(domain, self.params)
-        new_u = (domain.u.safe_data + self.step * inc.u.safe_data).copy()
-        new_v = (domain.v.safe_data + self.step * inc.v.safe_data).copy()
-        new_eta = (domain.eta.safe_data + self.step * inc.eta.safe_data).copy()
+        p = Parameters(g=self.params.g,
+                       H=self.params.H,
+                       rho_0=self.params.rho_0,
+                       coriolis_func=self.params.coriolis_func,
+                       on_grid=StaggeredGrid(domain.eta.grid,
+                                             domain.u.grid,
+                                             domain.v.grid,
+                                             Grid(domain.u.grid.x,
+                                                  domain.v.grid.y,
+                                                  domain.eta.grid.mask)))
+
+        tmp = DomainState.make_from_State(
+            self.slv(domain, p),
+            deque([], domain.ancestors.maxlen),
+            domain.increment_iteration(),
+            domain.get_id()
+        )
+
+        q = domain.ancestors.copy()
+        q.append(tmp)
+        new = self.sch(q, p, self.step)
+        new_u = (domain.u.safe_data + new.u.safe_data).copy()
+        new_v = (domain.v.safe_data + new.v.safe_data).copy()
+        new_eta = (domain.eta.safe_data + new.eta.safe_data).copy()
         return DomainState(Variable(new_u, domain.u.grid),
                            Variable(new_v, domain.v.grid),
                            Variable(new_eta, domain.eta.grid),
+                           q,
                            domain.increment_iteration(),
                            domain.get_id())
 
-    def integration(self, domain: Domain) -> Domain:
+    def integration(self, domain: DomainState) -> DomainState:
         """Implement integration method from API."""
         return self._integrate(domain)
 
@@ -274,19 +331,34 @@ class GeneralSolver(Solver):
         return 2
 
     def partial_integration(
-        self, domain: Domain, border: Border, direction: bool, dim: int
+            self, domain: DomainState,
+            border: BorderState,
+            past: BorderState,
+            dir: bool,
+            dim: int
     ) -> Border:
         """Implement partial_integration from API."""
         b_w = border.get_width()
-        dom = BorderState(domain, 2 * b_w, direction, dim)
-        list = (
-            [dom, border] if direction else [border, dom]
-        )  # order inside list shows if it's left of right border
-        tmp = DomainState.merge(list, dim)
+        dom = BorderState.create_border(domain, 2 * b_w, dir, dim)
+
+        l1 = ([dom, border] if dir else [border, dom])
+        # order inside list shows if it's left of right border
+        tmp = DomainState.merge(l1, dim)
+
+        h = [BorderState.create_border(d, 2 * b_w, dir, dim) for d in domain.ancestors]
+
+        l_h = len(h)
+        for i in range(len(border.ancestors)):
+            if i < l_h:
+                l2 = [border.ancestors[i], h[i]] if dir else [h[i], border.ancestors[i]]
+                tmp.ancestors.append(DomainState.merge(l2, dim))
+            else:
+                break
+
         tmp = self._integrate(tmp)
 
         u = Variable(
-            tmp.u.data[:, b_w: 2 * b_w],
+            tmp.u.safe_data[:, b_w: 2 * b_w],
             Grid(
                 tmp.u.grid.x[:, b_w: 2 * b_w],
                 tmp.u.grid.y[:, b_w: 2 * b_w],
@@ -311,13 +383,13 @@ class GeneralSolver(Solver):
                 tmp.eta.grid.mask[:, b_w: 2 * b_w],
             ),
         )
-
-        return BorderState(
-            DomainState(u, v, eta, domain.increment_iteration(), domain.get_id()),
-            border.get_width(),
-            True,
-            dim,
-        )
+        past.ancestors.append(DomainState(u - past.u, v - past.v, eta - past.eta))
+        return BorderState(u, v, eta,
+                           past.ancestors,
+                           border.get_width(),
+                           dim,
+                           domain.increment_iteration(),
+                           domain.get_id())
 
     def window(self, domain: Future, client: Client) -> Future:
         """Do nothing."""

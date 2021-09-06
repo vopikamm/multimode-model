@@ -63,17 +63,16 @@ class Parameters:
     g: float = 9.81  # gravitational force m/s^2
     H: float = 1000.0  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
-    coriolis_func: InitVar[Optional[CoriolisFunc]] = None
+    coriolis_func: Optional[CoriolisFunc] = None
     on_grid: InitVar[Optional[StaggeredGrid]] = None
     _f: Dict[str, np.ndarray] = field(init=False)
 
     def __post_init__(
         self,
-        coriolis_func: Optional[CoriolisFunc],
         on_grid: Optional[StaggeredGrid],
     ):
         """Initialize derived fields."""
-        self._f = self._compute_f(coriolis_func, on_grid)
+        self._f = self._compute_f(self.coriolis_func, on_grid)
 
     @property
     def f(self) -> Dict[str, np.ndarray]:
@@ -167,6 +166,25 @@ class Variable:
             return NotImplemented
         return self.__class__(data=new_data, grid=self.grid)
 
+    def __sub__(self, other):
+        """Subtract data of to variables."""
+        # if (
+        #         # one is subclass of the other
+        #         (isinstance(self, type(other)) or isinstance(other, type(self)))
+        #         and self.grid is not other.grid
+        # ):
+        #     raise ValueError("Try to add variables defined on different grids.")
+        try:
+            if self.data is None:
+                new_data = other.data
+            elif other.data is None:
+                new_data = self.data
+            else:
+                new_data = self.data - other.data
+        except (TypeError, AttributeError):
+            return NotImplemented
+        return self.__class__(data=new_data, grid=self.grid)
+
 
 @dataclass
 class State:
@@ -187,6 +205,18 @@ class State:
             u_new = self.u + other.u
             v_new = self.v + other.v
             eta_new = self.eta + other.eta
+        except (AttributeError, TypeError):  # pragma: no cover
+            return NotImplemented
+        return self.__class__(u=u_new, v=v_new, eta=eta_new)
+
+    def __sub__(self, other):
+        """Subtract all variables of two states."""
+        if not isinstance(other, type(self)) or not isinstance(self, type(other)):
+            return NotImplemented  # pragma: no cover
+        try:
+            u_new = self.u - other.u
+            v_new = self.v - other.v
+            eta_new = self.eta - other.eta
         except (AttributeError, TypeError):  # pragma: no cover
             return NotImplemented
         return self.__class__(u=u_new, v=v_new, eta=eta_new)
