@@ -18,12 +18,16 @@ from .kernel import (
 )
 
 if sys.version_info < (3, 9):
+    # See https://docs.python.org/3/library/typing.html#typing.Deque
     from typing import Deque
+
+    StateDeque = Deque[State]
 else:
-    Deque = deque
+    StateDeque = deque[State]
+
 
 StateIncrement = NewType("StateIncrement", State)
-TimeSteppingFunction = Callable[[Deque, Parameters, float], StateIncrement]
+TimeSteppingFunction = Callable[[StateDeque, Parameters, float], StateIncrement]
 
 
 def time_stepping_function(
@@ -46,7 +50,7 @@ def time_stepping_function(
 
 
 @time_stepping_function(n_rhs=1, n_state=1)
-def euler_forward(rhs: Deque[State], params: Parameters, step: float) -> StateIncrement:
+def euler_forward(rhs: StateDeque, params: Parameters, step: float) -> StateIncrement:
     """Compute increment using Euler forward scheme.
 
     Used for the time integration. One previous state
@@ -69,7 +73,7 @@ def euler_forward(rhs: Deque[State], params: Parameters, step: float) -> StateIn
 
 @time_stepping_function(n_rhs=2, n_state=1)
 def adams_bashforth2(
-    rhs: Deque[State], params: Parameters, step: float
+    rhs: StateDeque, params: Parameters, step: float
 ) -> StateIncrement:
     """Compute increment using two-level Adams-Bashforth scheme.
 
@@ -95,7 +99,7 @@ def adams_bashforth2(
 
 @time_stepping_function(n_rhs=3, n_state=1)
 def adams_bashforth3(
-    rhs: Deque[State], params: Parameters, step: float
+    rhs: StateDeque, params: Parameters, step: float
 ) -> StateIncrement:
     """Compute increment using three-level Adams-Bashforth scheme.
 

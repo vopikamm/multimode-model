@@ -63,7 +63,7 @@ def _cyclic_shift(i: int, ni: int, shift: int = 1) -> int:  # pragma: no cover
 def _numba_2D_grid_iterator_template(func: Callable[..., float], return_type: Type):
     """Evaluate func at every gridpoint of a horizontal domain slice.
 
-    func must take the indices of the grid point and the grid sice as
+    func must take the indices of the grid point and the grid size as
     first arguments, e.g. func(i, j, ni, nj, other_args).
     """
     jitted_func = numba.njit(inline="always")(func)  # type: ignore
@@ -74,10 +74,10 @@ def _numba_2D_grid_iterator_template(func: Callable[..., float], return_type: Ty
     def _interate_over_grid_2D(
         ni: int, nj: int, *args: Tuple[Any]
     ) -> np.ndarray:  # pragma: no cover
-        result = np.empty((ni, nj), dtype=return_type)
-        for i in range(ni):
-            for j in range(nj):
-                result[i, j] = exp_args(jitted_func, i, j, ni, nj, args)
+        result = np.empty((nj, ni), dtype=return_type)
+        for j in range(nj):
+            for i in range(ni):
+                result[j, i] = exp_args(jitted_func, i, j, ni, nj, args)
         return result
 
     return _interate_over_grid_2D
