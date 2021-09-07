@@ -10,7 +10,12 @@ import pytest
 
 def get_x_y(nx: int, ny: int, dx: float, dy: float) -> Tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
-    return np.meshgrid(np.arange(ny) * dy, np.arange(nx) * dx)[::-1]
+    x = np.arange(nx) * dx
+    y = np.arange(ny) * dy
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    assert np.all(X[0, :] == x)
+    assert np.all(Y[:, 0] == y)
+    return X, Y
 
 
 def get_test_mask(x: np.ndarray) -> np.ndarray:
@@ -38,7 +43,7 @@ class TestRHS:
         x, y = get_x_y(ni, nj, dx, dy)
         mask_eta = get_test_mask(x)
 
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask_eta)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask_eta)
 
         eta = x * y * c_grid.eta.mask
         u = 2.0 * x * y * c_grid.u.mask
@@ -53,29 +58,29 @@ class TestRHS:
         d_u = c_grid.u.mask * (
             f_constant(f0)(c_grid.u.y)
             * (
-                np.roll(np.roll(v, 1, axis=0), -1, axis=1)
-                + np.roll(v, 1, axis=0)
-                + np.roll(v, -1, axis=1)
+                np.roll(np.roll(v, 1, axis=-1), -1, axis=-2)
+                + np.roll(v, 1, axis=-1)
+                + np.roll(v, -1, axis=-2)
                 + v
             )
             / 4.0
-            - g * (eta - np.roll(eta, 1, axis=0)) / dx
+            - g * (eta - np.roll(eta, 1, axis=-1)) / dx
         )
         d_v = c_grid.v.mask * (
             -f_constant(f0)(c_grid.v.y)
             * (
-                np.roll(np.roll(u, -1, axis=0), 1, axis=1)
-                + np.roll(u, -1, axis=0)
-                + np.roll(u, 1, axis=1)
+                np.roll(np.roll(u, -1, axis=-1), 1, axis=-2)
+                + np.roll(u, -1, axis=-1)
+                + np.roll(u, 1, axis=-2)
                 + u
             )
             / 4.0
-            - g * (eta - np.roll(eta, 1, axis=1)) / dy
+            - g * (eta - np.roll(eta, 1, axis=-2)) / dy
         )
         d_eta = (
             -H
             * mask_eta
-            * ((np.roll(u, -1, axis=0) - u) / dx + (np.roll(v, -1, axis=1) - v) / dy)
+            * ((np.roll(u, -1, axis=-1) - u) / dx + (np.roll(v, -1, axis=-2) - v) / dy)
         )
 
         params = swe.Parameters(H=H, g=g, coriolis_func=f_constant(f0), on_grid=c_grid)
@@ -115,7 +120,7 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
         params = swe.Parameters()
 
         ds = swe.State(
@@ -138,7 +143,7 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x=x, y=y, mask=mask)
 
         state1 = swe.State(
             u=swe.Variable(np.ones(x.shape), grid),
@@ -164,7 +169,7 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
         params = swe.Parameters()
 
         ds1 = swe.State(
@@ -209,7 +214,7 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
         params = swe.Parameters()
 
         ds1 = swe.State(
@@ -267,7 +272,7 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
-        grid = swe.Grid(x, y, mask)
+        grid = swe.Grid(x=x, y=y, mask=mask)
 
         state1 = swe.State(
             u=swe.Variable(3 * np.ones(x.shape), grid),
@@ -301,7 +306,7 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones_like(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x[:, 0], y[0], mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
 
         eta_0 = 1 * np.ones(x.shape)
         u_0 = 1 * np.ones(x.shape)

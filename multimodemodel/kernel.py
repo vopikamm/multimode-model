@@ -5,9 +5,38 @@ not dataclass instances, as input. This enables numba to precompile
 computationally costly operations.
 """
 
+from typing import Callable, Tuple, Any
 import numpy as np
 from .jit import _numba_2D_grid_iterator, _cyclic_shift
 from .datastructure import State, Variable, Parameters
+from .grid import Grid
+from functools import partial
+
+
+def _extract_horizontal_slice(var, k):
+    try:
+        if var.ndim == 3:
+            return var[k]
+        else:
+            return var
+    except AttributeError:
+        return var
+
+
+def _map_2D_iterator_on_3D(func):
+    """Turn a 2D grid iterator into a 3D grid iterator."""
+
+    def wrapper(nz, *args):
+        res = []
+        for k in range(nz):
+            arg_list = map(
+                partial(_extract_horizontal_slice, k=k),
+                args,
+            )
+            res.append(func(*arg_list))
+        return np.array(res)
+
+    return wrapper
 
 
 @_numba_2D_grid_iterator
@@ -22,7 +51,7 @@ def _pressure_gradient_i(
     mask_u: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the pressure gradient along the first dimension."""
-    return -g * mask_u[i, j] * (eta[i, j] - eta[i - 1, j]) / dx_u[i, j]
+    return -g * mask_u[j, i] * (eta[j, i] - eta[j, i - 1]) / dx_u[j, i]
 
 
 @_numba_2D_grid_iterator
@@ -37,7 +66,7 @@ def _pressure_gradient_j(
     mask_v: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the pressure gradient along the second dimension."""
-    return -g * mask_v[i, j] * (eta[i, j] - eta[i, j - 1]) / dy_v[i, j]
+    return -g * mask_v[j, i] * (eta[j, i] - eta[j - 1, i]) / dy_v[j, i]
 
 
 @_numba_2D_grid_iterator
@@ -54,15 +83,15 @@ def _divergence_i(
     dy_u: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the first dimension."""
-    ip1 = _cyclic_shift(i, ni)
+    ip1 = _cyclic_shift(i, ni, 1)
     return (
         -H
         * (
-            mask_u[ip1, j] * dy_u[ip1, j] * u[ip1, j]
-            - mask_u[i, j] * dy_u[i, j] * u[i, j]
+            mask_u[j, ip1] * dy_u[j, ip1] * u[j, ip1]
+            - mask_u[j, i] * dy_u[j, i] * u[j, i]
         )
-        / dx_eta[i, j]
-        / dy_eta[i, j]
+        / dx_eta[j, i]
+        / dy_eta[j, i]
     )
 
 
@@ -80,15 +109,15 @@ def _divergence_j(
     dx_v: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the second dimension."""
-    jp1 = _cyclic_shift(j, nj)
+    jp1 = _cyclic_shift(j, nj, 1)
     return (
         -H
         * (
-            mask_v[i, jp1] * dx_v[i, jp1] * v[i, jp1]
-            - mask_v[i, j] * dx_v[i, j] * v[i, j]
+            mask_v[jp1, i] * dx_v[jp1, i] * v[jp1, i]
+            - mask_v[j, i] * dx_v[j, i] * v[j, i]
         )
-        / dx_eta[i, j]
-        / dy_eta[i, j]
+        / dx_eta[j, i]
+        / dy_eta[j, i]
     )
 
 
@@ -104,14 +133,14 @@ def _coriolis_j(
     f: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the second dimension."""
-    ip1 = _cyclic_shift(i, ni)
-    return mask_v[i, j] * (
-        -f[i, j]
+    ip1 = _cyclic_shift(i, ni, 1)
+    return mask_v[j, i] * (
+        -f[j, i]
         * (
-            mask_u[i, j - 1] * u[i, j - 1]
-            + mask_u[i, j] * u[i, j]
-            + mask_u[ip1, j] * u[ip1, j]
-            + mask_u[ip1, j - 1] * u[ip1, j - 1]
+            mask_u[j - 1, i] * u[j - 1, i]
+            + mask_u[j, i] * u[j, i]
+            + mask_u[j, ip1] * u[j, ip1]
+            + mask_u[j - 1, ip1] * u[j - 1, ip1]
         )
         / 4.0
     )
@@ -130,13 +159,13 @@ def _coriolis_i(
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the first dimension."""
     jp1 = _cyclic_shift(j, nj, 1)
-    return mask_u[i, j] * (
-        f[i, j]
+    return mask_u[j, i] * (
+        f[j, i]
         * (
-            mask_v[i - 1, j] * v[i - 1, j]
-            + mask_v[i, j] * v[i, j]
-            + mask_v[i, jp1] * v[i, jp1]
-            + mask_v[i - 1, jp1] * v[i - 1, jp1]
+            mask_v[j, i - 1] * v[j, i - 1]
+            + mask_v[j, i] * v[j, i]
+            + mask_v[jp1, i] * v[jp1, i]
+            + mask_v[jp1, i - 1] * v[jp1, i - 1]
         )
         / 4.0
     )
@@ -148,21 +177,33 @@ function output to dataclasses.
 """
 
 
+def _apply_2D_iterator(
+    func: Callable[..., np.ndarray],
+    args: Tuple[Any, ...],
+    grid: Grid,
+) -> np.ndarray:
+    if grid.ndim == 3:
+        func = _map_2D_iterator_on_3D(func)
+        args = (grid.shape[grid.dim_z],) + args
+    return func(*args)
+
+
 def pressure_gradient_i(state: State, params: Parameters) -> State:
     """Compute the pressure gradient along the first dimension.
 
     Using centered differences in space.
     """
-    result = _pressure_gradient_i(
-        state.eta.grid.len_x,
-        state.eta.grid.len_y,
-        state.eta.safe_data,  # type: ignore
-        params.g,  # type: ignore
-        state.u.grid.dx,  # type: ignore
-        state.u.grid.mask,  # type: ignore
+    grid = state.u.grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.eta.safe_data,
+        params.g,
+        state.u.grid.dx,
+        state.u.grid.mask,
     )
     return State(
-        u=Variable(result, state.u.grid),
+        u=Variable(_apply_2D_iterator(_pressure_gradient_i, args, grid), state.u.grid),
         v=Variable(None, state.v.grid),
         eta=Variable(None, state.eta.grid),
     )
@@ -173,56 +214,59 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
 
     Using centered differences in space.
     """
-    result = _pressure_gradient_j(
-        state.eta.grid.len_x,
-        state.eta.grid.len_y,
-        state.eta.safe_data,  # type: ignore
-        params.g,  # type: ignore
-        state.v.grid.dy,  # type: ignore
-        state.v.grid.mask,  # type: ignore
+    grid = state.v.grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.eta.safe_data,
+        params.g,
+        state.v.grid.dy,
+        state.v.grid.mask,
     )
     return State(
         u=Variable(None, state.u.grid),
-        v=Variable(result, state.v.grid),
+        v=Variable(_apply_2D_iterator(_pressure_gradient_j, args, grid), state.v.grid),
         eta=Variable(None, state.eta.grid),
     )
 
 
 def divergence_i(state: State, params: Parameters) -> State:
     """Compute divergence of flow along first dimension with centered differences."""
-    result = _divergence_i(
-        state.u.grid.len_x,
-        state.u.grid.len_y,
-        state.u.safe_data,  # type: ignore
-        state.u.grid.mask,  # type: ignore
-        params.H,  # type: ignore
-        state.eta.grid.dx,  # type: ignore
-        state.eta.grid.dy,  # type: ignore
-        state.u.grid.dy,  # type: ignore
+    grid = state.u.grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.u.safe_data,
+        state.u.grid.mask,
+        params.H,
+        state.eta.grid.dx,
+        state.eta.grid.dy,
+        state.u.grid.dy,
     )
     return State(
         u=Variable(None, state.u.grid),
         v=Variable(None, state.v.grid),
-        eta=Variable(result, state.eta.grid),
+        eta=Variable(_apply_2D_iterator(_divergence_i, args, grid), state.eta.grid),
     )
 
 
 def divergence_j(state: State, params: Parameters) -> State:
     """Compute divergence of flow along second dimension with centered differences."""
-    result = _divergence_j(
-        state.v.grid.len_x,
-        state.v.grid.len_y,
-        state.v.safe_data,  # type: ignore
-        state.v.grid.mask,  # type: ignore
-        params.H,  # type: ignore
-        state.eta.grid.dx,  # type: ignore
-        state.eta.grid.dy,  # type: ignore
-        state.v.grid.dx,  # type: ignore
+    grid = state.v.grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.v.safe_data,
+        state.v.grid.mask,
+        params.H,
+        state.eta.grid.dx,
+        state.eta.grid.dy,
+        state.v.grid.dx,
     )
     return State(
         u=Variable(None, state.u.grid),
         v=Variable(None, state.v.grid),
-        eta=Variable(result, state.eta.grid),
+        eta=Variable(_apply_2D_iterator(_divergence_j, args, grid), state.eta.grid),
     )
 
 
@@ -231,17 +275,18 @@ def coriolis_j(state: State, params: Parameters) -> State:
 
     An arithmetic four point average of u onto the v-grid is performed.
     """
-    result = _coriolis_j(
-        state.u.grid.len_x,
-        state.u.grid.len_y,
-        state.u.safe_data,  # type: ignore
-        state.u.grid.mask,  # type: ignore
-        state.v.grid.mask,  # type: ignore
-        params.f["v"],  # type: ignore
+    grid = state.v.grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.u.safe_data,
+        state.u.grid.mask,
+        state.v.grid.mask,
+        params.f["v"],
     )
     return State(
         u=Variable(None, state.u.grid),
-        v=Variable(result, state.v.grid),
+        v=Variable(_apply_2D_iterator(_coriolis_j, args, grid), state.v.grid),
         eta=Variable(None, state.eta.grid),
     )
 
@@ -251,16 +296,17 @@ def coriolis_i(state: State, params: Parameters) -> State:
 
     An arithmetic four point average of v onto the u-grid is performed.
     """
-    result = _coriolis_i(
-        state.v.grid.len_x,
-        state.v.grid.len_y,
-        state.v.safe_data,  # type: ignore
-        state.v.grid.mask,  # type: ignore
-        state.u.grid.mask,  # type: ignore
-        params.f["u"],  # type: ignore
+    grid = state.u.grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.v.safe_data,
+        state.v.grid.mask,
+        state.u.grid.mask,
+        params.f["u"],
     )
     return State(
-        u=Variable(result, state.u.grid),
+        u=Variable(_apply_2D_iterator(_coriolis_i, args, grid), state.u.grid),
         v=Variable(None, state.v.grid),
         eta=Variable(None, state.eta.grid),
     )

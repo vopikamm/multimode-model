@@ -112,6 +112,15 @@ class Variable:
     data: Optional[np.ndarray]
     grid: Grid
 
+    def __post_init__(self):
+        """Validate."""
+        if self.data is not None:
+            if self.data.shape != self.grid.shape:
+                raise ValueError(
+                    "Shape of data and grid missmatch. "
+                    f"Got {self.data.shape} and {self.grid.shape}"
+                )
+
     @property
     def as_dataarray(self) -> xarray.DataArray:  # type: ignore
         """Return variable as xarray.DataArray.
@@ -128,23 +137,29 @@ class Variable:
 
         # copy to prevent side effects on self.data
         data = self.safe_data.copy()
-
         data[self.grid.mask == 0] = np.nan
+
+        coords = {
+            "x": (("j", "i"), self.grid.x),
+            "y": (("j", "i"), self.grid.y),
+        }
+        dims = ("j", "i")
+
+        if self.grid.ndim >= 3:
+            coords["z"] = (("z",), self.grid.z)
+            dims = ("z",) + dims
 
         return xarray.DataArray(  # type: ignore
             data=data,
-            coords={
-                "x": (("i", "j"), self.grid.x),
-                "y": (("i", "j"), self.grid.y),
-            },
-            dims=("i", "j"),
+            coords=coords,
+            dims=dims,
         )
 
     @property
     def safe_data(self) -> np.ndarray:
         """Return self.data or, if it is None, a zero array of appropriate shape."""
         if self.data is None:
-            return np.zeros(self.grid.x.shape)
+            return np.zeros(self.grid.shape)
         else:
             return self.data
 

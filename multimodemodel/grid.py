@@ -1,7 +1,7 @@
 """Logic related to creation of grids."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Callable
 import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
@@ -16,7 +16,7 @@ class GridShift(Enum):
     E.g., `GridShift.LR` indicates that the grid points of the other grids which share
     the same index are located on the lower and/or left face of the eta Grid. The
     value of the enumerator is a tuple giving the direction of shift in
-    x- and y-direction.
+    y- and x-direction.
     """
 
     LR = (1, -1)
@@ -46,72 +46,134 @@ class Grid:
       2D np.ndarray of x-coordinates on grid
     y: np.ndarray
       2D np.ndarray of y-coordinates on grid
-    mask: np.ndarray = None
-      optional. Ocean mask, 1 where ocean is, 0 where land is.
+    z: Optional[np.ndarray] = None
+      1D np.ndarray of z coordinates.
+    mask: Optional[np.ndarray] = None
+      Ocean mask, 1 where ocean is, 0 where land is.
       Default is a closed basin
-    dim_x: int = 0  # axis of x dimension in numpy array
-    dim_y: int = 1  # axis of y dimension in numpy array
+
+    Attributes
+    ----------
+    dx: np.ndarray
+      Grid spacing in x.
+    dy: np.ndarray
+      Grid spacing in y.
+    dz: np.ndarray
+      Grid spacing in z.
+
+    Properties
+    ----------
+    shape: npt._Shape
+      Tuple of int defining the shape of the grid.
+    ndim: int
+      Number of dimensions on which the grid is defined
+    dim_x: int =-1
+      Axis of x-dimension
+    dim_y: int =-2
+      Axis of y-dimension
+    dim_z: int = -3
+      Axis of z-dimension
     """
 
     x: np.ndarray  # 2D np.ndarray of x-coordinates on grid
     y: np.ndarray  # 2D np.ndarray of y-coordinates on grid
-    mask: Union[
-        np.ndarray, None
-    ] = None  # ocean mask, 1 where ocean is, 0 where land is
-    dim_x: int = 0  # x dimension in numpy array
-    dim_y: int = 1  # y dimension in numpy array
+    z: Optional[np.ndarray] = None  # 1D np.ndarray of z coordinates.
+    mask: Optional[np.ndarray] = None  # ocean mask, 1 where ocean is, 0 where land is
     dx: np.ndarray = field(init=False)  # grid spacing in x
     dy: np.ndarray = field(init=False)  # grid spacing in y
-    len_x: int = field(init=False)  # length of array in x dimension
-    len_y: int = field(init=False)  # length of array in y dimension
+    dz: Optional[np.ndarray] = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Set derived attributes of the grid and validate."""
+        self.dx, self.dy, self.dz = self._compute_grid_spacing()
+
+        if self.mask is None:
+            self.mask = self._get_default_mask(self.shape)
+
+        self._validate()
+
+    @property
+    def shape(self) -> npt._Shape:
+        """Return shape tuple of grid."""
+        if self.z is None:
+            return self.x.shape
+        else:
+            return self.z.shape + self.x.shape
+
+    @property
+    def ndim(self) -> int:
+        """Return number of dimensions."""
+        return len(self.shape)
+
+    @property
+    def dim_x(self) -> int:
+        """Return axis of x dimension."""
+        return -1
+
+    @property
+    def dim_y(self) -> int:
+        """Return axis of x dimension."""
+        return -2
+
+    @property
+    def dim_z(self) -> int:
+        """Return axis of x dimension."""
+        return -3
 
     def _compute_grid_spacing(self):
+        dx, dy = self._compute_horizontal_grid_spacing()
+        dz = self._compute_vertical_grid_spacing()
+        return dx, dy, dz
+
+    def _compute_horizontal_grid_spacing(self):
         """Compute the spatial differences along x and y."""
         dx = np.diff(self.x, axis=self.dim_x)
         dy = np.diff(self.y, axis=self.dim_y)
-        if self.dim_x == 0:
-            dx_0 = dx[0, :]
-            dy_0 = dy[:, 0]
-        else:
-            dx_0 = dx[:, 0]
-            dy_0 = dy[0, :]
+        dx_0 = dx[:, 0]
+        dy_0 = dy[0, :]
         dx = np.append(dx, np.expand_dims(dx_0, axis=self.dim_x), axis=self.dim_x)
         dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
         return dx, dy
 
+    def _compute_vertical_grid_spacing(self):
+        """Compute grid box size along z."""
+        if self.z is None:
+            return None
+        dz = np.diff(self.z, axis=0)
+        dz = np.append(dz, dz[0])
+        return dz
+
     @classmethod
     def cartesian(
         cls: Any,
-        x: np.ndarray,  # longitude on grid
-        y: np.ndarray,  # latitude on grid
-        mask: Union[
-            np.ndarray, None
+        x: np.ndarray,  # x coordinate
+        y: np.ndarray,  # y coordinate
+        z: Optional[np.ndarray] = None,  # z coordinate
+        mask: Optional[
+            np.ndarray
         ] = None,  # ocean mask, 1 where ocean is, 0 where land is
-        dim_x: int = 0,  # x dimension in numpy array
     ):
         """Generate a Cartesian grid.
 
         Arguments
         ---------
         x: np.ndarray
-          1D Array of coordinates along x-dimension.
+          1D Array of coordinates along x dimension.
         y: np.ndarray
-          1D Array of coordinates along y_dimension.
-        mask: np.ndarray | None
+          1D Array of coordinates along y dimension.
+        z: Optional[np.ndarray] = None,
+          1D Array of coordinates along z dimension.
+        mask: Optional[np.ndarray] = None
           Optional ocean mask. Default is a closed domain.
-        dim_x: int = 0
-          Optional. Axis of the x-dimension.
         """
         assert x.ndim == y.ndim == 1
-        indexing = ["ij", "xy"]
-        x_2D, y_2D = np.meshgrid(x, y, indexing=indexing[dim_x])
+        x_2D, y_2D = np.meshgrid(x, y, indexing="xy")
 
         grid = cls(
             x=x_2D,
             y=y_2D,
+            z=z,
             mask=mask,
-            dim_x=dim_x,
-            dim_y=dim_x - 1,
         )
 
         return grid
@@ -125,8 +187,8 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
-        mask: Union[np.ndarray, None] = None,
-        dim_x: int = 0,
+        z: Optional[np.ndarray] = None,
+        mask: Optional[np.ndarray] = None,
         radius: float = 6_371_000.0,
     ):
         """Generate a regular spherical grid.
@@ -145,10 +207,10 @@ class Grid:
           Number of grid points along x dimension.
         ny: int
           Number of grid points along y dimension.
+        z: Optional[np.ndarray] = None
+          Optional 1D coordinate array along vertical dimension.
         mask: np.ndarray | None
           Optional ocean mask. Default is a closed domain.
-        dim_x: int = 0
-          Optional. Axis of the x-dimension.
         radius: float = 6_371_000.0
           Radius of the sphere, defaults to Earths' radius measured in meters.
         """
@@ -159,8 +221,8 @@ class Grid:
         grid = cls.cartesian(
             x=lon,
             y=lat,
+            z=z,
             mask=mask,
-            dim_x=dim_x,
         )
 
         # reset to have a dimension of length
@@ -169,32 +231,25 @@ class Grid:
 
         return grid
 
-    def __post_init__(self) -> None:
-        """Set derived attributes of the grid and validate."""
-        self.dx, self.dy = self._compute_grid_spacing()
-        self.len_x = self.x.shape[self.dim_x]
-        self.len_y = self.x.shape[self.dim_y]
-
-        if self.mask is None:
-            self.mask = self._get_default_mask(self.x.shape)
-
-        self._validate()
-
     def _validate(self) -> None:
         """Validate Attributes of Grid class after init."""
-        if self.mask is not None and self.mask.shape != self.x.shape:
+        if self.mask is not None and self.mask.shape != self.shape:
             raise ValueError(
                 f"Mask shape not matching grid shape. "
-                f"Got {self.mask.shape} and {self.x.shape}."
+                f"Got {self.mask.shape} and {self.shape}."
             )
+        assert self.x.ndim == 2
+        assert self.y.ndim == 2
+        if self.z is not None:
+            assert self.z.ndim == 1
 
     @staticmethod
     def _get_default_mask(shape: npt._Shape):
         mask = np.ones(shape, dtype=np.int8)
-        mask[0, :] = 0
-        mask[-1, :] = 0
-        mask[:, 0] = 0
-        mask[:, -1] = 0
+        mask[..., 0, :] = 0
+        mask[..., -1, :] = 0
+        mask[..., :, 0] = 0
+        mask[..., :, -1] = 0
         return mask
 
 
@@ -213,63 +268,42 @@ class StaggeredGrid:
     @classmethod
     def cartesian_c_grid(
         cls: Any,
-        x: np.ndarray,  # longitude on grid
-        y: np.ndarray,  # latitude on grid
-        mask: Union[
-            np.ndarray, None
-        ] = None,  # ocean mask, 1 where ocean is, 0 where land is
-        dim_x: int = 0,  # x dimension in numpy array
         shift: GridShift = GridShift.LL,
+        **grid_kwargs: Dict[str, Any],
     ):
         """Generate a Cartesian Arakawa C-Grid.
 
         Arguments
         ---------
-        x: np.ndarray
-          1D Array of coordinates along x-dimension.
-        y: np.ndarray
-          1D Array of coordinates along y_dimension.
-        mask: np.ndarray | None
-          Optional ocean mask. Default is a closed domain.
-        dim_x: int = 0
-          Optional. Axis of the x-dimension.
         shift: GridShift = GridShift.LL
           Direction of shift of staggered grids with respect to the eta-grid.
           See `GridShift` for more details.
+        **grid_kwargs: Dict[str, Any]:
+          keyword arguments are passed to Grid.cartesian().
         """
-        eta_grid = Grid.cartesian(x, y, mask, dim_x)
-
-        mask_args = (
-            eta_grid.len_x,
-            eta_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
-        )
+        eta_grid = Grid.cartesian(**grid_kwargs)  # type: ignore
 
         u_x, u_y = (eta_grid.x + shift.value[0] * eta_grid.dx / 2, eta_grid.y)
         v_x, v_y = (eta_grid.x, eta_grid.y + shift.value[1] * eta_grid.dy / 2)
         q_x, q_y = (u_x, v_y)
+        z = eta_grid.z
         u_grid = Grid(
-            u_x,
-            u_y,
-            cls._u_mask_from_eta(*mask_args),
-            dim_x=eta_grid.dim_x,
-            dim_y=eta_grid.dim_y,
+            x=u_x,
+            y=u_y,
+            z=z,
+            mask=cls._compute_mask(cls._u_mask_from_eta, eta_grid, shift),
         )
         v_grid = Grid(
-            v_x,
-            v_y,
-            cls._v_mask_from_eta(*mask_args),
-            dim_x=eta_grid.dim_x,
-            dim_y=eta_grid.dim_y,
+            x=v_x,
+            y=v_y,
+            z=z,
+            mask=cls._compute_mask(cls._v_mask_from_eta, eta_grid, shift),
         )
         q_grid = Grid(
-            q_x,
-            q_y,
-            cls._q_mask_from_eta(*mask_args),
-            dim_x=eta_grid.dim_x,
-            dim_y=eta_grid.dim_y,
+            x=q_x,
+            y=q_y,
+            z=z,
+            mask=cls._compute_mask(cls._q_mask_from_eta, eta_grid, shift),
         )
         return StaggeredGrid(eta_grid, u_grid, v_grid, q_grid)
 
@@ -284,7 +318,7 @@ class StaggeredGrid:
         Returns StaggeredGrid object with all four grids
         """
         eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
-        dx, dy = eta_grid._compute_grid_spacing()
+        dx, dy = eta_grid._compute_horizontal_grid_spacing()
 
         u_x_start, u_x_end = (
             eta_grid.x.min() + shift.value[0] * dx.min() / 2,
@@ -293,12 +327,10 @@ class StaggeredGrid:
         u_kwargs = kwargs.copy()
         u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
-        u_grid.mask = cls._u_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        u_grid.mask = cls._compute_mask(
+            cls._u_mask_from_eta,  # type: ignore
+            eta_grid,
+            shift,
         )
 
         v_y_start, v_y_end = (
@@ -308,12 +340,10 @@ class StaggeredGrid:
         v_kwargs = kwargs.copy()
         v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
         v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
-        v_grid.mask = cls._v_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        v_grid.mask = cls._compute_mask(
+            cls._v_mask_from_eta,  # type: ignore
+            eta_grid,
+            shift,
         )
 
         q_kwargs = kwargs.copy()
@@ -326,15 +356,36 @@ class StaggeredGrid:
             )
         )
         q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
-        q_grid.mask = cls._q_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        q_grid.mask = cls._compute_mask(
+            cls._q_mask_from_eta,  # type: ignore
+            eta_grid,
+            shift,
         )
 
         return cls(eta_grid, u_grid, v_grid, q_grid)
+
+    @staticmethod
+    def _compute_mask(
+        func: Callable[..., np.ndarray], from_grid: Grid, shift: GridShift
+    ):
+        if from_grid.mask.ndim <= 2:  # type: ignore
+            return func(
+                from_grid.shape[from_grid.dim_x],
+                from_grid.shape[from_grid.dim_y],
+                from_grid.mask,
+                shift.value[0],
+                shift.value[1],
+            )
+        res = np.empty_like(from_grid.mask)  # type: ignore
+        for k in range(from_grid.shape[from_grid.dim_z]):
+            res[k] = func(
+                from_grid.shape[from_grid.dim_x],
+                from_grid.shape[from_grid.dim_y],
+                from_grid.mask[k],  # type: ignore
+                shift.value[0],
+                shift.value[1],
+            )
+        return res
 
     @staticmethod
     @_numba_2D_grid_iterator_i8
@@ -348,7 +399,7 @@ class StaggeredGrid:
         shift_y: int,
     ) -> int:  # pragma: no cover
         i_shift = (i + shift_x) % ni
-        if (eta_mask[i, j] + eta_mask[i_shift, j]) == 2:
+        if (eta_mask[j, i] + eta_mask[j, i_shift]) == 2:
             return 1
         else:
             return 0
@@ -365,7 +416,7 @@ class StaggeredGrid:
         shift_y: int,
     ) -> int:  # pragma: no cover
         j_shift = (j + shift_y) % nj
-        if (eta_mask[i, j] + eta_mask[i, j_shift]) == 2:
+        if (eta_mask[j, i] + eta_mask[j_shift, i]) == 2:
             return 1
         else:
             return 0
@@ -384,10 +435,10 @@ class StaggeredGrid:
         i_shift = (i + shift_x) % ni
         j_shift = (j + shift_y) % nj
         if (
-            eta_mask[i, j]
-            + eta_mask[i, j_shift]
-            + eta_mask[i_shift, j]
-            + eta_mask[i_shift, j_shift]
+            eta_mask[j, i]
+            + eta_mask[j_shift, i]
+            + eta_mask[j, i_shift]
+            + eta_mask[j_shift, i_shift]
         ) == 4:
             return 1
         else:
