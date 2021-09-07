@@ -2,7 +2,9 @@
 from .domain_split_API import Domain, Border, Solver, Tailor
 from .datastructure import State, Variable, np, Parameters
 from .grid import Grid
-from dask.distributed import Client, Future
+from dask.distributed import Client, Future, fire_and_forget
+from redis import Redis
+from struct import pack
 
 
 def _new_grid(x: np.array, y: np.array, mask: np.array) -> Grid:
@@ -228,6 +230,22 @@ class Tail(Tailor):
         return DomainState(u, v, eta, base.get_iteration(), base.get_id())
 
 
+def _dump_to_redis(domain: DomainState):
+    r = Redis(host='localhost', port='6379', db='0')
+
+    if r.ping():
+        flag = int(r.get("_avg_eta"))
+
+        if flag == 1:
+            k = format(domain.id, '05d') + "_" + format(domain.it, '05d') + "_eta"
+            h, w = domain.eta.safe_data.shape
+            shape = pack('>II', h, w)
+            encoded = shape + domain.eta.safe_data.tobytes()
+
+            print(k)
+            r.set(k, encoded)
+
+
 class GeneralSolver(Solver):
     """Implement Solver class from API for use with any provided function.
 
@@ -256,9 +274,9 @@ class GeneralSolver(Solver):
 
     def _integrate(self, domain: DomainState) -> DomainState:
         inc = self.slv(domain, self.params)
-        new_u = (domain.u.safe_data + self.step * inc.u.safe_data).copy()
-        new_v = (domain.v.safe_data + self.step * inc.v.safe_data).copy()
-        new_eta = (domain.eta.safe_data + self.step * inc.eta.safe_data).copy()
+        new_u = domain.u.safe_data + self.step * inc.u.safe_data
+        new_v = domain.v.safe_data + self.step * inc.v.safe_data
+        new_eta = domain.eta.safe_data + self.step * inc.eta.safe_data
         return DomainState(Variable(new_u, domain.u.grid),
                            Variable(new_v, domain.v.grid),
                            Variable(new_eta, domain.eta.grid),
@@ -321,4 +339,5 @@ class GeneralSolver(Solver):
 
     def window(self, domain: Future, client: Client) -> Future:
         """Do nothing."""
+        fire_and_forget(client.submit(_dump_to_redis, domain))
         return domain
