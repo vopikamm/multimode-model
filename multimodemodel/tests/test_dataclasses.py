@@ -433,7 +433,7 @@ class TestVariableAsDataArray:
 
         assert (v_da.x == v.grid.x).all()
         assert (v_da.y == v.grid.y).all()
-        assert v_da.dims == ("i", "j", "time")
+        assert v_da.dims == ("time", "i", "j")
         assert v_da.x.dims == v_da.y.dims == ("i", "j")
 
     def test_masking_has_no_side_effects(self):

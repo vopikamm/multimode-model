@@ -124,9 +124,9 @@ class Variable:
 
         # copy to prevent side effects on self.data
         data = self.safe_data.copy()
-        data = np.expand_dims(data, axis=2)
 
         data[self.grid.mask == 0] = np.nan
+        data = np.expand_dims(data, axis=0)
 
         return xarray.DataArray(
             data=data,
@@ -135,7 +135,7 @@ class Variable:
                 "y": (("i", "j"), self.grid.y),
                 "time": np.array([np.datetime64(round(self.time), "s")]),
             },
-            dims=("i", "j", "time"),
+            dims=("time", "i", "j"),
         )
 
     @property
