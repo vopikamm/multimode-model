@@ -63,19 +63,17 @@ class TestTerms:
         state_2D = swe.State(
             u=swe.Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u),
             v=swe.Variable(None, c_grid_2D.v),
-            eta=swe.Variable(None, c_grid_2D.eta),
         )
         inc_2D = swe.coriolis_j(state_2D, params_2D)
 
         state_3D = swe.State(
             u=swe.Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u),
             v=swe.Variable(None, c_grid_3D.v),
-            eta=swe.Variable(None, c_grid_3D.eta),
         )
         inc_3D = swe.coriolis_j(state_3D, params_3D)
 
         # exploit broadcasting before comparison
-        assert np.all(inc_2D.v.data == inc_3D.v.data)
+        assert np.all(inc_2D.variables["v"].data == inc_3D.variables["v"].data)
 
     def test_pressure_gradient_i(self):
         """Test pressure_gradient_i."""
@@ -90,16 +88,15 @@ class TestTerms:
         params = swe.Parameters(g=g)
         grid = swe.Grid(x=x, y=y, mask=mask)
         state = swe.State(
-            u=swe.Variable(np.zeros(x.shape), grid),
-            v=swe.Variable(np.zeros(x.shape), grid),
+            u=swe.Variable(None, grid),
             eta=swe.Variable(eta, grid),
         )
 
         inc = swe.pressure_gradient_i(state, params)
 
-        assert inc.eta.data is None
-        assert inc.v.data is None
-        assert np.all(inc.u.data == result)
+        assert "eta" not in inc.variables
+        assert "v" not in inc.variables
+        assert np.all(inc.variables["u"].data == result)
 
     def test_pressure_gradient_j(self):
         """Test pressure_gradient_j."""
@@ -114,16 +111,15 @@ class TestTerms:
         params = swe.Parameters(g=g)
         grid = swe.Grid(x=x, y=y, mask=mask)
         state = swe.State(
-            u=swe.Variable(np.zeros(y.shape), grid),
-            v=swe.Variable(np.zeros(y.shape), grid),
+            v=swe.Variable(None, grid),
             eta=swe.Variable(eta, grid),
         )
 
         inc = swe.pressure_gradient_j(state, params)
 
-        assert inc.eta.data is None
-        assert inc.u.data is None
-        assert np.all(inc.v.data == result)
+        assert "eta" not in inc.variables
+        assert "u" not in inc.variables
+        assert np.all(inc.variables["v"].data == result)
 
     def test_divergence_i(self):
         """Test divergence_i."""
@@ -139,17 +135,13 @@ class TestTerms:
         params = swe.Parameters(H=H)
         grid_u = swe.Grid(x=x, y=y, mask=mask_u)
         grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
-        state = swe.State(
-            u=swe.Variable(u, grid_u),
-            v=swe.Variable(np.zeros(x.shape), grid_u),
-            eta=swe.Variable(np.zeros(x.shape), grid_eta),
-        )
+        state = swe.State(u=swe.Variable(u, grid_u), eta=swe.Variable(None, grid_eta))
 
         inc = swe.divergence_i(state, params)
 
-        assert inc.u.data is None
-        assert inc.v.data is None
-        assert np.all(inc.eta.data == result)
+        assert "u" not in inc.variables
+        assert "v" not in inc.variables
+        assert np.all(inc.variables["eta"].data == result)
 
     def test_divergence_j(self):
         """Test divergence_j."""
@@ -165,16 +157,12 @@ class TestTerms:
         params = swe.Parameters(H=H)
         grid_v = swe.Grid(x=x, y=y, mask=mask_v)
         grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
-        state = swe.State(
-            u=swe.Variable(np.zeros(y.shape), grid_v),
-            v=swe.Variable(v, grid_v),
-            eta=swe.Variable(np.zeros(y.shape), grid_eta),
-        )
+        state = swe.State(v=swe.Variable(v, grid_v), eta=swe.Variable(None, grid_eta))
 
         inc = swe.divergence_j(state, params)
-        assert inc.u.data is None
-        assert inc.v.data is None
-        assert np.all(inc.eta.data == result)
+        assert "u" not in inc.variables
+        assert "v" not in inc.variables
+        assert np.all(inc.variables["eta"].data == result)
 
     @pytest.mark.parametrize(
         "coriolis_func",
@@ -191,14 +179,18 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(
+            x=x[0, :],
+            y=y[:, 0],
+            mask=mask,  # type: ignore
+        )
 
         params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
 
-        u = np.ones(x.shape) * c_grid.u.mask
+        u = np.ones(x.shape) * c_grid.u.mask  # type: ignore
 
         result = (
-            -c_grid.v.mask
+            -c_grid.v.mask  # type: ignore
             * coriolis_func(c_grid.v.y)
             * (
                 np.roll(np.roll(u, -1, axis=-1), 1, axis=-2)
@@ -209,16 +201,12 @@ class TestTerms:
             / 4.0
         )
 
-        state = swe.State(
-            u=swe.Variable(u, c_grid.u),
-            v=swe.Variable(None, c_grid.v),
-            eta=swe.Variable(None, c_grid.eta),
-        )
+        state = swe.State(u=swe.Variable(u, c_grid.u), v=swe.Variable(None, c_grid.v))
 
         inc = swe.coriolis_j(state, params)
-        assert inc.u.data is None
-        assert inc.eta.data is None
-        assert np.all(inc.v.data == result)
+        assert "u" not in inc.variables
+        assert "eta" not in inc.variables
+        assert np.all(inc.variables["v"].data == result)
 
     @pytest.mark.parametrize(
         "coriolis_func",
@@ -235,11 +223,15 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], mask=mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(
+            x=x[0, :],
+            y=y[:, 0],
+            mask=mask,  # type: ignore
+        )
 
         params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
 
-        v = np.ones(y.shape) * c_grid.v.mask
+        v = np.ones(y.shape) * c_grid.v.mask  # type: ignore
 
         result = (
             c_grid.u.mask
@@ -260,11 +252,9 @@ class TestTerms:
         )
 
         inc = swe.coriolis_i(state, params)
-        print(inc.u.data)
-        print(result)
-        assert inc.v.data is None
-        assert inc.eta.data is None
-        assert np.all(inc.u.data == result)
+        assert "v" not in inc.variables
+        assert "eta" not in inc.variables
+        assert np.all(inc.variables["u"].data == result)
 
     @pytest.mark.parametrize(
         "term",

@@ -114,6 +114,20 @@ class TestVariable:
         else:
             _ = Variable(data, grid)
 
+    def test_copy(self):
+        """Test that deepcopy of data and reference to grid is returned."""
+        shape = (10, 5)
+        var = Variable(np.ones(shape[::-1]), Grid(*get_x_y(*shape, 1, 1)))
+        var_copy = var.copy()
+        assert not np.may_share_memory(var.data, var_copy.data)
+        assert var.grid is var_copy.grid
+
+    def test_copy_none(self):
+        """Test copying None data."""
+        shape = (10, 5)
+        var_copy = Variable(None, Grid(*get_x_y(*shape, 1, 1))).copy()
+        assert var_copy.data is None
+
     def test_add_data(self):
         """Test variable summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
@@ -210,7 +224,7 @@ class TestVariableAsDataArray:
     def test_mask_applied(self):
         """Test if mask is applied properly."""
         v = self._gen_var()
-        assert np.isnan(v.as_dataarray.where(v.grid.mask == 0)).all()
+        assert np.isnan(v.as_dataarray.where(v.grid.mask == 0)).all()  # type: ignore
 
     def test_data_assignment(self):
         """Test assignment of data."""
@@ -225,15 +239,17 @@ class TestVariableAsDataArray:
         v = self._gen_var(has_z=has_z)
         v_da = v.as_dataarray
 
-        assert (v_da.x == v.grid.x).all()
-        assert (v_da.y == v.grid.y).all()
-        assert v_da.dims[-2:] == v_da.x.dims == v_da.y.dims == ("j", "i")
+        assert (v_da.x == v.grid.x).all()  # type: ignore
+        assert (v_da.y == v.grid.y).all()  # type: ignore
+        assert (
+            v_da.dims[-2:] == v_da.x.dims == v_da.y.dims == ("j", "i")  # type: ignore
+        )
         if has_z:
-            assert (v_da.z == v.grid.z).all()
-            assert v_da.dims[v.grid.dim_z] == "z"
+            assert (v_da.z == v.grid.z).all()  # type: ignore
+            assert v_da.dims[v.grid.dim_z] == "z"  # type: ignore
         else:
-            assert "z" not in v_da.coords
-            assert "z" not in v_da.dims
+            assert "z" not in v_da.coords  # type: ignore
+            assert "z" not in v_da.dims  # type: ignore
 
     def test_masking_has_no_side_effects(self):
         """Test if masking has side effects."""
@@ -247,20 +263,33 @@ class TestVariableAsDataArray:
 class TestState:
     """Test State class."""
 
+    def test_init_raise_on_non_variable_keyword_argument(self):
+        """Test if keyword argument of type other than Variable raises error."""
+        with pytest.raises(ValueError, match="Keyword argument"):
+            _ = State(u=None)
+
     def test_add(self):
         """Test state summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x=x, y=y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.ones_like(g1.x)
         s1 = State(
             u=Variable(d1, g1),
             v=Variable(d1, g1),
-            eta=Variable(d1, g1),
         )
-        s2 = State(Variable(d1 * 2, g1), Variable(d1 * 2, g1), Variable(d1 * 2, g1))
+        s2 = State(
+            u=Variable(d1 * 2, g1),
+            eta=Variable(d1 * 2, g1),
+        )
         s3 = s1 + s2
-        assert np.all(s3.u.data == 3.0)
-        assert np.all(s3.v.data == 3.0)
-        assert np.all(s3.eta.data == 3.0)
+        assert np.all(s3.variables["u"].data == 3.0)
+        assert np.all(s3.variables["v"].data == 1.0)
+        assert np.all(s3.variables["eta"].data == 2.0)
+
+    def test_attribute_is_reference_to_dict_value(self):
+        """Test if variable exposed by attribute is a reference to dictionary value."""
+        g1 = Grid(*get_x_y(10, 10, 1, 1))
+        s = State(var=Variable(np.ones(g1.shape), g1))
+        assert s.var is s.variables["var"]

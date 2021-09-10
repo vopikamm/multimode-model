@@ -193,20 +193,16 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
 
     Using centered differences in space.
     """
-    grid = state.u.grid
+    grid = state.variables["u"].grid
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
-        state.eta.safe_data,
+        state.variables["eta"].safe_data,
         params.g,
-        state.u.grid.dx,
-        state.u.grid.mask,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.mask,
     )
-    return State(
-        u=Variable(_apply_2D_iterator(_pressure_gradient_i, args, grid), state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(None, state.eta.grid),
-    )
+    return State(u=Variable(_apply_2D_iterator(_pressure_gradient_i, args, grid), grid))
 
 
 def pressure_gradient_j(state: State, params: Parameters) -> State:
@@ -214,60 +210,48 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
 
     Using centered differences in space.
     """
-    grid = state.v.grid
+    grid = state.variables["v"].grid
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
-        state.eta.safe_data,
+        state.variables["eta"].safe_data,
         params.g,
-        state.v.grid.dy,
-        state.v.grid.mask,
+        state.variables["v"].grid.dy,
+        state.variables["v"].grid.mask,
     )
-    return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(_apply_2D_iterator(_pressure_gradient_j, args, grid), state.v.grid),
-        eta=Variable(None, state.eta.grid),
-    )
+    return State(v=Variable(_apply_2D_iterator(_pressure_gradient_j, args, grid), grid))
 
 
 def divergence_i(state: State, params: Parameters) -> State:
     """Compute divergence of flow along first dimension with centered differences."""
-    grid = state.u.grid
+    grid = state.variables["eta"].grid
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
-        state.u.safe_data,
-        state.u.grid.mask,
+        state.variables["u"].safe_data,
+        state.variables["u"].grid.mask,
         params.H,
-        state.eta.grid.dx,
-        state.eta.grid.dy,
-        state.u.grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dy,
     )
-    return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(_apply_2D_iterator(_divergence_i, args, grid), state.eta.grid),
-    )
+    return State(eta=Variable(_apply_2D_iterator(_divergence_i, args, grid), grid))
 
 
 def divergence_j(state: State, params: Parameters) -> State:
     """Compute divergence of flow along second dimension with centered differences."""
-    grid = state.v.grid
+    grid = state.variables["eta"].grid
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
-        state.v.safe_data,
-        state.v.grid.mask,
+        state.variables["v"].safe_data,
+        state.variables["v"].grid.mask,
         params.H,
-        state.eta.grid.dx,
-        state.eta.grid.dy,
-        state.v.grid.dx,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["v"].grid.dx,
     )
-    return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(_apply_2D_iterator(_divergence_j, args, grid), state.eta.grid),
-    )
+    return State(eta=Variable(_apply_2D_iterator(_divergence_j, args, grid), grid))
 
 
 def coriolis_j(state: State, params: Parameters) -> State:
@@ -275,19 +259,17 @@ def coriolis_j(state: State, params: Parameters) -> State:
 
     An arithmetic four point average of u onto the v-grid is performed.
     """
-    grid = state.v.grid
+    grid = state.variables["v"].grid
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
-        state.u.safe_data,
-        state.u.grid.mask,
-        state.v.grid.mask,
+        state.variables["u"].safe_data,
+        state.variables["u"].grid.mask,
+        state.variables["v"].grid.mask,
         params.f["v"],
     )
     return State(
-        u=Variable(None, state.u.grid),
-        v=Variable(_apply_2D_iterator(_coriolis_j, args, grid), state.v.grid),
-        eta=Variable(None, state.eta.grid),
+        v=Variable(_apply_2D_iterator(_coriolis_j, args, grid), grid),
     )
 
 
@@ -296,17 +278,15 @@ def coriolis_i(state: State, params: Parameters) -> State:
 
     An arithmetic four point average of v onto the u-grid is performed.
     """
-    grid = state.u.grid
+    grid = state.variables["u"].grid
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
-        state.v.safe_data,
-        state.v.grid.mask,
-        state.u.grid.mask,
+        state.variables["v"].safe_data,
+        state.variables["v"].grid.mask,
+        state.variables["u"].grid.mask,
         params.f["u"],
     )
     return State(
-        u=Variable(_apply_2D_iterator(_coriolis_i, args, grid), state.u.grid),
-        v=Variable(None, state.v.grid),
-        eta=Variable(None, state.eta.grid),
+        u=Variable(_apply_2D_iterator(_coriolis_i, args, grid), grid),
     )
