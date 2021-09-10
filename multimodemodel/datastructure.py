@@ -146,7 +146,7 @@ class Variable:
         dims = ("j", "i")
 
         if self.grid.ndim >= 3:
-            coords["z"] = (("z",), self.grid.z)
+            coords["z"] = (("z",), self.grid.z)  # type: ignore
             dims = ("z",) + dims
 
         return xarray.DataArray(  # type: ignore
@@ -163,6 +163,17 @@ class Variable:
         else:
             return self.data
 
+    def copy(self):
+        """Return a copy.
+
+        The data attribute is a deep copy while the grid is a reference.
+        """
+        if self.data is None:
+            data = None
+        else:
+            data = self.data.copy()
+        return self.__class__(data, self.grid)
+
     def __add__(self, other):
         """Add data of to variables."""
         if (
@@ -172,36 +183,63 @@ class Variable:
         ):
             raise ValueError("Try to add variables defined on different grids.")
         try:
-            if self.data is None:
-                new_data = other.data
+            if self.data is None and other.data is None:
+                new_data = None
+            elif self.data is None:
+                new_data = other.data.copy()  # type: ignore
             elif other.data is None:
-                new_data = self.data
+                new_data = self.data.copy()
             else:
                 new_data = self.data + other.data
-        except (TypeError, AttributeError):
+        except (AttributeError, TypeError):
             return NotImplemented
         return self.__class__(data=new_data, grid=self.grid)
 
 
-@dataclass
 class State:
     """State class.
 
-    Combines the dynamical variables u,v, eta into one state object.
+    Combines the prognostic variables into one state object.
+
+    The variables are passed as keyword arguments to the __init__ method
+    of the state object and stored in the attribute `variables` which is a
+    dict.
+
+    State objects can be added such that the individual variable objects are added.
+    If an variable is missing in one state object, it is treated as zeros.
+
+    For convenience, it is also possible to access the variables directly as atttributes
+    of the state object.
     """
 
-    u: Variable
-    v: Variable
-    eta: Variable
+    def __init__(self, **kwargs):
+        """Create State object.
+
+        Variables are given by keyword arguments.
+        """
+        self.variables = dict()
+
+        for k, v in kwargs.items():
+            if type(v) is not Variable:
+                raise ValueError("Keyword arguments must be of type Variable.")
+            else:
+                self.variables[k] = v
+                self.__setattr__(k, self.variables[k])
 
     def __add__(self, other):
         """Add all variables of two states."""
         if not isinstance(other, type(self)) or not isinstance(self, type(other)):
             return NotImplemented  # pragma: no cover
         try:
-            u_new = self.u + other.u
-            v_new = self.v + other.v
-            eta_new = self.eta + other.eta
+            sum = dict()
+            for k in self.variables:
+                if k in other.variables:
+                    sum[k] = self.variables[k] + other.variables[k]
+                else:
+                    sum[k] = self.variables[k].copy()
+            for k in other.variables:
+                if k not in self.variables:
+                    sum[k] = other.variables[k].copy()
+            return self.__class__(**sum)
         except (AttributeError, TypeError):  # pragma: no cover
             return NotImplemented
-        return self.__class__(u=u_new, v=v_new, eta=eta_new)

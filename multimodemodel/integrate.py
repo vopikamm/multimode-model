@@ -58,15 +58,16 @@ def euler_forward(rhs: StateDeque, params: Parameters, step: float) -> StateIncr
     state is passed to this function. Returns the increment
     dstate = next_state - current_state.
     """
-    du = step * rhs[-1].u.safe_data
-    dv = step * rhs[-1].v.safe_data
-    deta = step * rhs[-1].eta.safe_data
+    # TODO: refactor time stepping schemes!!!
+    du = step * rhs[-1].variables["u"].safe_data
+    dv = step * rhs[-1].variables["v"].safe_data
+    deta = step * rhs[-1].variables["eta"].safe_data
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid),
-            v=Variable(dv, rhs[-1].v.grid),
-            eta=Variable(deta, rhs[-1].eta.grid),
+            u=Variable(du, rhs[-1].variables["u"].grid),
+            v=Variable(dv, rhs[-1].variables["v"].grid),
+            eta=Variable(deta, rhs[-1].variables["eta"].grid),
         )
     )
 
@@ -84,15 +85,21 @@ def adams_bashforth2(
     if len(rhs) < 2:
         return euler_forward(rhs, params, step)
 
-    du = (step / 2) * (3 * rhs[-1].u.safe_data - rhs[-2].u.safe_data)
-    dv = (step / 2) * (3 * rhs[-1].v.safe_data - rhs[-2].v.safe_data)
-    deta = (step / 2) * (3 * rhs[-1].eta.safe_data - rhs[-2].eta.safe_data)
+    du = (step / 2) * (
+        3 * rhs[-1].variables["u"].safe_data - rhs[-2].variables["u"].safe_data
+    )
+    dv = (step / 2) * (
+        3 * rhs[-1].variables["v"].safe_data - rhs[-2].variables["v"].safe_data
+    )
+    deta = (step / 2) * (
+        3 * rhs[-1].variables["eta"].safe_data - rhs[-2].variables["eta"].safe_data
+    )
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid),
-            v=Variable(dv, rhs[-1].v.grid),
-            eta=Variable(deta, rhs[-1].eta.grid),
+            u=Variable(du, rhs[-1].variables["u"].grid),
+            v=Variable(dv, rhs[-1].variables["v"].grid),
+            eta=Variable(deta, rhs[-1].variables["eta"].grid),
         )
     )
 
@@ -111,22 +118,26 @@ def adams_bashforth3(
         return adams_bashforth2(rhs, params, step)
 
     du = (step / 12) * (
-        23 * rhs[-1].u.safe_data - 16 * rhs[-2].u.safe_data + 5 * rhs[-3].u.safe_data
+        23 * rhs[-1].variables["u"].safe_data
+        - 16 * rhs[-2].variables["u"].safe_data
+        + 5 * rhs[-3].variables["u"].safe_data
     )
     dv = (step / 12) * (
-        23 * rhs[-1].v.safe_data - 16 * rhs[-2].v.safe_data + 5 * rhs[-3].v.safe_data
+        23 * rhs[-1].variables["v"].safe_data
+        - 16 * rhs[-2].variables["v"].safe_data
+        + 5 * rhs[-3].variables["v"].safe_data
     )
     deta = (step / 12) * (
-        23 * rhs[-1].eta.safe_data
-        - 16 * rhs[-2].eta.safe_data
-        + 5 * rhs[-3].eta.safe_data
+        23 * rhs[-1].variables["eta"].safe_data
+        - 16 * rhs[-2].variables["eta"].safe_data
+        + 5 * rhs[-3].variables["eta"].safe_data
     )
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid),
-            v=Variable(dv, rhs[-1].v.grid),
-            eta=Variable(deta, rhs[-1].eta.grid),
+            u=Variable(du, rhs[-1].variables["u"].grid),
+            v=Variable(dv, rhs[-1].variables["v"].grid),
+            eta=Variable(deta, rhs[-1].variables["eta"].grid),
         )
     )
 
