@@ -5,6 +5,7 @@ from .grid import Grid
 from dask.distributed import Client, Future, fire_and_forget
 from redis import Redis
 from struct import pack
+from collections import deque
 
 
 def _new_grid(x: np.array, y: np.array, mask: np.array) -> Grid:
@@ -27,19 +28,20 @@ class DomainState(State, Domain):
     """Implements Domain interface on State class."""
 
     def __init__(
-        self, u: Variable, v: Variable, eta: Variable, it: int = 0, id: int = 0
+        self, u: Variable, v: Variable, et: Variable, h: deque, it: int = 0, id: int = 0
     ):
         """Create new DomainState instance from references on Variable objects."""
         self.u = u
         self.v = v
-        self.eta = eta
+        self.eta = et
         self.id = id
         self.it = it
+        self.history = h
 
     @classmethod
-    def make_from_State(cls, s: State, it: int, id: int = 0):
+    def make_from_State(cls, s: State, h, it: int, id: int = 0):
         """Make DomainState object from State objects, without copying Variables."""
-        return cls(s.u, s.v, s.eta, it, id)
+        return cls(s.u, s.v, s.eta, h, it, id)
 
     def set_id(self, id):
         """Set id value."""
@@ -84,12 +86,12 @@ class DomainState(State, Domain):
                 _new_variable(u[i], u_x[i], u_y[i], u_mask[i]),
                 _new_variable(v[i], v_x[i], v_y[i], v_mask[i]),
                 _new_variable(eta[i], eta_x[i], eta_y[i], eta_mask[i]),
+                deque([], maxlen=self.history.maxlen),
+                0,
+                i
             )
             for i in range(parts)
         ]
-
-        for i in range(len(out)):
-            out[i].set_id(i)
 
         return out
 
@@ -115,19 +117,34 @@ class DomainState(State, Domain):
             _new_variable(u, u_x, u_y, u_mask),
             _new_variable(v, v_x, v_y, v_mask),
             _new_variable(eta, eta_x, eta_y, eta_mask),
+            deque([], maxlen=others[0].history.maxlen),
             others[0].get_iteration(),
-            others[0].get_id(),
+            others[0].get_id()
         )
 
 
 class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
 
-    def __init__(self, base: Domain, width: int, direction: bool, dim: int):
-        """Create BorderState instance from DomainState."""
+    def __init__(
+            self,
+            u: Variable,
+            v: Variable,
+            eta: Variable,
+            ancestors: deque,
+            width: int,
+            dim: int,
+            iteration: int,
+            id: int = 0
+    ):
+        """Create BorderState in the same way as DomainState."""
+        super().__init__(u, v, eta, ancestors, iteration, id)
         self.width = width
         self.dim = dim
 
+    @classmethod
+    def create_border(cls, base: DomainState, width: int, direction: bool, dim: int):
+        """Create BorderState instance from DomainState."""
         u, v, eta = base.get_data()
 
         u_x = u.grid.x
@@ -147,7 +164,7 @@ class BorderState(DomainState, Border):
 
         place = u.shape[dim] - width
         if direction:
-            super().__init__(
+            return BorderState(
                 _new_variable(
                     u[:, place:], u_x[:, place:], u_y[:, place:], u_mask[:, place:]
                 ),
@@ -160,11 +177,14 @@ class BorderState(DomainState, Border):
                     eta_y[:, place:],
                     eta_mask[:, place:],
                 ),
+                deque([], base.history.maxlen),
+                width,
+                dim,
                 base.get_iteration(),
                 base.get_id(),
             )
         else:
-            super().__init__(
+            return BorderState(
                 _new_variable(
                     u[:, :width], u_x[:, :width], u_y[:, :width], u_mask[:, :width]
                 ),
@@ -177,6 +197,9 @@ class BorderState(DomainState, Border):
                     eta_y[:, :width],
                     eta_mask[:, :width],
                 ),
+                deque([], base.history.maxlen),
+                width,
+                dim,
                 base.get_iteration(),
                 base.get_id(),
             )
@@ -195,9 +218,10 @@ class Tail(Tailor):
 
     def make_borders(self, base: Domain, width: int, dim: int) -> (Border, Border):
         """Implement make_borders method from API."""
-        return BorderState(base, width, False, dim), BorderState(base, width, True, dim)
+        return (BorderState.create_border(base, width, False, dim),
+                BorderState.create_border(base, width, True, dim))
 
-    def stitch(self, base: Domain, borders: tuple, dims: tuple) -> Domain:
+    def stitch(self, base: DomainState, borders: tuple, dims: tuple) -> DomainState:
         """Implement stitch method from API."""
         u, v, eta = (_copy_variable(v) for v in base.get_data())
         l_border, r_border = borders[0]
@@ -227,7 +251,7 @@ class Tail(Tailor):
         v.data[:, : l_border.get_width()] = l_border.get_data()[1].safe_data.copy()
         eta.data[:, : l_border.get_width()] = l_border.get_data()[2].safe_data.copy()
 
-        return DomainState(u, v, eta, base.get_iteration(), base.get_id())
+        return DomainState(u, v, eta, base.history, base.get_iteration(), base.get_id())
 
 
 def _dump_to_redis(domain: DomainState):
@@ -252,7 +276,7 @@ class GeneralSolver(Solver):
     Currently it performs only Euler forward scheme.
     """
 
-    def __init__(self, solution, params: Parameters = Parameters(), step: float = 1):
+    def __init__(self, solution, schema, params: Parameters = Parameters(), step=1):
         """Initialize GeneralSolver object providing function to compute next iterations.
 
         Arguments
@@ -262,24 +286,28 @@ class GeneralSolver(Solver):
             It is used to compute next iteration.
             Functions like linearised_SWE are highly recommended.
 
+        schema
+            integration schema like fourier_forward or adams_bashforth3
+
         params: Parameters
             Object with parameter, passed to solution function along DomainState object.
 
-        step: float
+        step
             Quanta of time in the integration process.
         """
         self.step = step
         self.params = params
         self.slv = solution
+        self.sch = schema
 
     def _integrate(self, domain: DomainState) -> DomainState:
         inc = self.slv(domain, self.params)
-        new_u = domain.u.safe_data + self.step * inc.u.safe_data
-        new_v = domain.v.safe_data + self.step * inc.v.safe_data
-        new_eta = domain.eta.safe_data + self.step * inc.eta.safe_data
-        return DomainState(Variable(new_u, domain.u.grid),
-                           Variable(new_v, domain.v.grid),
-                           Variable(new_eta, domain.eta.grid),
+        domain.history.append(inc)
+        new = self.sch(domain.history, self.params, self.step)
+        return DomainState(domain.u + new.u,
+                           domain.v + new.v,
+                           domain.eta + new.eta,
+                           domain.history,
                            domain.increment_iteration(),
                            domain.get_id())
 
@@ -292,15 +320,16 @@ class GeneralSolver(Solver):
         return 2
 
     def partial_integration(
-        self, domain: Domain, border: Border, direction: bool, dim: int
+        self, domain: Domain, border: Border, past: Border, direction: bool, dim: int
     ) -> Border:
         """Implement partial_integration from API."""
         b_w = border.get_width()
-        dom = BorderState(domain, 2 * b_w, direction, dim)
+        dom = BorderState.create_border(domain, 2 * b_w, direction, dim)
         list = (
             [dom, border] if direction else [border, dom]
         )  # order inside list shows if it's left of right border
         tmp = DomainState.merge(list, dim)
+        tmp.history = past.history
         tmp = self._integrate(tmp)
 
         u = Variable(
@@ -330,12 +359,12 @@ class GeneralSolver(Solver):
             ),
         )
 
-        return BorderState(
-            DomainState(u, v, eta, domain.increment_iteration(), domain.get_id()),
-            border.get_width(),
-            True,
-            dim,
-        )
+        return BorderState(u, v, eta,
+                           past.history,
+                           border.get_width(),
+                           dim,
+                           domain.increment_iteration(),
+                           domain.get_id())
 
     def window(self, domain: Future, client: Client) -> Future:
         """Do nothing."""

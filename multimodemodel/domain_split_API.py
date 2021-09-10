@@ -94,7 +94,7 @@ class Solver(ABC):
 
     @abstractmethod
     def partial_integration(
-        self, domain: Domain, border: Border, direction: bool, dim: int
+        self, domain: Domain, border: Border, past: Border, direction: bool, dim: int
     ) -> Border:
         """Compute border of given subdomain based on border from its neighbour."""
         pass
@@ -144,7 +144,7 @@ class Tailor(ABC):
 
 
 def compute_borders(
-    center: Domain, border: Border, direction: bool, slv: Solver
+    center: Domain, border: Border, pst: Border, direction: bool, slv: Solver
 ) -> Border:
     """Compute one border on provided direction.
 
@@ -153,7 +153,7 @@ def compute_borders(
     as the domain computes next iteration of borders, otherwise rise Exception.
     """
     if border.get_iteration() == center.get_iteration():
-        return slv.partial_integration(center, border, direction, border.get_dim())
+        return slv.partial_integration(center, border, pst, direction, border.get_dim())
     else:
         raise Exception(
             "Borders from neighbouring domains are in wrong iteration. "
@@ -199,10 +199,12 @@ def magic(
                 top = i + 1 if i + 1 < split else 0
 
                 new_borders[(i, d, 0)] = client.submit(
-                    compute_borders, subs[i], brd[(bottom, d, 1)], False, slv
+                    compute_borders, subs[i], brd[(bottom, d, 1)],
+                    brd[(i, d, 0)], False, slv
                 )
                 new_borders[(i, d, 1)] = client.submit(
-                    compute_borders, subs[i], brd[(top, d, 0)], True, slv
+                    compute_borders, subs[i], brd[(top, d, 0)],
+                    brd[(i, d, 1)], True, slv
                 )
 
         for i in range(len(subs)):
