@@ -3,7 +3,7 @@
 To be used optional in integrate function.
 """
 
-# import numpy as np
+import numpy as np
 from collections import deque
 from .datastructure import Variable, Parameters, State
 from typing import Callable, Generator, NewType
@@ -55,9 +55,9 @@ def euler_forward(rhs: deque[State], params: Parameters, step: float) -> StateIn
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid, step),
-            v=Variable(dv, rhs[-1].v.grid, step),
-            eta=Variable(deta, rhs[-1].eta.grid, step),
+            u=Variable(du, rhs[-1].u.grid, rhs[-1].u.time),
+            v=Variable(dv, rhs[-1].v.grid, rhs[-1].u.time),
+            eta=Variable(deta, rhs[-1].eta.grid, rhs[-1].u.time),
         )
     )
 
@@ -72,6 +72,8 @@ def adams_bashforth2(
     Two previous states are necessary. If not provided, the forward euler
     scheme is used. Returns the increment dstate = next_state - current_state.
     """
+    dt = np.timedelta64(round(1e3 * step / 2), "ms")
+
     if len(rhs) < 2:
         return euler_forward(rhs, params, step)
 
@@ -81,9 +83,9 @@ def adams_bashforth2(
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid, step),
-            v=Variable(dv, rhs[-1].v.grid, step),
-            eta=Variable(deta, rhs[-1].eta.grid, step),
+            u=Variable(du, rhs[-1].u.grid, rhs[-1].u.time + dt),
+            v=Variable(dv, rhs[-1].v.grid, rhs[-1].u.time + dt),
+            eta=Variable(deta, rhs[-1].eta.grid, rhs[-1].u.time + dt),
         )
     )
 
@@ -98,6 +100,8 @@ def adams_bashforth3(
     If not provided, the adams_bashforth2 scheme is used instead.
     Returns the increment dstate = next_state - current_state.
     """
+    dt = np.timedelta64(round(1e3 * step / 2), "ms")
+
     if len(rhs) < 3:
         return adams_bashforth2(rhs, params, step)
 
@@ -115,9 +119,9 @@ def adams_bashforth3(
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].u.grid, step),
-            v=Variable(dv, rhs[-1].v.grid, step),
-            eta=Variable(deta, rhs[-1].eta.grid, step),
+            u=Variable(du, rhs[-1].u.grid, rhs[-1].u.time + dt),
+            v=Variable(dv, rhs[-1].v.grid, rhs[-1].u.time + dt),
+            eta=Variable(deta, rhs[-1].eta.grid, rhs[-1].u.time + dt),
         )
     )
 
@@ -179,6 +183,7 @@ def integrate(
     ```
     """
     N = int(time // step)
+    dt = np.timedelta64(round(1e3 * step), "ms")
 
     try:
         state = deque([initial_state], maxlen=scheme.n_state)
@@ -191,6 +196,14 @@ def integrate(
         )
 
     for _ in range(N):
+        new_time_u = state[-1].u.time + dt
+        new_time_v = state[-1].v.time + dt
+        new_time_eta = state[-1].eta.time + dt
+
         rhs.append(RHS(state[-1], params))
         state.append(state[-1] + scheme(rhs, params, step))
+
+        state[-1].u.time = new_time_u
+        state[-1].v.time = new_time_v
+        state[-1].eta.time = new_time_eta
         yield state[-1]

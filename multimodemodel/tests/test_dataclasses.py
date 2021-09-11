@@ -1,4 +1,5 @@
 """Test the behavior of the dataclasses."""
+# from datetime import timedelta
 import numpy as np
 import pytest
 
@@ -319,7 +320,8 @@ class TestVariable:
     def test_add_data(self):
         """Test variable summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1, t2 = 1.0, 2.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = t1 + np.timedelta64(2, "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
@@ -330,12 +332,13 @@ class TestVariable:
         v2 = Variable(d2, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == 3.0)
-        assert v3.time == 3.0
+        assert v3.time == t1 + np.timedelta64(1, "s")
 
     def test_add_data_with_none(self):
         """Test summing with None data."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1, t2 = 1.0, 2.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = t1 + np.timedelta64(2, "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
@@ -350,7 +353,8 @@ class TestVariable:
     def test_add_none_with_none(self):
         """Test summing with None data."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1, t2 = 1.0, 2.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = t1 + np.timedelta64(2, "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
@@ -363,7 +367,8 @@ class TestVariable:
     def test_grid_mismatch(self):
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1, t2 = 1.0, 2.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = t1 + np.timedelta64(2, "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
@@ -379,7 +384,7 @@ class TestVariable:
     def test_not_implemented_add(self):
         """Test missing summation implementation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = 1.0
+        t1 = np.datetime64("2000-01-01", "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
@@ -396,7 +401,7 @@ class TestVariableAsDataArray:
     """Test Variable to xarray.DataArray conversion."""
 
     nx, ny, dx, dy = 10, 5, 1, 2
-    t = 1.0
+    t = np.datetime64("2000-01-01", "s")
 
     def _gen_var(self, data=None, mask=None):
         x, y = get_x_y(self.nx, self.ny, self.dx, self.dy)
@@ -451,7 +456,8 @@ class TestState:
     def test_add(self):
         """Test state summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1, t2 = 1.0, 2.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = t1 + np.timedelta64(2, "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
@@ -470,4 +476,4 @@ class TestState:
         assert np.all(s3.u.data == 3.0)
         assert np.all(s3.v.data == 3.0)
         assert np.all(s3.eta.data == 3.0)
-        assert np.all(s3.eta.time == 3.0)
+        assert np.all(s3.eta.time == t1 + np.timedelta64(1, "s"))

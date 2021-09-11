@@ -105,8 +105,7 @@ class Variable:
 
     data: Optional[np.ndarray]
     grid: Grid
-    # time: Union[np.datetime64, np.timedelta64]
-    time: float
+    time: np.datetime64
 
     @property
     def as_dataarray(self) -> xarray.DataArray:  # type: ignore
@@ -133,7 +132,7 @@ class Variable:
             coords={
                 "x": (("i", "j"), self.grid.x),
                 "y": (("i", "j"), self.grid.y),
-                "time": np.array([np.datetime64(round(self.time), "s")]),
+                "time": np.array([self.time]),
             },
             dims=("time", "i", "j"),
         )
@@ -147,7 +146,10 @@ class Variable:
             return self.data
 
     def __add__(self, other):
-        """Add data of two variables."""
+        """Add data of two variables.
+
+        The timestamp of the sum of two variables is set to their mean.
+        """
         if (
             # one is subclass of the other
             (isinstance(self, type(other)) or isinstance(other, type(self)))
@@ -165,7 +167,7 @@ class Variable:
         except (TypeError, AttributeError):
             return NotImplemented
 
-        new_time = self.time + other.time
+        new_time = self.time + (other.time - self.time) / 2
 
         return self.__class__(data=new_data, grid=self.grid, time=new_time)
 

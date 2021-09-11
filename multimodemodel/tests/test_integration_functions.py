@@ -34,7 +34,7 @@ class TestRHS:
         H, g, f0 = 1.0, 2.0, 4.0
         dx, dy = 1.0, 2.0
         ni, nj = 10, 5
-        t = 0.0
+        t = np.datetime64("2000-01-01", "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask_eta = get_test_mask(x)
@@ -113,7 +113,7 @@ class TestIntegration:
         dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
-        t = 0.0
+        t = np.datetime64("2000-01-01", "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
@@ -130,7 +130,7 @@ class TestIntegration:
         assert np.all(ds_test.u.data == dt * ds.u.safe_data)
         assert np.all(ds_test.v.data == dt * ds.v.safe_data)
         assert np.all(ds_test.eta.data == dt * ds.eta.safe_data)
-        assert np.all(ds_test.eta.time == dt)
+        assert np.all(ds_test.eta.time == t)
 
     def test_adams_bashforth2_euler_forward_dropin(self):
         """Test adams_bashforth2 computational initial condition."""
@@ -138,7 +138,7 @@ class TestIntegration:
         dx, dy = 1, 2
         dt = 2.0
         ni, nj = 10, 5
-        t = 0.0
+        t = np.datetime64("2000-01-01", "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
@@ -165,7 +165,9 @@ class TestIntegration:
         dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
-        t1, t2, t3 = 0.0, 5.0, 10.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = np.datetime64("2000-01-01", "s") + np.timedelta64(1, "s")
+        t3 = np.datetime64("2000-01-01", "s") + np.timedelta64(2, "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
@@ -210,7 +212,10 @@ class TestIntegration:
         dt = 5.0
         dx, dy = 1, 2
         ni, nj = 10, 5
-        t1, t2, t3, t4 = 0.0, 5.0, 10.0, 15.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = np.datetime64("2000-01-01", "s") + np.timedelta64(1, "s")
+        t3 = np.datetime64("2000-01-01", "s") + np.timedelta64(2, "s")
+        t4 = np.datetime64("2000-01-01", "s") + np.timedelta64(3, "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
@@ -280,7 +285,8 @@ class TestIntegration:
         params = swe.Parameters()
         dx, dy = 1, 2
         ni, nj = 10, 5
-        t1, t2 = 0.0, 5.0
+        t1 = np.datetime64("2000-01-01", "s")
+        t2 = np.datetime64("2000-01-01", "s") + np.timedelta64(1, "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
@@ -315,7 +321,7 @@ class TestIntegration:
         t_end, dt = 1, 1
         dx, dy = 1, 2
         ni, nj = 10, 5
-        t = 0.0
+        t = np.datetime64("2000-01-01", "s")
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones_like(x)
