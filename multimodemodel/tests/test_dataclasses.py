@@ -197,7 +197,6 @@ class TestVariable:
         assert "unsupported operand type(s)" in str(excinfo.value)
 
 
-# @pytest.mark.xarray
 @pytest.mark.skipif(not has_xarray, reason="Xarray not available.")
 class TestVariableAsDataArray:
     """Test Variable to xarray.DataArray conversion."""

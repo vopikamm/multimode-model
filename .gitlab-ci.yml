@@ -18,7 +18,7 @@ test_3.9:
   script:
   - micromamba install -y -n base -c conda-forge python=3.9.0 pip
   - pip install -e .[test,xarray]
-  - py.test -v -k "not benchmark" --cov --cov-report term-missing --junitxml=report.xml multimodemodel
+  - py.test
   artifacts:
     when: always
     reports:
@@ -30,11 +30,7 @@ test_3.8:
   script:
   - micromamba install -y -n base -c conda-forge python=3.8.0 pip
   - pip install -e .[test,xarray]
-  - py.test -v -k "not benchmark" multimodemodel
-  # artifacts:
-  #   when: always
-  #   reports:
-  #     junit: report.xml
+  - py.test
 
 test_3.7:
   stage: test
@@ -42,11 +38,7 @@ test_3.7:
   script:
   - micromamba install -y -n base -c conda-forge python=3.7.0 pip
   - pip install -e .[test,xarray]
-  - py.test -v -k "not benchmark" multimodemodel
-  # artifacts:
-  #   when: always
-  #   reports:
-  #     junit: report.xml
+  - py.test
 
 lint:
   stage: test

@@ -1,7 +1,7 @@
 __pycache__
 .vscode
 cov.xml
-coverage.xml
+report.xml
 .coverage
 multimodemodel.egg-info
 .benchmarks
