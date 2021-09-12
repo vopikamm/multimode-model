@@ -21,6 +21,14 @@ StateIncrement = NewType("StateIncrement", State)
 TimeSteppingFunction = Callable[[deque, Parameters, float], StateIncrement]
 
 
+def seconds_to_timedelta64(dt: float) -> np.timedelta64:
+    """Convert timestep in seconds to a numpy timedelta64 object.
+
+    The precision is chosen to be nanoseconds.
+    """
+    return np.timedelta64(round(1e9 * dt), "ns")
+
+
 def time_stepping_function(
     n_rhs: int, n_state: int
 ) -> Callable[[TimeSteppingFunction], TimeSteppingFunction]:
@@ -183,7 +191,7 @@ def integrate(
     ```
     """
     N = int(time // step)
-    dt = np.timedelta64(round(1e3 * step), "ms")
+    dt = seconds_to_timedelta64(step)
 
     try:
         state = deque([initial_state], maxlen=scheme.n_state)
