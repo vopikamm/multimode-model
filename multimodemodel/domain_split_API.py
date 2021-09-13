@@ -4,7 +4,24 @@ from dask.distributed import Future, Client
 from copy import deepcopy
 
 
-class Domain(ABC):
+class Splitable(ABC):
+    """Splitable class has methods for splitting and merging its instances."""
+
+    @abstractmethod
+    def split(self, parts: int, dim: tuple):
+        """Split the Domain into given number of parts along axis given by dim.
+
+        For splitting among more than one axis pass tuple as dim.
+        """
+        pass
+
+    @abstractmethod
+    def merge(self, others, dim: int):
+        """Merge multiple Domains into one new domain."""
+        pass
+
+
+class Domain(Splitable):
     """Domain class holds all of the interesting data.
 
     Class has methods allowing to split and merge with others.
@@ -35,19 +52,6 @@ class Domain(ABC):
     @abstractmethod
     def increment_iteration(self) -> int:
         """Return incremented iteration from domain, shouldn't modify object itself."""
-        pass
-
-    @abstractmethod
-    def split(self, parts: int, dim: tuple):
-        """Split the Domain into given number of parts along axis given by dim.
-
-        For splitting among more than one axis pass tuple as dim.
-        """
-        pass
-
-    @abstractmethod
-    def merge(self, others, dim: int):
-        """Merge multiple Domains into one new domain."""
         pass
 
     def __copy__(self):

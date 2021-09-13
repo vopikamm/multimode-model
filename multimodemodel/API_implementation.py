@@ -1,8 +1,8 @@
 """Implementation of domain split API."""
-from .domain_split_API import Domain, Border, Solver, Tailor
+from .domain_split_API import Domain, Border, Solver, Tailor, Splitable
 from .datastructure import State, Variable, np, Parameters
 from .grid import Grid
-from dask.distributed import Client, Future, fire_and_forget
+from dask.distributed import Client, Future
 from redis import Redis
 from struct import pack
 from collections import deque
@@ -24,24 +24,72 @@ def _copy_variable(var: Variable) -> Variable:
     )
 
 
+class ParameterSplit(Parameters, Splitable):
+    """Implements splitting and merging on Parameters class."""
+
+    def __init__(self, other: Parameters, data: dict):
+        """Create class instance from another one and Coriolis data."""
+        self.g = other.g
+        self.H = other.H
+        self.rho_0 = other.rho_0
+        self._f = data
+
+    def split(self, parts: int, dim: tuple):
+        """Split Parameter's Coriolis data."""
+        data = None
+        try:
+            data = self.f
+        except RuntimeError:
+            return self
+
+        # Split array for each key, creating a new dictionary with the same keys
+        # but holding lists of arrays
+        new = {key: np.array_split(data[key], parts, dim[0]) for key in data}
+
+        # Create list or dictionaries that hold just one part of splitted arrays
+        out = [{key: new[key][i] for key in new} for i in range(parts)]
+
+        return [self.__class__(self, o) for o in out]
+
+    @classmethod
+    def merge(cls, others, dim: int):
+        """Merge Parameter's Coriolis data."""
+        data = {}
+        try:
+            data = {key: np.concatenate([o.f[key] for o in others], dim)
+                    for key in others[0].f}
+        except RuntimeError:
+            pass
+
+        return ParameterSplit(others[0], data)
+
+
 class DomainState(State, Domain):
     """Implements Domain interface on State class."""
 
     def __init__(
-        self, u: Variable, v: Variable, et: Variable, h: deque, it: int = 0, id: int = 0
+        self,
+        u: Variable,
+        v: Variable,
+        eta: Variable,
+        h: deque = deque([], maxlen=3),
+        p: Parameters = Parameters(),
+        it: int = 0,
+        id: int = 0,
     ):
         """Create new DomainState instance from references on Variable objects."""
         self.u = u
         self.v = v
-        self.eta = et
+        self.eta = eta
         self.id = id
         self.it = it
         self.history = h
+        self.p = p
 
     @classmethod
-    def make_from_State(cls, s: State, h, it: int, id: int = 0):
+    def make_from_State(cls, s: State, h, p, it: int, id: int = 0):
         """Make DomainState object from State objects, without copying Variables."""
-        return cls(s.u, s.v, s.eta, h, it, id)
+        return cls(s.u, s.v, s.eta, h, p, it, id)
 
     def set_id(self, id):
         """Set id value."""
@@ -87,6 +135,7 @@ class DomainState(State, Domain):
                 _new_variable(v[i], v_x[i], v_y[i], v_mask[i]),
                 _new_variable(eta[i], eta_x[i], eta_y[i], eta_mask[i]),
                 deque([], maxlen=self.history.maxlen),
+                self.p,
                 0,
                 i
             )
@@ -118,6 +167,7 @@ class DomainState(State, Domain):
             _new_variable(v, v_x, v_y, v_mask),
             _new_variable(eta, eta_x, eta_y, eta_mask),
             deque([], maxlen=others[0].history.maxlen),
+            ParameterSplit.merge([o.p for o in others], dim),
             others[0].get_iteration(),
             others[0].get_id()
         )
@@ -132,13 +182,14 @@ class BorderState(DomainState, Border):
             v: Variable,
             eta: Variable,
             ancestors: deque,
+            p: Parameters,
             width: int,
             dim: int,
             iteration: int,
             id: int = 0
     ):
         """Create BorderState in the same way as DomainState."""
-        super().__init__(u, v, eta, ancestors, iteration, id)
+        super().__init__(u, v, eta, ancestors, p, iteration, id)
         self.width = width
         self.dim = dim
 
@@ -163,7 +214,14 @@ class BorderState(DomainState, Border):
         eta = eta.safe_data
 
         place = u.shape[dim] - width
+        p = base.p
         if direction:
+            try:
+                p = ParameterSplit(base.p, {key: base.p.f[key][:, place:]
+                                            for key in base.p.f})
+            except RuntimeError:
+                pass
+
             return BorderState(
                 _new_variable(
                     u[:, place:], u_x[:, place:], u_y[:, place:], u_mask[:, place:]
@@ -178,12 +236,19 @@ class BorderState(DomainState, Border):
                     eta_mask[:, place:],
                 ),
                 deque([], base.history.maxlen),
+                p,
                 width,
                 dim,
                 base.get_iteration(),
                 base.get_id(),
             )
         else:
+            try:
+                p = ParameterSplit(base.p, {key: base.p.f[key][:, :width]
+                                            for key in base.p.f})
+            except RuntimeError:
+                pass
+
             return BorderState(
                 _new_variable(
                     u[:, :width], u_x[:, :width], u_y[:, :width], u_mask[:, :width]
@@ -198,6 +263,7 @@ class BorderState(DomainState, Border):
                     eta_mask[:, :width],
                 ),
                 deque([], base.history.maxlen),
+                p,
                 width,
                 dim,
                 base.get_iteration(),
@@ -251,7 +317,11 @@ class Tail(Tailor):
         v.data[:, : l_border.get_width()] = l_border.get_data()[1].safe_data.copy()
         eta.data[:, : l_border.get_width()] = l_border.get_data()[2].safe_data.copy()
 
-        return DomainState(u, v, eta, base.history, base.get_iteration(), base.get_id())
+        return DomainState(u, v, eta,
+                           base.history,
+                           base.p,
+                           base.get_iteration(),
+                           base.get_id())
 
 
 def _dump_to_redis(domain: DomainState):
@@ -276,7 +346,7 @@ class GeneralSolver(Solver):
     Currently it performs only Euler forward scheme.
     """
 
-    def __init__(self, solution, schema, params: Parameters = Parameters(), step=1):
+    def __init__(self, solution, schema, step=1):
         """Initialize GeneralSolver object providing function to compute next iterations.
 
         Arguments
@@ -289,25 +359,22 @@ class GeneralSolver(Solver):
         schema
             integration schema like fourier_forward or adams_bashforth3
 
-        params: Parameters
-            Object with parameter, passed to solution function along DomainState object.
-
         step
             Quanta of time in the integration process.
         """
         self.step = step
-        self.params = params
         self.slv = solution
         self.sch = schema
 
     def _integrate(self, domain: DomainState) -> DomainState:
-        inc = self.slv(domain, self.params)
+        inc = self.slv(domain, domain.p)
         domain.history.append(inc)
-        new = self.sch(domain.history, self.params, self.step)
+        new = self.sch(domain.history, domain.p, self.step)
         return DomainState(domain.u + new.u,
                            domain.v + new.v,
                            domain.eta + new.eta,
                            domain.history,
+                           domain.p,
                            domain.increment_iteration(),
                            domain.get_id())
 
@@ -361,6 +428,7 @@ class GeneralSolver(Solver):
 
         return BorderState(u, v, eta,
                            past.history,
+                           past.p,
                            border.get_width(),
                            dim,
                            domain.increment_iteration(),
@@ -368,5 +436,5 @@ class GeneralSolver(Solver):
 
     def window(self, domain: Future, client: Client) -> Future:
         """Do nothing."""
-        fire_and_forget(client.submit(_dump_to_redis, domain))
+        # fire_and_forget(client.submit(_dump_to_redis, domain))
         return domain
