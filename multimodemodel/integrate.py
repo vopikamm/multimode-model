@@ -21,17 +21,22 @@ StateIncrement = NewType("StateIncrement", State)
 TimeSteppingFunction = Callable[[deque, Parameters, float], StateIncrement]
 
 
-def seconds_to_timedelta64(dt: float, precision: str = "ns") -> np.timedelta64:
+def seconds_to_timedelta64(dt: float) -> np.timedelta64:
     """Convert timestep in seconds to a numpy timedelta64 object.
+
+    `dt` will be rounded to an integer at nanosecond precision.
 
     Parameters
     ---------
     dt : float
-         Time span in seconds.
-    precision : str, default="ns"
-         Precision of the `np.timedelta64` object.
+        Time span in seconds.
+
+    Returns
+    -------
+    numpy.timedelta64
+        Timedelta object with nanosecond precision.
     """
-    return np.timedelta64(round(1e9 * dt), precision)
+    return np.timedelta64(round(1e9 * dt), "ns")
 
 
 def time_stepping_function(
@@ -85,10 +90,10 @@ def adams_bashforth2(
     Two previous states are necessary. If not provided, the forward euler
     scheme is used. Returns the increment dstate = next_state - current_state.
     """
-    dt = np.timedelta64(round(1e3 * step / 2), "ms")
-
     if len(rhs) < 2:
         return euler_forward(rhs, params, step)
+
+    dt = seconds_to_timedelta64(step)
 
     du = (step / 2) * (3 * rhs[-1].u.safe_data - rhs[-2].u.safe_data)
     dv = (step / 2) * (3 * rhs[-1].v.safe_data - rhs[-2].v.safe_data)
