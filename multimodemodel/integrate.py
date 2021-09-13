@@ -21,12 +21,17 @@ StateIncrement = NewType("StateIncrement", State)
 TimeSteppingFunction = Callable[[deque, Parameters, float], StateIncrement]
 
 
-def seconds_to_timedelta64(dt: float) -> np.timedelta64:
+def seconds_to_timedelta64(dt: float, precision: str = "ns") -> np.timedelta64:
     """Convert timestep in seconds to a numpy timedelta64 object.
 
-    The precision is chosen to be nanoseconds.
+    Parameters
+    ---------
+    dt : float
+         Time span in seconds.
+    precision : str, default="ns"
+         Precision of the `np.timedelta64` object.
     """
-    return np.timedelta64(round(1e9 * dt), "ns")
+    return np.timedelta64(round(1e9 * dt), precision)
 
 
 def time_stepping_function(
