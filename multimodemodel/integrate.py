@@ -249,14 +249,12 @@ def integrate(
         )
 
     for _ in range(N):
-        new_time_u = state[-1].variables["u"].time + dt
-        new_time_v = state[-1].variables["v"].time + dt
-        new_time_eta = state[-1].variables["eta"].time + dt
+        old_state = state[-1]
 
         rhs.append(RHS(state[-1], params))
         state.append(state[-1] + scheme(rhs, step))
 
-        state[-1].variables["u"].time = new_time_u
-        state[-1].variables["v"].time = new_time_v
-        state[-1].variables["eta"].time = new_time_eta
+        for k, v in state[-1].variables.items():
+            v.time = old_state.variables[k].time + dt
+
         yield state[-1]
