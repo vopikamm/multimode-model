@@ -118,10 +118,10 @@ def adams_bashforth3(
     If not provided, the adams_bashforth2 scheme is used instead.
     Returns the increment dstate = next_state - current_state.
     """
-    dt = np.timedelta64(round(1e3 * step / 2), "ms")
-
     if len(rhs) < 3:
         return adams_bashforth2(rhs, params, step)
+
+    dt = seconds_to_timedelta64(step)
 
     du = (step / 12) * (
         23 * rhs[-1].u.safe_data - 16 * rhs[-2].u.safe_data + 5 * rhs[-3].u.safe_data

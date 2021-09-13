@@ -1,5 +1,4 @@
 """Test the behavior of the dataclasses."""
-# from datetime import timedelta
 import numpy as np
 import pytest
 
