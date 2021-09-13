@@ -9,6 +9,8 @@ from collections import deque
 from .datastructure import Variable, Parameters, State
 from typing import Callable, Generator, NewType
 from functools import wraps
+from itertools import starmap
+from operator import mul
 from .kernel import (
     pressure_gradient_i,
     pressure_gradient_j,
@@ -28,7 +30,7 @@ else:
 
 
 StateIncrement = NewType("StateIncrement", State)
-TimeSteppingFunction = Callable[[StateDeque, Parameters, float], StateIncrement]
+TimeSteppingFunction = Callable[[StateDeque, float], StateIncrement]
 
 
 def seconds_to_timedelta64(dt: float) -> np.timedelta64:
@@ -37,7 +39,7 @@ def seconds_to_timedelta64(dt: float) -> np.timedelta64:
     `dt` will be rounded to an integer at nanosecond precision.
 
     Parameters
-    ---------
+    ----------
     dt : float
         Time span in seconds.
 
@@ -69,126 +71,112 @@ def time_stepping_function(
 
 
 @time_stepping_function(n_rhs=1, n_state=1)
-def euler_forward(rhs: StateDeque, params: Parameters, step: float) -> StateIncrement:
+def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using Euler forward scheme.
 
-    Used for the time integration. One previous state
-    is necessary. The function evaluation is performed before the
-    state is passed to this function. Returns the increment
-    dstate = next_state - current_state.
-    """
-    # TODO: refactor time stepping schemes!!!
-    du = step * rhs[-1].variables["u"].safe_data
-    dv = step * rhs[-1].variables["v"].safe_data
-    deta = step * rhs[-1].variables["eta"].safe_data
+    Used for the time integration. One previous state is necessary.
+    The time stamp of the increment is the same as for the current state.
 
-    return StateIncrement(
-        State(
-            u=Variable(du, rhs[-1].variables["u"].grid, rhs[-1].variables["u"].time),
-            v=Variable(dv, rhs[-1].variables["v"].grid, rhs[-1].variables["u"].time),
-            eta=Variable(
-                deta, rhs[-1].variables["eta"].grid, rhs[-1].variables["u"].time
-            ),
-        )
-    )
+    Paramters
+    ---------
+    rhs : StateDeque
+        Deque object containing the previous evaluations of the right-hand-side
+        terms.
+    params : Parameters (Not need here anymore)
+    step : float
+        Time step size.
+
+    Returns
+    -------
+    StateIncrement
+        The increment of the state from one time step to the next, i.e. next_state - current_state.
+    """
+    inc = {
+        k: Variable(step * v.safe_data, v.grid, v.time)
+        for k, v in rhs[-1].variables.items()
+    }
+
+    return StateIncrement(State(**inc))
 
 
 @time_stepping_function(n_rhs=2, n_state=1)
-def adams_bashforth2(
-    rhs: StateDeque, params: Parameters, step: float
-) -> StateIncrement:
+def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using two-level Adams-Bashforth scheme.
 
-    Used for the time integration.
-    Two previous states are necessary. If not provided, the forward euler
-    scheme is used. Returns the increment dstate = next_state - current_state.
+    Used for the time integration. Two previous states are required.
+    If less are provided, the forward euler scheme is used instead.
+
+    Paramters
+    ---------
+    rhs : StateDeque
+        Deque object containing the previous evaluations of the right-hand-side
+        terms.
+    params : Parameters (Not need here anymore)
+    step : float
+        Time step size.
+
+    Returns
+    -------
+    StateIncrement
+        The increment of the state from one time step to the next, i.e. next_state - current_state.
     """
     if len(rhs) < 2:
-        return euler_forward(rhs, params, step)
+        return euler_forward(rhs, step)
 
     dt = seconds_to_timedelta64(step)
 
-    du = (step / 2) * (
-        3 * rhs[-1].variables["u"].safe_data - rhs[-2].variables["u"].safe_data
-    )
-    dv = (step / 2) * (
-        3 * rhs[-1].variables["v"].safe_data - rhs[-2].variables["v"].safe_data
-    )
-    deta = (step / 2) * (
-        3 * rhs[-1].variables["eta"].safe_data - rhs[-2].variables["eta"].safe_data
-    )
-
-    return StateIncrement(
-        State(
-            u=Variable(
-                du,
-                rhs[-1].variables["u"].grid,
-                rhs[-1].variables["u"].time + dt / 2,
-            ),
-            v=Variable(
-                dv,
-                rhs[-1].variables["v"].grid,
-                rhs[-1].variables["v"].time + dt / 2,
-            ),
-            eta=Variable(
-                deta,
-                rhs[-1].variables["eta"].grid,
-                rhs[-1].variables["eta"].time + dt / 2,
-            ),
+    coef = (1.5, -0.5)
+    inc = {
+        k: Variable(
+            step
+            * sum(starmap(mul, zip(coef, (r.variables[k].safe_data for r in reversed(rhs))))),  # type: ignore
+            rhs[-1].variables[k].grid,
+            rhs[-1].variables[k].time + dt / 2,
         )
-    )
+        for k in rhs[-1].variables.keys()
+    }
+
+    return StateIncrement(State(**inc))
 
 
 @time_stepping_function(n_rhs=3, n_state=1)
-def adams_bashforth3(
-    rhs: StateDeque, params: Parameters, step: float
-) -> StateIncrement:
+def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using three-level Adams-Bashforth scheme.
 
-    Used for the time integration. Three previous states necessary.
-    If not provided, the adams_bashforth2 scheme is used instead.
-    Returns the increment dstate = next_state - current_state.
+    Used for the time integration. Three previous states are necessary.
+    If less are provided, the scheme `adams_bashforth2` is used instead.
+
+    Paramters
+    ---------
+    rhs : StateDeque
+        Deque object containing the previous evaluations of the right-hand-side
+        terms.
+    params : Parameters (Not need here anymore)
+    step : float
+        Time step size.
+
+    Returns
+    -------
+    StateIncrement
+        The increment, i.e. next_state - current_state.
     """
     if len(rhs) < 3:
-        return adams_bashforth2(rhs, params, step)
+        return adams_bashforth2(rhs, step)
 
     dt = seconds_to_timedelta64(step)
 
-    du = (step / 12) * (
-        23 * rhs[-1].variables["u"].safe_data
-        - 16 * rhs[-2].variables["u"].safe_data
-        + 5 * rhs[-3].variables["u"].safe_data
-    )
-    dv = (step / 12) * (
-        23 * rhs[-1].variables["v"].safe_data
-        - 16 * rhs[-2].variables["v"].safe_data
-        + 5 * rhs[-3].variables["v"].safe_data
-    )
-    deta = (step / 12) * (
-        23 * rhs[-1].variables["eta"].safe_data
-        - 16 * rhs[-2].variables["eta"].safe_data
-        + 5 * rhs[-3].variables["eta"].safe_data
-    )
-
-    return StateIncrement(
-        State(
-            u=Variable(
-                du,
-                rhs[-1].variables["u"].grid,
-                rhs[-1].variables["u"].time + dt / 2,
-            ),
-            v=Variable(
-                dv,
-                rhs[-1].variables["v"].grid,
-                rhs[-1].variables["v"].time + dt / 2,
-            ),
-            eta=Variable(
-                deta,
-                rhs[-1].variables["eta"].grid,
-                rhs[-1].variables["eta"].time + dt / 2,
-            ),
+    coef = (23.0 / 12.0, -16.0 / 12.0, 5.0 / 12.0)
+    inc = {
+        k: Variable(
+            step
+            * sum(starmap(mul, zip(coef, (r.variables[k].safe_data for r in reversed(rhs))))),  # type: ignore
+            rhs[-1].variables[k].grid,
+            rhs[-1].variables[k].time + dt / 2,
         )
-    )
+        for k in rhs[-1].variables.keys()
+    }
+
+    return StateIncrement(State(**inc))
 
 
 """
@@ -261,14 +249,12 @@ def integrate(
         )
 
     for _ in range(N):
-        new_time_u = state[-1].variables["u"].time + dt
-        new_time_v = state[-1].variables["v"].time + dt
-        new_time_eta = state[-1].variables["eta"].time + dt
+        old_state = state[-1]
 
         rhs.append(RHS(state[-1], params))
-        state.append(state[-1] + scheme(rhs, params, step))
+        state.append(state[-1] + scheme(rhs, step))
 
-        state[-1].variables["u"].time = new_time_u
-        state[-1].variables["v"].time = new_time_v
-        state[-1].variables["eta"].time = new_time_eta
+        for k, v in state[-1].variables.items():
+            v.time = old_state.variables[k].time + dt
+
         yield state[-1]
