@@ -202,7 +202,13 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
         state.variables["u"].grid.dx,
         state.variables["u"].grid.mask,
     )
-    return State(u=Variable(_apply_2D_iterator(_pressure_gradient_i, args, grid), grid))
+    return State(
+        u=Variable(
+            _apply_2D_iterator(_pressure_gradient_i, args, grid),
+            grid,
+            state.variables["u"].time,
+        )
+    )
 
 
 def pressure_gradient_j(state: State, params: Parameters) -> State:
@@ -219,7 +225,13 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
         state.variables["v"].grid.dy,
         state.variables["v"].grid.mask,
     )
-    return State(v=Variable(_apply_2D_iterator(_pressure_gradient_j, args, grid), grid))
+    return State(
+        v=Variable(
+            _apply_2D_iterator(_pressure_gradient_j, args, grid),
+            grid,
+            state.variables["v"].time,
+        )
+    )
 
 
 def divergence_i(state: State, params: Parameters) -> State:
@@ -235,7 +247,13 @@ def divergence_i(state: State, params: Parameters) -> State:
         state.variables["eta"].grid.dy,
         state.variables["u"].grid.dy,
     )
-    return State(eta=Variable(_apply_2D_iterator(_divergence_i, args, grid), grid))
+    return State(
+        eta=Variable(
+            _apply_2D_iterator(_divergence_i, args, grid),
+            grid,
+            state.variables["eta"].time,
+        )
+    )
 
 
 def divergence_j(state: State, params: Parameters) -> State:
@@ -251,7 +269,13 @@ def divergence_j(state: State, params: Parameters) -> State:
         state.variables["eta"].grid.dy,
         state.variables["v"].grid.dx,
     )
-    return State(eta=Variable(_apply_2D_iterator(_divergence_j, args, grid), grid))
+    return State(
+        eta=Variable(
+            _apply_2D_iterator(_divergence_j, args, grid),
+            grid,
+            state.variables["eta"].time,
+        )
+    )
 
 
 def coriolis_j(state: State, params: Parameters) -> State:
@@ -269,7 +293,9 @@ def coriolis_j(state: State, params: Parameters) -> State:
         params.f["v"],
     )
     return State(
-        v=Variable(_apply_2D_iterator(_coriolis_j, args, grid), grid),
+        v=Variable(
+            _apply_2D_iterator(_coriolis_j, args, grid), grid, state.variables["v"].time
+        ),
     )
 
 
@@ -288,5 +314,7 @@ def coriolis_i(state: State, params: Parameters) -> State:
         params.f["u"],
     )
     return State(
-        u=Variable(_apply_2D_iterator(_coriolis_i, args, grid), grid),
+        u=Variable(
+            _apply_2D_iterator(_coriolis_i, args, grid), grid, state.variables["u"].time
+        ),
     )

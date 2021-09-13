@@ -111,6 +111,7 @@ class Variable:
 
     data: Optional[np.ndarray]
     grid: Grid
+    time: np.datetime64
 
     def __post_init__(self):
         """Validate."""
@@ -138,16 +139,20 @@ class Variable:
         # copy to prevent side effects on self.data
         data = self.safe_data.copy()
         data[self.grid.mask == 0] = np.nan
+        data = np.expand_dims(data, axis=0)
 
-        coords = {
-            "x": (("j", "i"), self.grid.x),
-            "y": (("j", "i"), self.grid.y),
-        }
+        coords = dict(
+            x=(("j", "i"), self.grid.x),
+            y=(("j", "i"), self.grid.y),
+        )
         dims = ("j", "i")
 
         if self.grid.ndim >= 3:
             coords["z"] = (("z",), self.grid.z)  # type: ignore
             dims = ("z",) + dims
+
+        dims = ("time",) + dims
+        coords["time"] = (("time",), [self.time])  # type: ignore
 
         return xarray.DataArray(  # type: ignore
             data=data,
@@ -172,16 +177,20 @@ class Variable:
             data = None
         else:
             data = self.data.copy()
-        return self.__class__(data, self.grid)
+        return self.__class__(data, self.grid, self.time.copy())
 
     def __add__(self, other):
-        """Add data of to variables."""
+        """Add data of two variables.
+
+        The timestamp of the sum of two variables is set to their mean.
+        """
         if (
             # one is subclass of the other
             (isinstance(self, type(other)) or isinstance(other, type(self)))
             and self.grid is not other.grid
         ):
             raise ValueError("Try to add variables defined on different grids.")
+
         try:
             if self.data is None and other.data is None:
                 new_data = None
@@ -193,7 +202,10 @@ class Variable:
                 new_data = self.data + other.data
         except (AttributeError, TypeError):
             return NotImplemented
-        return self.__class__(data=new_data, grid=self.grid)
+
+        new_time = self.time + (other.time - self.time) / 2
+
+        return self.__class__(data=new_data, grid=self.grid, time=new_time)
 
 
 class State:
@@ -227,7 +239,12 @@ class State:
                 self.__setattr__(k, self.variables[k])
 
     def __add__(self, other):
-        """Add all variables of two states."""
+        """Add all variables of two states.
+
+        If one of the state object is missing a variable, this variable is copied
+        from the other state object. Note that this means, that the time stamp of
+        this particular variable will remain unchanged.
+        """
         if not isinstance(other, type(self)) or not isinstance(self, type(other)):
             return NotImplemented  # pragma: no cover
         try:

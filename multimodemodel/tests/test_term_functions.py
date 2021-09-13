@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 import multimodemodel as swe
 
+some_datetime = np.datetime64("2001-01-01", "s")
+
 
 def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0):
     """Return 2D coordinate arrays."""
@@ -61,14 +63,14 @@ class TestTerms:
         params_3D = swe.Parameters(coriolis_func=f_constant(1e-4), on_grid=c_grid_3D)
 
         state_2D = swe.State(
-            u=swe.Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u),
-            v=swe.Variable(None, c_grid_2D.v),
+            u=swe.Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u, some_datetime),
+            v=swe.Variable(None, c_grid_2D.v, some_datetime),
         )
         inc_2D = swe.coriolis_j(state_2D, params_2D)
 
         state_3D = swe.State(
-            u=swe.Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u),
-            v=swe.Variable(None, c_grid_3D.v),
+            u=swe.Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u, some_datetime),
+            v=swe.Variable(None, c_grid_3D.v, some_datetime),
         )
         inc_3D = swe.coriolis_j(state_3D, params_3D)
 
@@ -88,8 +90,8 @@ class TestTerms:
         params = swe.Parameters(g=g)
         grid = swe.Grid(x=x, y=y, mask=mask)
         state = swe.State(
-            u=swe.Variable(None, grid),
-            eta=swe.Variable(eta, grid),
+            u=swe.Variable(None, grid, some_datetime),
+            eta=swe.Variable(eta, grid, some_datetime),
         )
 
         inc = swe.pressure_gradient_i(state, params)
@@ -97,6 +99,7 @@ class TestTerms:
         assert "eta" not in inc.variables
         assert "v" not in inc.variables
         assert np.all(inc.variables["u"].data == result)
+        assert inc.variables["u"].time == some_datetime
 
     def test_pressure_gradient_j(self):
         """Test pressure_gradient_j."""
@@ -111,8 +114,8 @@ class TestTerms:
         params = swe.Parameters(g=g)
         grid = swe.Grid(x=x, y=y, mask=mask)
         state = swe.State(
-            v=swe.Variable(None, grid),
-            eta=swe.Variable(eta, grid),
+            v=swe.Variable(None, grid, some_datetime),
+            eta=swe.Variable(eta, grid, some_datetime),
         )
 
         inc = swe.pressure_gradient_j(state, params)
@@ -120,6 +123,7 @@ class TestTerms:
         assert "eta" not in inc.variables
         assert "u" not in inc.variables
         assert np.all(inc.variables["v"].data == result)
+        assert inc.variables["v"].time == some_datetime
 
     def test_divergence_i(self):
         """Test divergence_i."""
@@ -135,13 +139,17 @@ class TestTerms:
         params = swe.Parameters(H=H)
         grid_u = swe.Grid(x=x, y=y, mask=mask_u)
         grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
-        state = swe.State(u=swe.Variable(u, grid_u), eta=swe.Variable(None, grid_eta))
+        state = swe.State(
+            u=swe.Variable(u, grid_u, some_datetime),
+            eta=swe.Variable(None, grid_eta, some_datetime),
+        )
 
         inc = swe.divergence_i(state, params)
 
         assert "u" not in inc.variables
         assert "v" not in inc.variables
         assert np.all(inc.variables["eta"].data == result)
+        assert inc.variables["eta"].time == some_datetime
 
     def test_divergence_j(self):
         """Test divergence_j."""
@@ -157,12 +165,16 @@ class TestTerms:
         params = swe.Parameters(H=H)
         grid_v = swe.Grid(x=x, y=y, mask=mask_v)
         grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
-        state = swe.State(v=swe.Variable(v, grid_v), eta=swe.Variable(None, grid_eta))
+        state = swe.State(
+            v=swe.Variable(v, grid_v, some_datetime),
+            eta=swe.Variable(None, grid_eta, some_datetime),
+        )
 
         inc = swe.divergence_j(state, params)
         assert "u" not in inc.variables
         assert "v" not in inc.variables
         assert np.all(inc.variables["eta"].data == result)
+        assert inc.variables["eta"].time == some_datetime
 
     @pytest.mark.parametrize(
         "coriolis_func",
@@ -201,12 +213,16 @@ class TestTerms:
             / 4.0
         )
 
-        state = swe.State(u=swe.Variable(u, c_grid.u), v=swe.Variable(None, c_grid.v))
+        state = swe.State(
+            u=swe.Variable(u, c_grid.u, some_datetime),
+            v=swe.Variable(None, c_grid.v, some_datetime),
+        )
 
         inc = swe.coriolis_j(state, params)
         assert "u" not in inc.variables
         assert "eta" not in inc.variables
         assert np.all(inc.variables["v"].data == result)
+        assert inc.variables["v"].time == some_datetime
 
     @pytest.mark.parametrize(
         "coriolis_func",
@@ -246,15 +262,16 @@ class TestTerms:
         )
 
         state = swe.State(
-            u=swe.Variable(None, c_grid.u),
-            v=swe.Variable(v, c_grid.v),
-            eta=swe.Variable(None, c_grid.eta),
+            u=swe.Variable(None, c_grid.u, some_datetime),
+            v=swe.Variable(v, c_grid.v, some_datetime),
+            eta=swe.Variable(None, c_grid.eta, some_datetime),
         )
 
         inc = swe.coriolis_i(state, params)
         assert "v" not in inc.variables
         assert "eta" not in inc.variables
         assert np.all(inc.variables["u"].data == result)
+        assert inc.variables["u"].time == some_datetime
 
     @pytest.mark.parametrize(
         "term",
@@ -276,9 +293,9 @@ class TestTerms:
         params = swe.Parameters(coriolis_func=f_constant(1.0), on_grid=c_grid)
 
         state = swe.State(
-            u=swe.Variable(None, c_grid.u),
-            v=swe.Variable(None, c_grid.v),
-            eta=swe.Variable(None, c_grid.eta),
+            u=swe.Variable(None, c_grid.u, some_datetime),
+            v=swe.Variable(None, c_grid.v, some_datetime),
+            eta=swe.Variable(None, c_grid.eta, some_datetime),
         )
 
         _ = term(state, params)

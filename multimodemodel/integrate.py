@@ -4,6 +4,7 @@ To be used optional in integrate function.
 """
 
 import sys
+import numpy as np
 from collections import deque
 from .datastructure import Variable, Parameters, State
 from typing import Callable, Generator, NewType
@@ -28,6 +29,24 @@ else:
 
 StateIncrement = NewType("StateIncrement", State)
 TimeSteppingFunction = Callable[[StateDeque, Parameters, float], StateIncrement]
+
+
+def seconds_to_timedelta64(dt: float) -> np.timedelta64:
+    """Convert timestep in seconds to a numpy timedelta64 object.
+
+    `dt` will be rounded to an integer at nanosecond precision.
+
+    Parameters
+    ---------
+    dt : float
+        Time span in seconds.
+
+    Returns
+    -------
+    numpy.timedelta64
+        Timedelta object with nanosecond precision.
+    """
+    return np.timedelta64(round(1e9 * dt), "ns")
 
 
 def time_stepping_function(
@@ -65,9 +84,11 @@ def euler_forward(rhs: StateDeque, params: Parameters, step: float) -> StateIncr
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].variables["u"].grid),
-            v=Variable(dv, rhs[-1].variables["v"].grid),
-            eta=Variable(deta, rhs[-1].variables["eta"].grid),
+            u=Variable(du, rhs[-1].variables["u"].grid, rhs[-1].variables["u"].time),
+            v=Variable(dv, rhs[-1].variables["v"].grid, rhs[-1].variables["u"].time),
+            eta=Variable(
+                deta, rhs[-1].variables["eta"].grid, rhs[-1].variables["u"].time
+            ),
         )
     )
 
@@ -85,6 +106,8 @@ def adams_bashforth2(
     if len(rhs) < 2:
         return euler_forward(rhs, params, step)
 
+    dt = seconds_to_timedelta64(step)
+
     du = (step / 2) * (
         3 * rhs[-1].variables["u"].safe_data - rhs[-2].variables["u"].safe_data
     )
@@ -97,9 +120,21 @@ def adams_bashforth2(
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].variables["u"].grid),
-            v=Variable(dv, rhs[-1].variables["v"].grid),
-            eta=Variable(deta, rhs[-1].variables["eta"].grid),
+            u=Variable(
+                du,
+                rhs[-1].variables["u"].grid,
+                rhs[-1].variables["u"].time + dt / 2,
+            ),
+            v=Variable(
+                dv,
+                rhs[-1].variables["v"].grid,
+                rhs[-1].variables["v"].time + dt / 2,
+            ),
+            eta=Variable(
+                deta,
+                rhs[-1].variables["eta"].grid,
+                rhs[-1].variables["eta"].time + dt / 2,
+            ),
         )
     )
 
@@ -116,6 +151,8 @@ def adams_bashforth3(
     """
     if len(rhs) < 3:
         return adams_bashforth2(rhs, params, step)
+
+    dt = seconds_to_timedelta64(step)
 
     du = (step / 12) * (
         23 * rhs[-1].variables["u"].safe_data
@@ -135,9 +172,21 @@ def adams_bashforth3(
 
     return StateIncrement(
         State(
-            u=Variable(du, rhs[-1].variables["u"].grid),
-            v=Variable(dv, rhs[-1].variables["v"].grid),
-            eta=Variable(deta, rhs[-1].variables["eta"].grid),
+            u=Variable(
+                du,
+                rhs[-1].variables["u"].grid,
+                rhs[-1].variables["u"].time + dt / 2,
+            ),
+            v=Variable(
+                dv,
+                rhs[-1].variables["v"].grid,
+                rhs[-1].variables["v"].time + dt / 2,
+            ),
+            eta=Variable(
+                deta,
+                rhs[-1].variables["eta"].grid,
+                rhs[-1].variables["eta"].time + dt / 2,
+            ),
         )
     )
 
@@ -199,6 +248,7 @@ def integrate(
     ```
     """
     N = int(time // step)
+    dt = seconds_to_timedelta64(step)
 
     try:
         state = deque([initial_state], maxlen=scheme.n_state)
@@ -211,6 +261,14 @@ def integrate(
         )
 
     for _ in range(N):
+        new_time_u = state[-1].variables["u"].time + dt
+        new_time_v = state[-1].variables["v"].time + dt
+        new_time_eta = state[-1].variables["eta"].time + dt
+
         rhs.append(RHS(state[-1], params))
         state.append(state[-1] + scheme(rhs, params, step))
+
+        state[-1].variables["u"].time = new_time_u
+        state[-1].variables["v"].time = new_time_v
+        state[-1].variables["eta"].time = new_time_eta
         yield state[-1]
