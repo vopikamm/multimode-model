@@ -30,7 +30,7 @@ else:
 
 
 StateIncrement = NewType("StateIncrement", State)
-TimeSteppingFunction = Callable[[StateDeque, Parameters, float], StateIncrement]
+TimeSteppingFunction = Callable[[StateDeque, float], StateIncrement]
 
 
 def seconds_to_timedelta64(dt: float) -> np.timedelta64:
@@ -39,7 +39,7 @@ def seconds_to_timedelta64(dt: float) -> np.timedelta64:
     `dt` will be rounded to an integer at nanosecond precision.
 
     Parameters
-    ---------
+    ----------
     dt : float
         Time span in seconds.
 
@@ -71,7 +71,7 @@ def time_stepping_function(
 
 
 @time_stepping_function(n_rhs=1, n_state=1)
-def euler_forward(rhs: StateDeque, params: Parameters, step: float) -> StateIncrement:
+def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using Euler forward scheme.
 
     Used for the time integration. One previous state is necessary.
@@ -100,9 +100,7 @@ def euler_forward(rhs: StateDeque, params: Parameters, step: float) -> StateIncr
 
 
 @time_stepping_function(n_rhs=2, n_state=1)
-def adams_bashforth2(
-    rhs: StateDeque, params: Parameters, step: float
-) -> StateIncrement:
+def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using two-level Adams-Bashforth scheme.
 
     Used for the time integration. Two previous states are required.
@@ -123,7 +121,7 @@ def adams_bashforth2(
         The increment of the state from one time step to the next, i.e. next_state - current_state.
     """
     if len(rhs) < 2:
-        return euler_forward(rhs, params, step)
+        return euler_forward(rhs, step)
 
     dt = seconds_to_timedelta64(step)
 
@@ -142,9 +140,7 @@ def adams_bashforth2(
 
 
 @time_stepping_function(n_rhs=3, n_state=1)
-def adams_bashforth3(
-    rhs: StateDeque, params: Parameters, step: float
-) -> StateIncrement:
+def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using three-level Adams-Bashforth scheme.
 
     Used for the time integration. Three previous states are necessary.
@@ -165,7 +161,7 @@ def adams_bashforth3(
         The increment, i.e. next_state - current_state.
     """
     if len(rhs) < 3:
-        return adams_bashforth2(rhs, params, step)
+        return adams_bashforth2(rhs, step)
 
     dt = seconds_to_timedelta64(step)
 
@@ -258,7 +254,7 @@ def integrate(
         new_time_eta = state[-1].variables["eta"].time + dt
 
         rhs.append(RHS(state[-1], params))
-        state.append(state[-1] + scheme(rhs, params, step))
+        state.append(state[-1] + scheme(rhs, step))
 
         state[-1].variables["u"].time = new_time_u
         state[-1].variables["v"].time = new_time_v

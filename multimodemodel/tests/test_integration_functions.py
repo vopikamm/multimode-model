@@ -132,7 +132,6 @@ class TestIntegration:
             y=y[:, 0],
             mask=mask,  # type: ignore
         )
-        params = swe.Parameters()
 
         ds = swe.State(
             u=swe.Variable(2 * np.ones(x.shape), c_grid.u, t),
@@ -140,7 +139,7 @@ class TestIntegration:
             eta=swe.Variable(1 * np.ones(x.shape), c_grid.eta, t),
         )
 
-        ds_test = swe.euler_forward(deque([ds], maxlen=1), params, dt)
+        ds_test = swe.euler_forward(deque([ds], maxlen=1), dt)
         assert np.all(ds_test.variables["u"].data == dt * ds.variables["u"].data)
         assert np.all(ds_test.variables["v"].data == dt * ds.variables["v"].data)
         assert np.all(ds_test.variables["eta"].data == dt * ds.variables["eta"].data)
@@ -148,7 +147,6 @@ class TestIntegration:
 
     def test_adams_bashforth2_euler_forward_dropin(self):
         """Test adams_bashforth2 computational initial condition."""
-        params = swe.Parameters()
         dx, dy = 1, 2
         dt = 2.0
         ni, nj = 10, 5
@@ -168,7 +166,7 @@ class TestIntegration:
 
         rhs = deque([state1], maxlen=3)
 
-        d_state = swe.adams_bashforth2(rhs, params, step=dt)  # type: ignore
+        d_state = swe.adams_bashforth2(rhs, step=dt)  # type: ignore
 
         assert np.all(d_state.u.data == d_u)
         assert np.all(d_state.v.data == d_u)
@@ -191,7 +189,6 @@ class TestIntegration:
             y=y[:, 0],
             mask=mask,  # type: ignore
         )
-        params = swe.Parameters()
 
         ds1 = swe.State(
             u=swe.Variable(1 * np.ones(x.shape), c_grid.u, t1),
@@ -230,7 +227,7 @@ class TestIntegration:
 
         rhs = deque([ds1, ds2], maxlen=3)
 
-        d_state = swe.adams_bashforth2(rhs, params, step=dt)  # type: ignore
+        d_state = swe.adams_bashforth2(rhs, step=dt)  # type: ignore
 
         assert np.all(d_state.variables["u"].data == ds3.variables["u"].data)
         assert np.all(d_state.variables["v"].data == ds3.variables["v"].data)
@@ -254,7 +251,6 @@ class TestIntegration:
             y=y[:, 0],
             mask=mask,  # type: ignore
         )
-        params = swe.Parameters()
 
         ds1 = swe.State(
             u=swe.Variable(1 * np.ones(x.shape), c_grid.u, t1),
@@ -308,7 +304,7 @@ class TestIntegration:
 
         rhs = deque([ds1, ds2, ds3], maxlen=3)
 
-        d_state = swe.adams_bashforth3(rhs, params, step=dt)  # type: ignore
+        d_state = swe.adams_bashforth3(rhs, step=dt)  # type: ignore
 
         assert np.allclose(d_state.variables["u"].data, ds4.variables["u"].data)
         assert np.allclose(d_state.variables["v"].data, ds4.variables["v"].data)
@@ -318,7 +314,6 @@ class TestIntegration:
     def test_adams_bashforth3_adams_bashforth2_dropin(self):
         """Test adams_bashforth2."""
         dt = 2.0
-        params = swe.Parameters()
         dx, dy = 1, 2
         ni, nj = 10, 5
         t1 = np.datetime64("2000-01-01", "s")
@@ -346,7 +341,7 @@ class TestIntegration:
 
         rhs = deque([state1, state2], maxlen=3)
 
-        d_state = swe.adams_bashforth3(rhs, params, step=dt)  # type: ignore
+        d_state = swe.adams_bashforth3(rhs, step=dt)  # type: ignore
 
         assert np.all(d_state.u.data == d_u)
         assert np.all(d_state.v.data == d_v)
