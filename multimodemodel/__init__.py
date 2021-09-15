@@ -6,6 +6,7 @@ water equation as python functions.
 
 from .datastructure import (
     Parameters,
+    MultimodeParameters,
     Variable,
     State,
 )
@@ -18,6 +19,7 @@ from .grid import (
 
 from .integrate import (
     integrate,
+    integrate_multimode,
     linearised_SWE,
     TimeSteppingFunction,
     StateIncrement,

@@ -106,6 +106,30 @@ class Parameters:
 
 
 @dataclass
+class MultimodeParameters(Parameters):
+    """Subclass to Parameters.
+
+    Organises all parameters depending on the mode number.
+    """
+
+    H: np.ndarray = np.array([Parameters.H])
+
+    def parameters_by_modenumber(self, k: int = 0) -> Parameters:
+        """Return the parameters for one mode number as Parameters object.
+
+        Arguments
+        ---------
+        k: int
+          Respective mode number to be returned.
+        """
+        if k >= len(self.H):
+            raise ValueError(
+                "The requested mode number is higher then the available modes."
+            )
+        return Parameters(H=self.H[k])
+
+
+@dataclass
 class Variable:
     """Variable class consisting of the data and a Grid instance."""
 

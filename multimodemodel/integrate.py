@@ -6,8 +6,10 @@ To be used optional in integrate function.
 import sys
 import numpy as np
 from collections import deque
-from .datastructure import Variable, Parameters, State
-from typing import Callable, Generator, NewType
+
+# from numpy.lib.function_base import iterable
+from .datastructure import Variable, Parameters, State, MultimodeParameters
+from typing import Callable, Generator, List, NewType
 from functools import wraps
 from itertools import starmap
 from operator import mul
@@ -258,3 +260,45 @@ def integrate(
             v.time = old_state.variables[k].time + dt
 
         yield state[-1]
+
+
+def integrate_multimode(
+    initial_states: List[State],
+    params: MultimodeParameters,
+    RHS: Callable[..., State],
+    scheme: TimeSteppingFunction = adams_bashforth3,
+    step: float = 1.0,  # time stepping in s
+    time: float = 3600.0,  # end time
+) -> List[Generator[State, None, None]]:
+    """Wrap the integration of multiple modes.
+
+    Arguments
+    ---------
+    initial_states: List[State]
+      Initial conditions of the prognostic variables for all modes, organised
+      as a list.
+    params: MultimodeParameters
+      Parameters of the governing equations
+    RHS: Callable[..., State]
+      Function defining the set of equations to integrate
+    scheme: Callable[..., State] = adams_bashforth3
+      Time integration scheme to use
+    step: float = 1.0
+      Length of time step
+    time: float = 3600.0
+      Integration time. Will be reduced to the next integral multiple of `step`
+    """
+    K = len(initial_states)
+    iterables = []
+    for k in range(K):
+        iterables.append(
+            integrate(
+                initial_states[k],
+                params.parameters_by_modenumber(k),
+                RHS,
+                scheme,
+                step,
+                time,
+            )
+        )
+    return iterables
