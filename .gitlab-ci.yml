@@ -6,6 +6,7 @@ image: mambaorg/micromamba:latest
 stages:
 - audit
 - test
+- deploy
 
 sast:
   stage: audit
@@ -46,3 +47,18 @@ lint:
   script:
   - micromamba install -y -n base -c conda-forge flake8 flake8-docstrings
   - flake8 .
+
+docs:
+  stage: deploy
+  needs: [test_3.9]
+  script:
+  - micromamba install -y -n base -c conda-forge python=3.9.0 pip
+  - pip install -e .[docs]
+  - sphinx-build -M html doc _build
+  - mv _build/html public
+  artifacts:
+    paths:
+    - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
