@@ -1,6 +1,8 @@
+# dev container environment
 black
 flake8
 ipykernel
+make
 matplotlib
 pip
 pre-commit

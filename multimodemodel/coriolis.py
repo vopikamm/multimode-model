@@ -13,7 +13,17 @@ CoriolisFunc = Callable[[np.ndarray], np.ndarray]
 
 
 def f_constant(f: float = 0) -> CoriolisFunc:
-    """Set Coriolis parameter to a constant."""
+    r"""Return a closure that returns a constant Coriolis parameter.
+
+    Parameters
+    ----------
+    f : float, default=0.0
+      Constant value of f
+
+    Returns
+    -------
+    CoriolisFunc
+    """
 
     def closure(y: np.ndarray) -> np.ndarray:
         return np.ones(y.shape) * f
@@ -22,13 +32,25 @@ def f_constant(f: float = 0) -> CoriolisFunc:
 
 
 def beta_plane(f0: float, beta: float, y0: float) -> CoriolisFunc:
-    """Compute Coriolis parameter on a beta plane.
+    r"""Return a closure that computes the Coriolis parameter on a beta plane.
 
     The coriolis parameter is computes as
 
-    `f = f0 + beta * (y - y0)`
+    .. math::
+        f = f_0 + \beta * (y - y_0)
 
-    where y is the y-coordinate defined on the grids.
+    Parameters
+    ----------
+    f0 : float
+      Coriolis parameter at `y=y0`.
+    beta : float
+      Meridional derivative of `f`.
+    y0 : float
+      `y` coordinate about which the Coriolis parameter is linearly approximated.
+
+    Returns
+    -------
+    CoriolisFunc
     """
 
     def closure(y: np.ndarray) -> np.ndarray:
@@ -38,14 +60,25 @@ def beta_plane(f0: float, beta: float, y0: float) -> CoriolisFunc:
 
 
 def f_on_sphere(omega: float = 7.272205e-05) -> CoriolisFunc:
-    """Compute Coriolis parameter on a sphere.
+    r"""Return a closure that computes the Coriolis parameter on a sphere.
 
-    The coriolis parameter is computes as
+    The Coriolis parameter is computes as
 
-    `f = 2 * omega * sin(pi / 180. * y)`
+    .. math::
+        f = 2 * \Omega * \sin(\frac{\pi}{180}y)
 
-    where y is the y-coordinate defined on the grids
-    which is assumed to be in units of degrees.
+    where `y` is the y-coordinate defined on the grids
+    which is assumed to be in units of degrees north.
+
+    Parameters
+    ----------
+    omega : float, default=7.272205e-05
+      Angular frequency of the rotating sphere. Deafult matches that of Earth.
+
+    Returns
+    -------
+    CoriolisFunc
+
     """
 
     def closure(y: np.ndarray) -> np.ndarray:

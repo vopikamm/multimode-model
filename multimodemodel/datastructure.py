@@ -32,22 +32,18 @@ class Parameters:
     Note that the objects `compute_f` method needs to be called after creation
     to provide the coriolis parameter on all subgrids of a staggered grid instance.
 
-    Arguments
-    ---------
-    (of the __init__ method)
-
-    g: float = 9.81
+    Parameters
+    ----------
+    g : float, default=9.81
       Gravitational acceleration m/s^2
-    H: float = 1000.0
+    H : float, default=1000.0
       Depth of the fluid or thickness of the undisturbed layer in m
-    rho_0: float = 1024.0
+    rho_0 : float, default=1024.0
       Reference density of sea water in kg / m^3
-    coriolis_func: Optional[CoriolisFunc] = None
+    coriolis_func : CoriolisFunc, default=None
       Function used to compute the coriolis parameter on each subgrid
-      of a staggered grid. The signature of this function must match
-      `coriolis_func(y: numpy.ndarray) -> numpy.ndarray`
-      and they are called with the y coordinate of the respective grid.
-    on_grid: Optional[StaggeredGrid] = None
+      of a staggered grid. It is called with the y coordinate of the respective grid.
+    on_grid : StaggeredGrid, default=None
       StaggeredGrid object providing the necessary grid information if a
       parameter depends on space, such as the Coriolis parameter. Only
       required if such a parameter is part of the system to solve.
@@ -56,15 +52,19 @@ class Parameters:
     Attributes
     ----------
     f: Dict[str, numpy.ndarray]
-      Mapping of the subgrid names ('u', 'v', 'eta') to the coriolis
+      Mapping of the subgrid names (e.g. "u", "v", "eta") to the coriolis
       parameter on those grids
     """
 
-    g: float = 9.81  # gravitational force m/s^2
-    H: float = 1000.0  # reference depth in m
-    rho_0: float = 1024.0  # reference density in kg / m^3
-    coriolis_func: InitVar[Optional[CoriolisFunc]] = None
-    on_grid: InitVar[Optional[StaggeredGrid]] = None
+    g: float = 9.81  #: gravitational acceleration
+    H: float = 1000.0  #: reference depth
+    rho_0: float = 1024.0  #: reference density
+    coriolis_func: InitVar[
+        Optional[CoriolisFunc]
+    ] = None  #: function used to compute the coriolis parameter
+    on_grid: InitVar[
+        Optional[StaggeredGrid]
+    ] = None  #: StaggeredGrid object providing the necessary grid information if a parameter depends on space
     _f: Dict[str, np.ndarray] = field(init=False)
 
     def __post_init__(
@@ -77,7 +77,13 @@ class Parameters:
 
     @property
     def f(self) -> Dict[str, np.ndarray]:
-        """Getter of the dictionary holding the Coriolis parameter."""
+        """Getter of the dictionary holding the Coriolis parameter.
+
+        Raises
+        ------
+        RuntimeError
+          Raised when there is no Coriolis parameter computed.
+        """
         if not self._f:
             raise RuntimeError(
                 "Coriolis parameter not available. "
@@ -92,12 +98,17 @@ class Parameters:
         """Compute the coriolis parameter for all subgrids.
 
         This method needs to be called before a rotating system
-        can be set up. Returns None but set the attribute `f` of the object.
+        can be set up.
 
         Arguments
         ---------
         grids: StaggeredGrid
           Grids on which the coriolis parameter shall be provided.
+
+        Returns
+        -------
+        dict
+          Mapping names of subgrids to arrays of the respective Coriolis parameter.
         """
         if coriolis_func is None or grids is None:
             return {}
@@ -107,7 +118,31 @@ class Parameters:
 
 @dataclass
 class Variable:
-    """Variable class consisting of the data and a Grid instance."""
+    """Variable class consisting of the data, a Grid instance and a time stamp.
+
+    A Variable object contains the data for a single time slice of a variable as a np.ndarray,
+    the grid object describing the grid arrangement and a single time stamp. The data attribute
+    can take the value of :py:obj:`None` which is treated like an array of zeros when adding the
+    variable to another variable.
+
+    Variable implement summation with another Variable object, see :py:meth:`.Variable.__add__`.
+
+
+    Parameters
+    ----------
+    data : np.ndarray, default=None
+      Array containing a single time slice of a variable. If it is `None`, it will be interpreted
+      as zero. To ensure a :py:class:`~numpy.ndarray` as return type, use the property :py:attr:`.safe_data`.
+    grid: Grid
+      Grid on which the variable is defined.
+    time: np.datetime64
+      Time stamp of the time slice.
+
+    Raises
+    ------
+    ValueError
+      Raised if `data.shape` does not match `grid.shape`.
+    """
 
     data: Optional[np.ndarray]
     grid: Grid
@@ -124,12 +159,17 @@ class Variable:
 
     @property
     def as_dataarray(self) -> xarray.DataArray:  # type: ignore
-        """Return variable as xarray.DataArray.
+        """Return variable as :py:class:`xarray.DataArray`.
 
-        The DataArray object contains a copy of (not a reference to) the data of
-        the variable. The coordinates are multidimensional arrays to support
+        The DataArray object contains a copy of (not a reference to) the `data` attribute of
+        the variable. The horizontal coordinates are multidimensional arrays to support
         curvilinear grids and copied from the grids `x` and `y` attribute. Grid
         points for which the mask of the grid equals to 0 are converted to NaNs.
+
+        Raises
+        ------
+        ModuleNotFoundError
+          Raised if `xarray` is not present.
         """
         if not has_xarray:
             raise ModuleNotFoundError(  # pragma: no cover
@@ -162,7 +202,7 @@ class Variable:
 
     @property
     def safe_data(self) -> np.ndarray:
-        """Return self.data or, if it is None, a zero array of appropriate shape."""
+        """Return `data` or, if it is `None`, a zero array of appropriate shape."""
         if self.data is None:
             return np.zeros(self.grid.shape)
         else:
@@ -171,7 +211,7 @@ class Variable:
     def copy(self):
         """Return a copy.
 
-        The data attribute is a deep copy while the grid is a reference.
+        `data` and `time` are deep copies while `grid` is a reference.
         """
         if self.data is None:
             data = None
@@ -180,9 +220,10 @@ class Variable:
         return self.__class__(data, self.grid, self.time.copy())
 
     def __add__(self, other):
-        """Add data of two variables.
+        """Add two variables.
 
         The timestamp of the sum of two variables is set to their mean.
+        `None` is treated as an array of zeros of correct shape.
         """
         if (
             # one is subclass of the other
@@ -209,26 +250,30 @@ class Variable:
 
 
 class State:
-    """State class.
+    """Combines the prognostic variables into a single object.
 
-    Combines the prognostic variables into one state object.
-
-    The variables are passed as keyword arguments to the __init__ method
-    of the state object and stored in the attribute `variables` which is a
-    dict.
+    The variables are passed as keyword arguments to :py:meth:`__init__`
+    and stored in the dict :py:attr:`variables`.
 
     State objects can be added such that the individual variable objects are added.
     If an variable is missing in one state object, it is treated as zeros.
 
     For convenience, it is also possible to access the variables directly as atttributes
     of the state object.
+
+    Parameters
+    ---------
+    `**kwargs` : dict
+      Variables are given by keyword arguments.
+
+    Raises
+    ------
+    ValueError
+      Raised if a argument is not of type :py:class:`.Variable`.
     """
 
     def __init__(self, **kwargs):
-        """Create State object.
-
-        Variables are given by keyword arguments.
-        """
+        """Create State object."""
         self.variables = dict()
 
         for k, v in kwargs.items():
@@ -242,8 +287,13 @@ class State:
         """Add all variables of two states.
 
         If one of the state object is missing a variable, this variable is copied
-        from the other state object. Note that this means, that the time stamp of
+        from the other state object. This implies, that the time stamp of
         this particular variable will remain unchanged.
+
+        Returns
+        -------
+        State
+          Sum of two states.
         """
         if not isinstance(other, type(self)) or not isinstance(self, type(other)):
             return NotImplemented  # pragma: no cover
