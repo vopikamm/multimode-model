@@ -7,7 +7,7 @@ import sys
 import numpy as np
 from collections import deque
 from .datastructure import Variable, Parameters, State
-from typing import Callable, Generator, NewType
+from typing import Callable, Generator
 from functools import wraps
 from itertools import starmap
 from operator import mul
@@ -29,7 +29,7 @@ else:
     StateDeque = deque[State]
 
 
-StateIncrement = NewType("StateIncrement", State)
+StateIncrement = State
 TimeSteppingFunction = Callable[[StateDeque, float], StateIncrement]
 
 
@@ -54,7 +54,7 @@ def seconds_to_timedelta64(dt: float) -> np.timedelta64:
 def time_stepping_function(
     n_rhs: int, n_state: int
 ) -> Callable[[TimeSteppingFunction], TimeSteppingFunction]:
-    """Decorate function by adding n_rhs and n_state attributes."""
+    """Decorate function by adding `n_rhs` and `n_state` attributes."""
     if n_state < 1 or n_rhs < 1:
         raise ValueError("n_rhs and n_state both needs to be larger than 0.")
 
@@ -77,12 +77,11 @@ def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
     Used for the time integration. One previous state is necessary.
     The time stamp of the increment is the same as for the current state.
 
-    Paramters
+    Parameters
     ---------
     rhs : StateDeque
         Deque object containing the previous evaluations of the right-hand-side
         terms.
-    params : Parameters (Not need here anymore)
     step : float
         Time step size.
 
@@ -96,7 +95,7 @@ def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
         for k, v in rhs[-1].variables.items()
     }
 
-    return StateIncrement(State(**inc))
+    return StateIncrement(**inc)
 
 
 @time_stepping_function(n_rhs=2, n_state=1)
@@ -104,14 +103,13 @@ def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using two-level Adams-Bashforth scheme.
 
     Used for the time integration. Two previous states are required.
-    If less are provided, the forward euler scheme is used instead.
+    If less are provided, :py:func:`euler_forward` scheme is used instead.
 
-    Paramters
+    Parameters
     ---------
     rhs : StateDeque
         Deque object containing the previous evaluations of the right-hand-side
         terms.
-    params : Parameters (Not need here anymore)
     step : float
         Time step size.
 
@@ -136,7 +134,7 @@ def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
         for k in rhs[-1].variables.keys()
     }
 
-    return StateIncrement(State(**inc))
+    return StateIncrement(**inc)
 
 
 @time_stepping_function(n_rhs=3, n_state=1)
@@ -144,14 +142,13 @@ def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
     """Compute increment using three-level Adams-Bashforth scheme.
 
     Used for the time integration. Three previous states are necessary.
-    If less are provided, the scheme `adams_bashforth2` is used instead.
+    If less are provided, the scheme :py:func:`adams_bashforth2` is used instead.
 
-    Paramters
+    Parameters
     ---------
     rhs : StateDeque
         Deque object containing the previous evaluations of the right-hand-side
         terms.
-    params : Parameters (Not need here anymore)
     step : float
         Time step size.
 
@@ -176,7 +173,7 @@ def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
         for k in rhs[-1].variables.keys()
     }
 
-    return StateIncrement(State(**inc))
+    return StateIncrement(**inc)
 
 
 """
@@ -187,8 +184,28 @@ Outmost functions defining the problem and what output should be computed.
 def linearised_SWE(state: State, params: Parameters) -> State:
     """Compute RHS of the linearised shallow water equations.
 
-    The equations are evaluated on a C-grid. Output is a state type variable
-    forming the right-hand-side needed for any time stepping scheme.
+    The equations are evaluated on a C-grid. Output is a state object
+    forming the right-hand-side needed for any time stepping scheme. These terms
+    are evaluated:
+
+    - :py:func:`pressure_gradient_i`
+    - :py:func:`pressure_gradient_j`
+    - :py:func:`coriolis_i`
+    - :py:func:`coriolis_j`
+    - :py:func:`divergence_i`
+    - :py:func:`divergence_j`
+
+    Parameters
+    ----------
+    state : State
+      Present state of the system.
+    params : Parameters
+      Parameters of the system.
+
+    Returns
+    -------
+    State
+      Contains the sum of all tendency terms for all prognostic variables.
     """
     RHS_state = (
         (pressure_gradient_i(state, params) + coriolis_i(state, params))  # u_t
@@ -201,39 +218,42 @@ def linearised_SWE(state: State, params: Parameters) -> State:
 def integrate(
     initial_state: State,
     params: Parameters,
-    RHS: Callable[..., State],
+    RHS: Callable[[State, Parameters], State],
     scheme: TimeSteppingFunction = adams_bashforth3,
     step: float = 1.0,  # time stepping in s
     time: float = 3600.0,  # end time
 ) -> Generator[State, None, None]:
     """Integrate a system of differential equations.
 
-    The function returns a generator which can be iterated over.
+    Generator which can be iterated over to produce new time steps.
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     initial_state: State
-      Initial conditions of the prognostic variables
+      Initial conditions of the prognostic variables.
     params: Parameters
-      Parameters of the governing equations
-    RHS: Callable[..., State]
-      Function defining the set of equations to integrate
-    scheme: Callable[..., State] = adams_bashforth3
+      Parameters of the governing equations.
+    RHS: Callable[[State, Parameters], State]
+      Function defining the set of equations to integrate.
+    scheme: TimeSteppingFunction, default=adams_bashforth3
       Time integration scheme to use
-    step: float = 1.0
+    step: float, default=1.0
       Length of time step
-    time: float = 3600.0
+    time: float, default=3600.0
       Integration time. Will be reduced to the next integral multiple of `step`
+
+    Yields
+    ------
+    State
+      Next time step.
 
     Example
     -------
     Integrate the set of linear shallow water equations:
-    ```python
-    integrator = integrate(init_state, params, linearised_swe, step=1., time=10e4)
 
-    for next_state in integrator:
-        pass
-    ```
+    >>> integrator = integrate(init_state, params, linearised_swe, step=1., time=10e4)
+    >>> for next_state in integrator:
+    ...    pass
     """
     N = int(time // step)
     dt = seconds_to_timedelta64(step)

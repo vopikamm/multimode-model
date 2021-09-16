@@ -192,6 +192,17 @@ def pressure_gradient_i(state: State, params: Parameters) -> State:
     """Compute the pressure gradient along the first dimension.
 
     Using centered differences in space.
+
+    Parameters
+    ----------
+    state : State
+      State of the system
+    params : Parameters
+      Parameters of the system
+
+    Returns
+    -------
+    State
     """
     grid = state.variables["u"].grid
     args = (
@@ -215,6 +226,17 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
     """Compute the second component of the pressure gradient.
 
     Using centered differences in space.
+
+    Parameters
+    ----------
+    state : State
+      State of the system
+    params : Parameters
+      Parameters of the system
+
+    Returns
+    -------
+    State
     """
     grid = state.variables["v"].grid
     args = (
@@ -235,7 +257,19 @@ def pressure_gradient_j(state: State, params: Parameters) -> State:
 
 
 def divergence_i(state: State, params: Parameters) -> State:
-    """Compute divergence of flow along first dimension with centered differences."""
+    """Compute divergence of flow along first dimension with centered differences.
+
+    Parameters
+    ----------
+    state : State
+      State of the system
+    params : Parameters
+      Parameters of the system
+
+    Returns
+    -------
+    State
+    """
     grid = state.variables["eta"].grid
     args = (
         grid.shape[grid.dim_x],
@@ -257,7 +291,19 @@ def divergence_i(state: State, params: Parameters) -> State:
 
 
 def divergence_j(state: State, params: Parameters) -> State:
-    """Compute divergence of flow along second dimension with centered differences."""
+    """Compute divergence of flow along second dimension with centered differences.
+
+    Parameters
+    ----------
+    state : State
+      State of the system
+    params : Parameters
+      Parameters of the system
+
+    Returns
+    -------
+    State
+    """
     grid = state.variables["eta"].grid
     args = (
         grid.shape[grid.dim_x],
@@ -282,6 +328,17 @@ def coriolis_j(state: State, params: Parameters) -> State:
     """Compute acceleration due to Coriolis force along second dimension.
 
     An arithmetic four point average of u onto the v-grid is performed.
+
+    Parameters
+    ----------
+    state : State
+      State of the system
+    params : Parameters
+      Parameters of the system
+
+    Returns
+    -------
+    State
     """
     grid = state.variables["v"].grid
     args = (
@@ -303,6 +360,17 @@ def coriolis_i(state: State, params: Parameters) -> State:
     """Compute the acceleration due to the Coriolis force along the first dimension.
 
     An arithmetic four point average of v onto the u-grid is performed.
+
+    Parameters
+    ----------
+    state : State
+      State of the system
+    params : Parameters
+      Parameters of the system
+
+    Returns
+    -------
+    State
     """
     grid = state.variables["u"].grid
     args = (

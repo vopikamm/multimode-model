@@ -19,10 +19,10 @@ class GridShift(Enum):
     y- and x-direction.
     """
 
-    LR = (1, -1)
-    UR = (1, 1)
-    LL = (-1, -1)
-    UL = (-1, 1)
+    LR = (1, -1)  #: Subgrids are shifted to the lower right
+    UR = (1, 1)  #: Subgrids are shifted to the upper right
+    LL = (-1, -1)  #: Subgrids are shifted to the lower left
+    UL = (-1, 1)  #: Subgrids are shifted to the upper left
 
 
 @dataclass
@@ -30,57 +30,41 @@ class Grid:
     """Grid information.
 
     A Grid object holds all information about coordinates of the grid points
-    and grid spacing, i.e. size of the grid box faces. For convenience there
-    are following class methods:
+    and grid spacing, i.e. size of the grid box faces.
 
-    Classmethods
-    ------------
-    cartesian: creates a Cartesian grid, potentially with unequal spacing.
-    regular_lon_lat: create a regular spherical grid.
-
-    Arguments
-    ---------
-    (of the __init__ method)
-
-    x: np.ndarray
+    Parameters
+    ----------
+    x : np.ndarray
       2D np.ndarray of x-coordinates on grid
-    y: np.ndarray
+    y : np.ndarray
       2D np.ndarray of y-coordinates on grid
-    z: Optional[np.ndarray] = None
+    z : np.ndarray, default=None
       1D np.ndarray of z coordinates.
-    mask: Optional[np.ndarray] = None
+    mask : np.ndarray, default=None
       Ocean mask, 1 where ocean is, 0 where land is.
       Default is a closed basin
 
     Attributes
     ----------
-    dx: np.ndarray
+    dx : np.ndarray
       Grid spacing in x.
-    dy: np.ndarray
+    dy : np.ndarray
       Grid spacing in y.
-    dz: np.ndarray
+    dz : np.ndarray
       Grid spacing in z.
 
-    Properties
-    ----------
-    shape: npt._Shape
-      Tuple of int defining the shape of the grid.
-    ndim: int
-      Number of dimensions on which the grid is defined
-    dim_x: int =-1
-      Axis of x-dimension
-    dim_y: int =-2
-      Axis of y-dimension
-    dim_z: int = -3
-      Axis of z-dimension
+    Raises
+    ------
+    ValueError
+      Raised if the shape of `mask` does not fit the shape of the grid.
     """
 
-    x: np.ndarray  # 2D np.ndarray of x-coordinates on grid
-    y: np.ndarray  # 2D np.ndarray of y-coordinates on grid
-    z: Optional[np.ndarray] = None  # 1D np.ndarray of z coordinates.
-    mask: Optional[np.ndarray] = None  # ocean mask, 1 where ocean is, 0 where land is
-    dx: np.ndarray = field(init=False)  # grid spacing in x
-    dy: np.ndarray = field(init=False)  # grid spacing in y
+    x: np.ndarray
+    y: np.ndarray
+    z: Optional[np.ndarray] = None  #: Vertical coordinate
+    mask: Optional[np.ndarray] = None  #: Ocean mask, 1 if ocean and 0 if land.
+    dx: np.ndarray = field(init=False)
+    dy: np.ndarray = field(init=False)
     dz: Optional[np.ndarray] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -146,24 +130,22 @@ class Grid:
     @classmethod
     def cartesian(
         cls: Any,
-        x: np.ndarray,  # x coordinate
-        y: np.ndarray,  # y coordinate
-        z: Optional[np.ndarray] = None,  # z coordinate
-        mask: Optional[
-            np.ndarray
-        ] = None,  # ocean mask, 1 where ocean is, 0 where land is
+        x: np.ndarray,
+        y: np.ndarray,
+        z: Optional[np.ndarray] = None,
+        mask: Optional[np.ndarray] = None,
     ):
         """Generate a Cartesian grid.
 
-        Arguments
-        ---------
-        x: np.ndarray
+        Parameters
+        ----------
+        x : np.ndarray
           1D Array of coordinates along x dimension.
-        y: np.ndarray
+        y : np.ndarray
           1D Array of coordinates along y dimension.
-        z: Optional[np.ndarray] = None,
+        z : np.ndarray, default=None
           1D Array of coordinates along z dimension.
-        mask: Optional[np.ndarray] = None
+        mask : np.ndarray, default=None
           Optional ocean mask. Default is a closed domain.
         """
         assert x.ndim == y.ndim == 1
@@ -195,23 +177,23 @@ class Grid:
 
         Arguments
         ---------
-        lon_start: float
+        lon_start : float
           Smallest longitude in degrees
-        lon_end: float
+        lon_end : float
           larges longitude in degrees
-        lat_start: float
+        lat_start : float
           Smallest latitude in degrees
-        lat_end: float
+        lat_end : float
           larges latitude in degrees
-        nx: int
+        nx : int
           Number of grid points along x dimension.
-        ny: int
+        ny : int
           Number of grid points along y dimension.
-        z: Optional[np.ndarray] = None
+        z : np.ndarray, default=None
           Optional 1D coordinate array along vertical dimension.
-        mask: np.ndarray | None
+        mask : np.ndarray, default=None
           Optional ocean mask. Default is a closed domain.
-        radius: float = 6_371_000.0
+        radius : float, default=6_371_000.0
           Radius of the sphere, defaults to Earths' radius measured in meters.
         """
         to_rad = np.pi / 180.0
@@ -257,13 +239,26 @@ class Grid:
 class StaggeredGrid:
     """Staggered Grid.
 
-    Subgrids are available as attributes `eta`, `u`, `v` and `q`.
+    Subgrids are available as attributes `eta`, `u`, `v` and `q` where
+    the grid box centers are located at `eta`, the faces are at `u` and `v`,
+    and the vertices are located at `q`.
+
+    Parameters
+    ----------
+    eta : Grid
+      Grid of the box centeroids
+    u : Grid
+      Grid of the box faces perpendicular to the fist spatial dimension
+    v : Grid
+      Grid of the box faces perpendicular to the second spatial dimension
+    q : Grid
+      Grid of the box vertices
     """
 
-    eta: Grid
-    u: Grid
-    v: Grid
-    q: Grid
+    eta: Grid  #: Grid of the box centeroids
+    u: Grid  #: Grid of the box faces perpendicular to the fist spatial dimension
+    v: Grid  #: Grid of the box faces perpendicular to the second spatial dimension
+    q: Grid  #: Grid of the box vertices
 
     @classmethod
     def cartesian_c_grid(
@@ -275,11 +270,16 @@ class StaggeredGrid:
 
         Arguments
         ---------
-        shift: GridShift = GridShift.LL
+        shift : GridShift, default=GridShift.LL
           Direction of shift of staggered grids with respect to the eta-grid.
-          See `GridShift` for more details.
-        **grid_kwargs: Dict[str, Any]:
-          keyword arguments are passed to Grid.cartesian().
+          See :py:class:`GridShift` for more details.
+        **grid_kwargs : Dict[str, Any]
+          Keyword arguments are passed to :py:meth:`Grid.cartesian` to create
+          the `eta` subgrid, i.e. the grid of the box centeroids.
+
+        Returns
+        -------
+        StaggeredGrid
         """
         eta_grid = Grid.cartesian(**grid_kwargs)  # type: ignore
 
@@ -315,7 +315,18 @@ class StaggeredGrid:
     ):
         """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
-        Returns StaggeredGrid object with all four grids
+        Arguments
+        ---------
+        shift : GridShift, default=GridShift.LL
+          Direction of shift of staggered grids with respect to the eta-grid.
+          See :py:class:`GridShift` for more details.
+        **grid_kwargs : Dict[str, Any]
+          Keyword arguments are passed to :py:meth:`Grid.regular_lat_lon` to create
+          the `eta` subgrid, i.e. the grid of the box centeroids.
+
+        Returns
+        -------
+        StaggeredGrid
         """
         eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
         dx, dy = eta_grid._compute_horizontal_grid_spacing()
