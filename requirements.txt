@@ -4,6 +4,7 @@ flake8
 ipykernel
 make
 matplotlib
+pandoc
 pip
 pre-commit
 pytest

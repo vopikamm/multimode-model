@@ -34,9 +34,15 @@ release = "0.1.0.alpha"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
+    "sphinx.ext.autosectionlabel",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
+    "sphinx.ext.viewcode",
+    "IPython.sphinxext.ipython_directive",
+    "IPython.sphinxext.ipython_console_highlighting",
+    "nbsphinx",
+    # "sphinx.ext.linkcode",
 ]
 
 # Add any paths that contain templates here, relative to this directory.

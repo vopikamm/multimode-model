@@ -53,6 +53,7 @@ docs:
   needs: [test_3.9]
   script:
   - micromamba install -y -n base -c conda-forge python=3.9.0 pip
+  - micromamba install -y -n base -c conda-forge -f requirements.txt
   - pip install -e .[docs]
   - sphinx-build -M html doc _build
   - mv _build/html public
@@ -61,4 +62,3 @@ docs:
     - public
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-
