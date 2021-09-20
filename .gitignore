@@ -7,3 +7,4 @@ multimodemodel.egg-info
 .benchmarks
 .DS_store
 *-checkpoint.ipynb
+*_checkpoints
