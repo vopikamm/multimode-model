@@ -1,4 +1,5 @@
 """Test the behavior of the dataclasses."""
+from typing import Tuple
 import numpy as np
 import pytest
 
@@ -31,7 +32,7 @@ grid_order = {
 some_datetime = np.datetime64("2000-01-01", "s")
 
 
-def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0):
+def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> Tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
     x = np.arange(nx) * dx
     y = np.arange(ny) * dy

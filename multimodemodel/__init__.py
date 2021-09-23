@@ -14,12 +14,14 @@ from .grid import (
     Grid,
     StaggeredGrid,
     GridShift,
+    Shape,
 )
 
 from .integrate import (
     integrate,
     linearised_SWE,
     TimeSteppingFunction,
+    TimeSteppingScheme,
     StateIncrement,
     time_stepping_function,
     euler_forward,

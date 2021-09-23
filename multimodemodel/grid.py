@@ -1,12 +1,14 @@
 """Logic related to creation of grids."""
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Callable
+from __future__ import annotations  # enable type hinting for factory methods
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Callable, Tuple
 import numpy as np
-import numpy.typing as npt
 from enum import Enum, unique
 
 from .jit import _numba_2D_grid_iterator_i8
+
+Shape = Tuple[int, ...]
 
 
 @unique
@@ -25,7 +27,6 @@ class GridShift(Enum):
     UL = (-1, 1)  #: Subgrids are shifted to the upper left
 
 
-@dataclass
 class Grid:
     """Grid information.
 
@@ -59,27 +60,37 @@ class Grid:
       Raised if the shape of `mask` does not fit the shape of the grid.
     """
 
-    x: np.ndarray
-    y: np.ndarray
-    z: Optional[np.ndarray] = None  #: Vertical coordinate
-    mask: Optional[np.ndarray] = None  #: Ocean mask, 1 if ocean and 0 if land.
-    dx: np.ndarray = field(init=False)
-    dy: np.ndarray = field(init=False)
-    dz: Optional[np.ndarray] = field(init=False)
+    __slots__ = ["x", "y", "z", "mask", "dx", "dy", "dz"]
 
-    def __post_init__(self) -> None:
-        """Set derived attributes of the grid and validate."""
+    def __init__(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+        z: Optional[np.ndarray] = None,
+        mask: Optional[np.ndarray] = None,
+    ):
+        """Initialize self."""
+        self.x = x
+        self.y = y
+        if z is None:
+            _z = np.array([])
+        else:
+            _z = z
+        self.z = _z
+        if mask is None:
+            _mask = self._get_default_mask(self.shape)
+        else:
+            _mask = mask
+        self.mask = _mask
+
         self.dx, self.dy, self.dz = self._compute_grid_spacing()
-
-        if self.mask is None:
-            self.mask = self._get_default_mask(self.shape)
 
         self._validate()
 
     @property
-    def shape(self) -> npt._Shape:
+    def shape(self) -> Shape:
         """Return shape tuple of grid."""
-        if self.z is None:
+        if len(self.z) == 0:
             return self.x.shape
         else:
             return self.z.shape + self.x.shape
@@ -104,12 +115,12 @@ class Grid:
         """Return axis of x dimension."""
         return -3
 
-    def _compute_grid_spacing(self):
+    def _compute_grid_spacing(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         dx, dy = self._compute_horizontal_grid_spacing()
         dz = self._compute_vertical_grid_spacing()
         return dx, dy, dz
 
-    def _compute_horizontal_grid_spacing(self):
+    def _compute_horizontal_grid_spacing(self) -> Tuple[np.ndarray, np.ndarray]:
         """Compute the spatial differences along x and y."""
         dx = np.diff(self.x, axis=self.dim_x)
         dy = np.diff(self.y, axis=self.dim_y)
@@ -119,10 +130,10 @@ class Grid:
         dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
         return dx, dy
 
-    def _compute_vertical_grid_spacing(self):
+    def _compute_vertical_grid_spacing(self) -> np.ndarray:
         """Compute grid box size along z."""
-        if self.z is None:
-            return None
+        if len(self.z) == 0:
+            return np.array([], dtype=self.z.dtype)
         dz = np.diff(self.z, axis=0)
         dz = np.append(dz, dz[0])
         return dz
@@ -134,7 +145,7 @@ class Grid:
         y: np.ndarray,
         z: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
-    ):
+    ) -> Grid:
         """Generate a Cartesian grid.
 
         Parameters
@@ -172,7 +183,7 @@ class Grid:
         z: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         radius: float = 6_371_000.0,
-    ):
+    ) -> Grid:
         """Generate a regular spherical grid.
 
         Arguments
@@ -226,7 +237,7 @@ class Grid:
             assert self.z.ndim == 1
 
     @staticmethod
-    def _get_default_mask(shape: npt._Shape):
+    def _get_default_mask(shape: Shape) -> np.ndarray:
         mask = np.ones(shape, dtype=np.int8)
         mask[..., 0, :] = 0
         mask[..., -1, :] = 0
@@ -265,7 +276,7 @@ class StaggeredGrid:
         cls: Any,
         shift: GridShift = GridShift.LL,
         **grid_kwargs: Dict[str, Any],
-    ):
+    ) -> StaggeredGrid:
         """Generate a Cartesian Arakawa C-Grid.
 
         Arguments
@@ -312,7 +323,7 @@ class StaggeredGrid:
         cls,
         shift: GridShift = GridShift.LL,
         **kwargs: Dict[str, Any],
-    ):
+    ) -> StaggeredGrid:
         """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
         Arguments
@@ -378,7 +389,7 @@ class StaggeredGrid:
     @staticmethod
     def _compute_mask(
         func: Callable[..., np.ndarray], from_grid: Grid, shift: GridShift
-    ):
+    ) -> np.ndarray:
         if from_grid.mask.ndim <= 2:  # type: ignore
             return func(
                 from_grid.shape[from_grid.dim_x],

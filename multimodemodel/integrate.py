@@ -6,9 +6,9 @@ To be used optional in integrate function.
 import sys
 import numpy as np
 from collections import deque
+from dataclasses import dataclass, field
 from .datastructure import Variable, Parameters, State
 from typing import Callable, Generator
-from functools import wraps
 from itertools import starmap
 from operator import mul
 from .kernel import (
@@ -20,7 +20,7 @@ from .kernel import (
     divergence_j,
 )
 
-if sys.version_info < (3, 9):
+if sys.version_info < (3, 9):  # pragma: no cover
     # See https://docs.python.org/3/library/typing.html#typing.Deque
     from typing import Deque
 
@@ -31,6 +31,39 @@ else:
 
 StateIncrement = State
 TimeSteppingFunction = Callable[[StateDeque, float], StateIncrement]
+
+
+@dataclass
+class TimeSteppingScheme:
+    """Class to wrap time stepping functions.
+
+    This class adds `n_rhs` and `n_states` attributes to a time stepping function.
+    It also implements the `__call__` method, which passes the args to the time
+    stepping function.
+
+    Parameters
+    ----------
+    _func: TimeSteppingFunction
+      Time stepping function to wrap
+    n_rhs: int
+      Number of previous rhs evaluations required by the scheme
+    n_state: int
+      Number of previous states required by the scheme
+    """
+
+    _func: TimeSteppingFunction
+    n_rhs: int
+    n_state: int
+    __name__: str = field(init=False)
+
+    def __post_init__(self):
+        """Set derived attributes."""
+        self.__name__ = self._func.__name__
+        self.__doc__ = self._func.__doc__
+
+    def __call__(self, rhs: StateDeque, step: float) -> StateIncrement:
+        """Pass arguments to wrapped time stepping function and return result."""
+        return self._func(rhs, step)
 
 
 def seconds_to_timedelta64(dt: float) -> np.timedelta64:
@@ -53,19 +86,16 @@ def seconds_to_timedelta64(dt: float) -> np.timedelta64:
 
 def time_stepping_function(
     n_rhs: int, n_state: int
-) -> Callable[[TimeSteppingFunction], TimeSteppingFunction]:
-    """Decorate function by adding `n_rhs` and `n_state` attributes."""
+) -> Callable[[TimeSteppingFunction], TimeSteppingScheme]:
+    """Decorate function by adding `n_rhs` and `n_state` attributes.
+
+    Turns a :py:class:`TimeSteppingFunction` into a instance of :py:class:`TimeSteppingScheme`.
+    """
     if n_state < 1 or n_rhs < 1:
         raise ValueError("n_rhs and n_state both needs to be larger than 0.")
 
-    def decorator(func: TimeSteppingFunction) -> TimeSteppingFunction:
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        wrapper.n_rhs = n_rhs
-        wrapper.n_state = n_state
-        return wrapper
+    def decorator(func: TimeSteppingFunction) -> TimeSteppingScheme:
+        return TimeSteppingScheme(func, n_rhs, n_state)
 
     return decorator
 
@@ -84,6 +114,13 @@ def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
         terms.
     step : float
         Time step size.
+
+    Attributes
+    ----------
+    n_rhs: int
+      Number of previous rhs evaluations required by the scheme
+    n_state: int
+      Number of previous states required by the scheme
 
     Returns
     -------
@@ -112,6 +149,13 @@ def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
         terms.
     step : float
         Time step size.
+
+    Attributes
+    ----------
+    n_rhs: int
+      Number of previous rhs evaluations required by the scheme
+    n_state: int
+      Number of previous states required by the scheme
 
     Returns
     -------
@@ -151,6 +195,13 @@ def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
         terms.
     step : float
         Time step size.
+
+    Attributes
+    ----------
+    n_rhs: int
+      Number of previous rhs evaluations required by the scheme
+    n_state: int
+      Number of previous states required by the scheme
 
     Returns
     -------
@@ -219,7 +270,7 @@ def integrate(
     initial_state: State,
     params: Parameters,
     RHS: Callable[[State, Parameters], State],
-    scheme: TimeSteppingFunction = adams_bashforth3,
+    scheme: TimeSteppingScheme = adams_bashforth3,
     step: float = 1.0,  # time stepping in s
     time: float = 3600.0,  # end time
 ) -> Generator[State, None, None]:
@@ -235,7 +286,7 @@ def integrate(
       Parameters of the governing equations.
     RHS: Callable[[State, Parameters], State]
       Function defining the set of equations to integrate.
-    scheme: TimeSteppingFunction, default=adams_bashforth3
+    scheme: TimeSteppingScheme, default=adams_bashforth3
       Time integration scheme to use
     step: float, default=1.0
       Length of time step
@@ -260,7 +311,7 @@ def integrate(
 
     try:
         state = deque([initial_state], maxlen=scheme.n_state)
-        rhs = deque([], maxlen=scheme.n_rhs)
+        rhs: StateDeque = deque([], maxlen=scheme.n_rhs)
     except AttributeError:
         raise AttributeError(
             f"Either n_state or n_rhs attribute missing for {scheme.__name__}. "

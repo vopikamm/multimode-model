@@ -8,7 +8,7 @@ import numpy as np
 from dataclasses import dataclass, field, asdict, InitVar
 from .grid import Grid, StaggeredGrid
 from .coriolis import CoriolisFunc
-from typing import Dict, Optional
+from typing import Dict, Optional, Mapping, Hashable, Any
 
 try:
     import xarray
@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover
     has_xarray = False
 
     # for type hinting
-    class xarray:
+    class xarray:  # type: ignore
         """Necessary for type hinting to work."""
 
         DataArray = None
@@ -112,7 +112,7 @@ class Parameters:
         """
         if coriolis_func is None or grids is None:
             return {}
-        _f = {name: coriolis_func(grid["y"]) for name, grid in asdict(grids).items()}
+        _f = {name: coriolis_func(grid.y) for name, grid in asdict(grids).items()}
         return _f
 
 
@@ -181,17 +181,17 @@ class Variable:
         data[self.grid.mask == 0] = np.nan
         data = np.expand_dims(data, axis=0)
 
-        coords = dict(
+        coords: Mapping[Hashable, Any] = dict(
             x=(("j", "i"), self.grid.x),
             y=(("j", "i"), self.grid.y),
         )
-        dims = ("j", "i")
+        dims = ["j", "i"]
 
         if self.grid.ndim >= 3:
             coords["z"] = (("z",), self.grid.z)  # type: ignore
-            dims = ("z",) + dims
+            dims.insert(0, "z")
 
-        dims = ("time",) + dims
+        dims.insert(0, "time")
         coords["time"] = (("time",), [self.time])  # type: ignore
 
         return xarray.DataArray(  # type: ignore

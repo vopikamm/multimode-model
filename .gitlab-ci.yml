@@ -5,6 +5,7 @@
 image: mambaorg/micromamba:latest
 stages:
 - audit
+- lint
 - test
 - deploy
 
@@ -13,9 +14,25 @@ sast:
 include:
 - template: Security/SAST.gitlab-ci.yml
 
+lint:
+  stage: lint
+  needs: []
+  script:
+  - micromamba install -y -n base -c conda-forge flake8 flake8-docstrings
+  - flake8 .
+
+type_check:
+  stage: lint
+  needs: []
+  script:
+  - micromamba install -y -n base -c conda-forge python=3.9.0 pip
+  - pip install -e .[lint,xarray]
+  - mypy --install-types --non-interactive
+  - mypy
+
 test_3.9:
   stage: test
-  needs: []
+  needs: [type_check]
   script:
   - micromamba install -y -n base -c conda-forge python=3.9.0 pip
   - pip install -e .[test,xarray]
@@ -27,7 +44,7 @@ test_3.9:
 
 test_3.8:
   stage: test
-  needs: []
+  needs: [type_check]
   script:
   - micromamba install -y -n base -c conda-forge python=3.8.0 pip
   - pip install -e .[test,xarray]
@@ -35,18 +52,11 @@ test_3.8:
 
 test_3.7:
   stage: test
-  needs: []
+  needs: [type_check]
   script:
   - micromamba install -y -n base -c conda-forge python=3.7.0 pip
   - pip install -e .[test,xarray]
   - py.test
-
-lint:
-  stage: test
-  needs: []
-  script:
-  - micromamba install -y -n base -c conda-forge flake8 flake8-docstrings
-  - flake8 .
 
 pages:
   stage: deploy

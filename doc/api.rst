@@ -17,6 +17,7 @@ This page provides an auto-generated summary of multimodemodel's API
    Variable.safe_data
    State
    State.__add__
+   Shape
    Grid
    Grid.cartesian
    Grid.regular_lat_lon
@@ -27,6 +28,8 @@ This page provides an auto-generated summary of multimodemodel's API
    integrate
    linearised_SWE
    TimeSteppingFunction
+   TimeSteppingScheme
+   TimeSteppingScheme.__call__
    StateIncrement
    time_stepping_function
    euler_forward

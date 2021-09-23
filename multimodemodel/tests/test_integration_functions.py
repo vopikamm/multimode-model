@@ -168,10 +168,15 @@ class TestIntegration:
 
         d_state = swe.adams_bashforth2(rhs, step=dt)  # type: ignore
 
-        assert np.all(d_state.u.data == d_u)
-        assert np.all(d_state.v.data == d_u)
-        assert np.all(d_state.eta.data == d_u)
-        assert d_state.u.time == d_state.eta.time == d_state.v.time == t
+        assert np.all(d_state.variables["u"].data == d_u)
+        assert np.all(d_state.variables["v"].data == d_u)
+        assert np.all(d_state.variables["eta"].data == d_u)
+        assert (
+            d_state.variables["u"].time
+            == d_state.variables["eta"].time
+            == d_state.variables["v"].time
+            == t
+        )
 
     def test_adams_bashforth2(self):
         """Test adams_bashforth2."""
@@ -232,7 +237,12 @@ class TestIntegration:
         assert np.all(d_state.variables["u"].data == ds3.variables["u"].data)
         assert np.all(d_state.variables["v"].data == ds3.variables["v"].data)
         assert np.all(d_state.variables["eta"].data == ds3.variables["eta"].data)
-        assert d_state.u.time == d_state.eta.time == d_state.v.time == t3
+        assert (
+            d_state.variables["u"].time
+            == d_state.variables["eta"].time
+            == d_state.variables["v"].time
+            == t3
+        )
 
     def test_adams_bashforth3(self):
         """Test adams_bashforth3."""
@@ -309,7 +319,12 @@ class TestIntegration:
         assert np.allclose(d_state.variables["u"].data, ds4.variables["u"].data)
         assert np.allclose(d_state.variables["v"].data, ds4.variables["v"].data)
         assert np.allclose(d_state.variables["eta"].data, ds4.variables["eta"].data)
-        assert d_state.u.time == d_state.eta.time == d_state.v.time == t4
+        assert (
+            d_state.variables["u"].time
+            == d_state.variables["eta"].time
+            == d_state.variables["v"].time
+            == t4
+        )
 
     def test_adams_bashforth3_adams_bashforth2_dropin(self):
         """Test adams_bashforth2."""
@@ -343,10 +358,15 @@ class TestIntegration:
 
         d_state = swe.adams_bashforth3(rhs, step=dt)  # type: ignore
 
-        assert np.all(d_state.u.data == d_u)
-        assert np.all(d_state.v.data == d_v)
-        assert np.all(d_state.eta.data == d_eta)
-        assert d_state.u.time == d_state.eta.time == d_state.v.time == t3
+        assert np.all(d_state.variables["u"].data == d_u)
+        assert np.all(d_state.variables["v"].data == d_v)
+        assert np.all(d_state.variables["eta"].data == d_eta)
+        assert (
+            d_state.variables["u"].time
+            == d_state.variables["eta"].time
+            == d_state.variables["v"].time
+            == t3
+        )
 
     def test_integrator(self):
         """Test integrate."""
