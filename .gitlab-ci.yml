@@ -48,7 +48,7 @@ lint:
   - micromamba install -y -n base -c conda-forge flake8 flake8-docstrings
   - flake8 .
 
-docs:
+pages:
   stage: deploy
   needs: [test_3.9]
   script:
