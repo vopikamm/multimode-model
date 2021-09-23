@@ -4,8 +4,8 @@ To be used optional in integrate function.
 """
 
 import sys
-import numpy as np
 from collections import deque
+import numpy as np
 from dataclasses import dataclass, field
 from .datastructure import Variable, Parameters, State
 from typing import Callable, Generator
@@ -30,6 +30,7 @@ else:
 
 
 StateIncrement = State
+
 TimeSteppingFunction = Callable[[StateDeque, float], StateIncrement]
 
 

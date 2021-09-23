@@ -17,7 +17,6 @@ This page provides an auto-generated summary of multimodemodel's API
    Variable.safe_data
    State
    State.__add__
-   Shape
    Grid
    Grid.cartesian
    Grid.regular_lat_lon
@@ -45,3 +44,5 @@ This page provides an auto-generated summary of multimodemodel's API
    f_constant
    beta_plane
    f_on_sphere
+   typing.Array
+   typing.Shape

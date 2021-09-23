@@ -3,12 +3,11 @@
 from __future__ import annotations  # enable type hinting for factory methods
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Callable, Tuple
+from .typing import Array, Shape
 import numpy as np
 from enum import Enum, unique
 
 from .jit import _numba_2D_grid_iterator_i8
-
-Shape = Tuple[int, ...]
 
 
 @unique
@@ -35,23 +34,23 @@ class Grid:
 
     Parameters
     ----------
-    x : np.ndarray
-      2D np.ndarray of x-coordinates on grid
-    y : np.ndarray
-      2D np.ndarray of y-coordinates on grid
-    z : np.ndarray, default=None
-      1D np.ndarray of z coordinates.
-    mask : np.ndarray, default=None
+    x : Array
+      2D Array of x-coordinates on grid
+    y : Array
+      2D Array of y-coordinates on grid
+    z : Array, default=None
+      1D Array of z coordinates.
+    mask : Array, default=None
       Ocean mask, 1 where ocean is, 0 where land is.
       Default is a closed basin
 
     Attributes
     ----------
-    dx : np.ndarray
+    dx : Array
       Grid spacing in x.
-    dy : np.ndarray
+    dy : Array
       Grid spacing in y.
-    dz : np.ndarray
+    dz : Array
       Grid spacing in z.
 
     Raises
@@ -64,10 +63,10 @@ class Grid:
 
     def __init__(
         self,
-        x: np.ndarray,
-        y: np.ndarray,
-        z: Optional[np.ndarray] = None,
-        mask: Optional[np.ndarray] = None,
+        x: Array,
+        y: Array,
+        z: Optional[Array] = None,
+        mask: Optional[Array] = None,
     ):
         """Initialize self."""
         self.x = x
@@ -115,12 +114,12 @@ class Grid:
         """Return axis of x dimension."""
         return -3
 
-    def _compute_grid_spacing(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _compute_grid_spacing(self) -> Tuple[Array, Array, Array]:
         dx, dy = self._compute_horizontal_grid_spacing()
         dz = self._compute_vertical_grid_spacing()
         return dx, dy, dz
 
-    def _compute_horizontal_grid_spacing(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _compute_horizontal_grid_spacing(self) -> Tuple[Array, Array]:
         """Compute the spatial differences along x and y."""
         dx = np.diff(self.x, axis=self.dim_x)
         dy = np.diff(self.y, axis=self.dim_y)
@@ -130,7 +129,7 @@ class Grid:
         dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
         return dx, dy
 
-    def _compute_vertical_grid_spacing(self) -> np.ndarray:
+    def _compute_vertical_grid_spacing(self) -> Array:
         """Compute grid box size along z."""
         if len(self.z) == 0:
             return np.array([], dtype=self.z.dtype)
@@ -141,22 +140,22 @@ class Grid:
     @classmethod
     def cartesian(
         cls: Any,
-        x: np.ndarray,
-        y: np.ndarray,
-        z: Optional[np.ndarray] = None,
-        mask: Optional[np.ndarray] = None,
+        x: Array,
+        y: Array,
+        z: Optional[Array] = None,
+        mask: Optional[Array] = None,
     ) -> Grid:
         """Generate a Cartesian grid.
 
         Parameters
         ----------
-        x : np.ndarray
+        x : Array
           1D Array of coordinates along x dimension.
-        y : np.ndarray
+        y : Array
           1D Array of coordinates along y dimension.
-        z : np.ndarray, default=None
+        z : Array, default=None
           1D Array of coordinates along z dimension.
-        mask : np.ndarray, default=None
+        mask : Array, default=None
           Optional ocean mask. Default is a closed domain.
         """
         assert x.ndim == y.ndim == 1
@@ -180,8 +179,8 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
-        z: Optional[np.ndarray] = None,
-        mask: Optional[np.ndarray] = None,
+        z: Optional[Array] = None,
+        mask: Optional[Array] = None,
         radius: float = 6_371_000.0,
     ) -> Grid:
         """Generate a regular spherical grid.
@@ -200,9 +199,9 @@ class Grid:
           Number of grid points along x dimension.
         ny : int
           Number of grid points along y dimension.
-        z : np.ndarray, default=None
+        z : Array, default=None
           Optional 1D coordinate array along vertical dimension.
-        mask : np.ndarray, default=None
+        mask : Array, default=None
           Optional ocean mask. Default is a closed domain.
         radius : float, default=6_371_000.0
           Radius of the sphere, defaults to Earths' radius measured in meters.
@@ -237,7 +236,7 @@ class Grid:
             assert self.z.ndim == 1
 
     @staticmethod
-    def _get_default_mask(shape: Shape) -> np.ndarray:
+    def _get_default_mask(shape: Shape) -> Array:
         mask = np.ones(shape, dtype=np.int8)
         mask[..., 0, :] = 0
         mask[..., -1, :] = 0
@@ -388,8 +387,8 @@ class StaggeredGrid:
 
     @staticmethod
     def _compute_mask(
-        func: Callable[..., np.ndarray], from_grid: Grid, shift: GridShift
-    ) -> np.ndarray:
+        func: Callable[..., Array], from_grid: Grid, shift: GridShift
+    ) -> Array:
         if from_grid.mask.ndim <= 2:  # type: ignore
             return func(
                 from_grid.shape[from_grid.dim_x],
@@ -416,7 +415,7 @@ class StaggeredGrid:
         j: int,
         ni: int,
         nj: int,
-        eta_mask: np.ndarray,
+        eta_mask: Array,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover
@@ -433,7 +432,7 @@ class StaggeredGrid:
         j: int,
         ni: int,
         nj: int,
-        eta_mask: np.ndarray,
+        eta_mask: Array,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover
@@ -450,7 +449,7 @@ class StaggeredGrid:
         j: int,
         ni: int,
         nj: int,
-        eta_mask: np.ndarray,
+        eta_mask: Array,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover

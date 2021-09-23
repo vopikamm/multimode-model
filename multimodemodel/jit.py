@@ -2,6 +2,7 @@
 import numba
 from inspect import signature
 from typing import Tuple, Any, Callable, Type
+from .typing import Array
 from functools import wraps, partial
 import numpy as np
 
@@ -73,7 +74,7 @@ def _numba_2D_grid_iterator_template(func: Callable[..., float], return_type: Ty
     @numba.njit
     def _interate_over_grid_2D(
         ni: int, nj: int, *args: Tuple[Any]
-    ) -> np.ndarray:  # pragma: no cover
+    ) -> Array:  # pragma: no cover
         result = np.empty((nj, ni), dtype=return_type)
         for j in range(nj):
             for i in range(ni):
