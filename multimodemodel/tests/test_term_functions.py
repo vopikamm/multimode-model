@@ -1,4 +1,5 @@
 """Test the behavior of the term functions."""
+from typing import Tuple
 from multimodemodel.coriolis import f_constant
 from multimodemodel.grid import StaggeredGrid
 import numpy as np
@@ -8,7 +9,7 @@ import multimodemodel as swe
 some_datetime = np.datetime64("2001-01-01", "s")
 
 
-def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0):
+def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> Tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
     x = np.arange(nx) * dx
     y = np.arange(ny) * dy
@@ -55,7 +56,8 @@ class TestTerms:
         """Test mapping of 2D iterator on 3D data."""
         dx, dy = 1, 2
         ni, nj = 10, 5
-        x, y, z = *get_x_y(ni, nj, dx, dy), np.arange(10.0)
+        x, y = get_x_y(ni, nj, dx, dy)
+        z = np.arange(10.0)
         c_grid_2D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
         c_grid_3D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], z=z)
 

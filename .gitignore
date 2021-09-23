@@ -8,3 +8,4 @@ multimodemodel.egg-info
 .DS_store
 *-checkpoint.ipynb
 *_checkpoints
+.mypy_cache
