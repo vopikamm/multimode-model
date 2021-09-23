@@ -6,6 +6,7 @@ computationally costly operations.
 """
 
 from typing import Callable, Tuple, Any
+from .typing import Array
 import numpy as np
 from .jit import _numba_2D_grid_iterator, _cyclic_shift
 from .datastructure import State, Variable, Parameters
@@ -45,10 +46,10 @@ def _pressure_gradient_i(
     j: int,
     ni: int,
     nj: int,
-    eta: np.ndarray,
+    eta: Array,
     g: float,
-    dx_u: np.ndarray,
-    mask_u: np.ndarray,
+    dx_u: Array,
+    mask_u: Array,
 ) -> float:  # pragma: no cover
     """Compute the pressure gradient along the first dimension."""
     return -g * mask_u[j, i] * (eta[j, i] - eta[j, i - 1]) / dx_u[j, i]
@@ -60,10 +61,10 @@ def _pressure_gradient_j(
     j: int,
     ni: int,
     nj: int,
-    eta: np.ndarray,
+    eta: Array,
     g: float,
-    dy_v: np.ndarray,
-    mask_v: np.ndarray,
+    dy_v: Array,
+    mask_v: Array,
 ) -> float:  # pragma: no cover
     """Compute the pressure gradient along the second dimension."""
     return -g * mask_v[j, i] * (eta[j, i] - eta[j - 1, i]) / dy_v[j, i]
@@ -75,12 +76,12 @@ def _divergence_i(
     j: int,
     ni: int,
     nj: int,
-    u: np.ndarray,
-    mask_u: np.ndarray,
+    u: Array,
+    mask_u: Array,
     H: float,
-    dx_eta: np.ndarray,
-    dy_eta: np.ndarray,
-    dy_u: np.ndarray,
+    dx_eta: Array,
+    dy_eta: Array,
+    dy_u: Array,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the first dimension."""
     ip1 = _cyclic_shift(i, ni, 1)
@@ -101,12 +102,12 @@ def _divergence_j(
     j: int,
     ni: int,
     nj: int,
-    v: np.ndarray,
-    mask_v: np.ndarray,
+    v: Array,
+    mask_v: Array,
     H: float,
-    dx_eta: np.ndarray,
-    dy_eta: np.ndarray,
-    dx_v: np.ndarray,
+    dx_eta: Array,
+    dy_eta: Array,
+    dx_v: Array,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the second dimension."""
     jp1 = _cyclic_shift(j, nj, 1)
@@ -127,10 +128,10 @@ def _coriolis_j(
     j: int,
     ni: int,
     nj: int,
-    u: np.ndarray,
-    mask_u: np.ndarray,
-    mask_v: np.ndarray,
-    f: np.ndarray,
+    u: Array,
+    mask_u: Array,
+    mask_v: Array,
+    f: Array,
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the second dimension."""
     ip1 = _cyclic_shift(i, ni, 1)
@@ -152,10 +153,10 @@ def _coriolis_i(
     j: int,
     ni: int,
     nj: int,
-    v: np.ndarray,
-    mask_v: np.ndarray,
-    mask_u: np.ndarray,
-    f: np.ndarray,
+    v: Array,
+    mask_v: Array,
+    mask_u: Array,
+    f: Array,
 ) -> float:  # pragma: no cover
     """Compute the coriolis term along the first dimension."""
     jp1 = _cyclic_shift(j, nj, 1)
@@ -178,10 +179,10 @@ function output to dataclasses.
 
 
 def _apply_2D_iterator(
-    func: Callable[..., np.ndarray],
+    func: Callable[..., Array],
     args: Tuple[Any, ...],
     grid: Grid,
-) -> np.ndarray:
+) -> Array:
     if grid.ndim == 3:
         func = _map_2D_iterator_on_3D(func)
         args = (grid.shape[grid.dim_z],) + args

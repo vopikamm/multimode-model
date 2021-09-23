@@ -6,10 +6,11 @@ explicit type of these. The callables will be used to
 initialize the Parameter class.
 """
 
+from .typing import Array
 from typing import Callable
 import numpy as np
 
-CoriolisFunc = Callable[[np.ndarray], np.ndarray]
+CoriolisFunc = Callable[[Array], Array]
 
 
 def f_constant(f: float = 0) -> CoriolisFunc:
@@ -25,7 +26,7 @@ def f_constant(f: float = 0) -> CoriolisFunc:
     CoriolisFunc
     """
 
-    def closure(y: np.ndarray) -> np.ndarray:
+    def closure(y: Array) -> Array:
         return np.ones(y.shape) * f
 
     return closure
@@ -53,7 +54,7 @@ def beta_plane(f0: float, beta: float, y0: float) -> CoriolisFunc:
     CoriolisFunc
     """
 
-    def closure(y: np.ndarray) -> np.ndarray:
+    def closure(y: Array) -> Array:
         return f0 + beta * (y - y0)
 
     return closure
@@ -81,7 +82,7 @@ def f_on_sphere(omega: float = 7.272205e-05) -> CoriolisFunc:
 
     """
 
-    def closure(y: np.ndarray) -> np.ndarray:
+    def closure(y: Array) -> Array:
         return 2 * omega * np.sin(np.pi / 180.0 * y)
 
     return closure

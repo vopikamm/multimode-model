@@ -7,6 +7,7 @@ and their associated grids.
 import numpy as np
 from dataclasses import dataclass, field, asdict, InitVar
 from .grid import Grid, StaggeredGrid
+from .typing import Array
 from .coriolis import CoriolisFunc
 from typing import Dict, Optional, Mapping, Hashable, Any
 
@@ -65,7 +66,7 @@ class Parameters:
     on_grid: InitVar[
         Optional[StaggeredGrid]
     ] = None  #: StaggeredGrid object providing the necessary grid information if a parameter depends on space
-    _f: Dict[str, np.ndarray] = field(init=False)
+    _f: Dict[str, Array] = field(init=False)
 
     def __post_init__(
         self,
@@ -76,7 +77,7 @@ class Parameters:
         self._f = self._compute_f(coriolis_func, on_grid)
 
     @property
-    def f(self) -> Dict[str, np.ndarray]:
+    def f(self) -> Dict[str, Array]:
         """Getter of the dictionary holding the Coriolis parameter.
 
         Raises
@@ -94,7 +95,7 @@ class Parameters:
 
     def _compute_f(
         self, coriolis_func: Optional[CoriolisFunc], grids: Optional[StaggeredGrid]
-    ) -> Dict[str, np.ndarray]:
+    ) -> Dict[str, Array]:
         """Compute the coriolis parameter for all subgrids.
 
         This method needs to be called before a rotating system
@@ -120,7 +121,7 @@ class Parameters:
 class Variable:
     """Variable class consisting of the data, a Grid instance and a time stamp.
 
-    A Variable object contains the data for a single time slice of a variable as a np.ndarray,
+    A Variable object contains the data for a single time slice of a variable as a Array,
     the grid object describing the grid arrangement and a single time stamp. The data attribute
     can take the value of :py:obj:`None` which is treated like an array of zeros when adding the
     variable to another variable.
@@ -130,7 +131,7 @@ class Variable:
 
     Parameters
     ----------
-    data : np.ndarray, default=None
+    data : Array, default=None
       Array containing a single time slice of a variable. If it is `None`, it will be interpreted
       as zero. To ensure a :py:class:`~numpy.ndarray` as return type, use the property :py:attr:`.safe_data`.
     grid: Grid
@@ -144,7 +145,7 @@ class Variable:
       Raised if `data.shape` does not match `grid.shape`.
     """
 
-    data: Optional[np.ndarray]
+    data: Optional[Array]
     grid: Grid
     time: np.datetime64
 
@@ -201,7 +202,7 @@ class Variable:
         )
 
     @property
-    def safe_data(self) -> np.ndarray:
+    def safe_data(self) -> Array:
         """Return `data` or, if it is `None`, a zero array of appropriate shape."""
         if self.data is None:
             return np.zeros(self.grid.shape)
