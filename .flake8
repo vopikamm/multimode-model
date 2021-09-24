@@ -1,6 +1,6 @@
 [flake8]
 ignore = D203, W503, E203
-exclude = .git,__pycache__,multimodemodel/tests
+exclude = .git,__pycache__
 max-complexity = 10
 max-line-length=88
-per-file-ignores = __init__.py:F401, test_:F401
+per-file-ignores = __init__.py:F401
