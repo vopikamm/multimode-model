@@ -30,6 +30,7 @@ setup(
         "numpy",
     ],
     extras_require={
+        "distributed": ["dask", "distributed", "redis"],
         "xarray": ["xarray"],
         "test": ["pytest", "pytest-benchmark", "pytest-cov"],
         "lint": ["flake8", "black"],
