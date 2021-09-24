@@ -6,13 +6,16 @@ from dask.distributed import Client, Future
 from redis import Redis
 from struct import pack
 from collections import deque
+from typing import Tuple
 
 
-def _new_grid(x: np.array, y: np.array, mask: np.array) -> Grid:
+def _new_grid(x: np.ndarray, y: np.ndarray, mask: np.ndarray) -> Grid:
     return Grid(x.copy(), y.copy(), mask.copy())
 
 
-def _new_variable(data: np.array, x: np.array, y: np.array, mask: np.array) -> Variable:
+def _new_variable(
+    data: np.ndarray, x: np.ndarray, y: np.ndarray, mask: np.ndarray
+) -> Variable:
     """Create explicit copies of all input arrays and creates new Variable object."""
     return Variable(data.copy(), _new_grid(x, y, mask))
 
@@ -34,13 +37,13 @@ class ParameterSplit(Parameters, Splitable):
         self.rho_0 = other.rho_0
         self._f = data
 
-    def split(self, parts: int, dim: tuple):
+    def split(self, parts: int, dim: tuple) -> Tuple["ParameterSplit", ...]:
         """Split Parameter's Coriolis data."""
         data = None
         try:
             data = self.f
         except RuntimeError:
-            return self
+            return parts * (self,)
 
         # Split array for each key, creating a new dictionary with the same keys
         # but holding lists of arrays
@@ -49,15 +52,17 @@ class ParameterSplit(Parameters, Splitable):
         # Create list or dictionaries that hold just one part of splitted arrays
         out = [{key: new[key][i] for key in new} for i in range(parts)]
 
-        return [self.__class__(self, o) for o in out]
+        return tuple(self.__class__(self, o) for o in out)
 
     @classmethod
     def merge(cls, others, dim: int):
         """Merge Parameter's Coriolis data."""
         data = {}
         try:
-            data = {key: np.concatenate([o.f[key] for o in others], dim)
-                    for key in others[0].f}
+            data = {
+                key: np.concatenate([o.f[key] for o in others], dim)
+                for key in others[0].f
+            }
         except RuntimeError:
             pass
 
@@ -137,7 +142,7 @@ class DomainState(State, Domain):
                 deque([], maxlen=self.history.maxlen),
                 self.p,
                 0,
-                i
+                i,
             )
             for i in range(parts)
         ]
@@ -169,7 +174,7 @@ class DomainState(State, Domain):
             deque([], maxlen=others[0].history.maxlen),
             ParameterSplit.merge([o.p for o in others], dim),
             others[0].get_iteration(),
-            others[0].get_id()
+            others[0].get_id(),
         )
 
 
@@ -177,16 +182,16 @@ class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
 
     def __init__(
-            self,
-            u: Variable,
-            v: Variable,
-            eta: Variable,
-            ancestors: deque,
-            p: Parameters,
-            width: int,
-            dim: int,
-            iteration: int,
-            id: int = 0
+        self,
+        u: Variable,
+        v: Variable,
+        eta: Variable,
+        ancestors: deque,
+        p: Parameters,
+        width: int,
+        dim: int,
+        iteration: int,
+        id: int = 0,
     ):
         """Create BorderState in the same way as DomainState."""
         super().__init__(u, v, eta, ancestors, p, iteration, id)
@@ -217,8 +222,9 @@ class BorderState(DomainState, Border):
         p = base.p
         if direction:
             try:
-                p = ParameterSplit(base.p, {key: base.p.f[key][:, place:]
-                                            for key in base.p.f})
+                p = ParameterSplit(
+                    base.p, {key: base.p.f[key][:, place:] for key in base.p.f}
+                )
             except RuntimeError:
                 pass
 
@@ -244,8 +250,9 @@ class BorderState(DomainState, Border):
             )
         else:
             try:
-                p = ParameterSplit(base.p, {key: base.p.f[key][:, :width]
-                                            for key in base.p.f})
+                p = ParameterSplit(
+                    base.p, {key: base.p.f[key][:, :width] for key in base.p.f}
+                )
             except RuntimeError:
                 pass
 
@@ -284,8 +291,10 @@ class Tail(Tailor):
 
     def make_borders(self, base: Domain, width: int, dim: int) -> (Border, Border):
         """Implement make_borders method from API."""
-        return (BorderState.create_border(base, width, False, dim),
-                BorderState.create_border(base, width, True, dim))
+        return (
+            BorderState.create_border(base, width, False, dim),
+            BorderState.create_border(base, width, True, dim),
+        )
 
     def stitch(self, base: DomainState, borders: tuple, dims: tuple) -> DomainState:
         """Implement stitch method from API."""
@@ -303,13 +312,13 @@ class Tail(Tailor):
                 )
             )
 
-        u.data[:, (u.data.shape[1] - r_border.get_width()):] = r_border.get_data()[
+        u.data[:, (u.data.shape[1] - r_border.get_width()) :] = r_border.get_data()[
             0
         ].safe_data.copy()
-        v.data[:, (u.data.shape[1] - r_border.get_width()):] = r_border.get_data()[
+        v.data[:, (u.data.shape[1] - r_border.get_width()) :] = r_border.get_data()[
             1
         ].safe_data.copy()
-        eta.data[:, (u.data.shape[1] - r_border.get_width()):] = r_border.get_data()[
+        eta.data[:, (u.data.shape[1] - r_border.get_width()) :] = r_border.get_data()[
             2
         ].safe_data.copy()
 
@@ -317,23 +326,21 @@ class Tail(Tailor):
         v.data[:, : l_border.get_width()] = l_border.get_data()[1].safe_data.copy()
         eta.data[:, : l_border.get_width()] = l_border.get_data()[2].safe_data.copy()
 
-        return DomainState(u, v, eta,
-                           base.history,
-                           base.p,
-                           base.get_iteration(),
-                           base.get_id())
+        return DomainState(
+            u, v, eta, base.history, base.p, base.get_iteration(), base.get_id()
+        )
 
 
 def _dump_to_redis(domain: DomainState):
-    r = Redis(host='localhost', port='6379', db='0')
+    r = Redis(host="localhost", port="6379", db="0")
 
     if r.ping():
         flag = int(r.get("_avg_eta"))
 
         if flag == 1:
-            k = format(domain.id, '05d') + "_" + format(domain.it, '05d') + "_eta"
+            k = format(domain.id, "05d") + "_" + format(domain.it, "05d") + "_eta"
             h, w = domain.eta.safe_data.shape
-            shape = pack('>II', h, w)
+            shape = pack(">II", h, w)
             encoded = shape + domain.eta.safe_data.tobytes()
 
             print(k)
@@ -370,13 +377,15 @@ class GeneralSolver(Solver):
         inc = self.slv(domain, domain.p)
         domain.history.append(inc)
         new = self.sch(domain.history, domain.p, self.step)
-        return DomainState(domain.u + new.u,
-                           domain.v + new.v,
-                           domain.eta + new.eta,
-                           domain.history,
-                           domain.p,
-                           domain.increment_iteration(),
-                           domain.get_id())
+        return DomainState(
+            domain.u + new.u,
+            domain.v + new.v,
+            domain.eta + new.eta,
+            domain.history,
+            domain.p,
+            domain.increment_iteration(),
+            domain.get_id(),
+        )
 
     def integration(self, domain: Domain) -> Domain:
         """Implement integration method from API."""
@@ -400,39 +409,43 @@ class GeneralSolver(Solver):
         tmp = self._integrate(tmp)
 
         u = Variable(
-            tmp.u.data[:, b_w: 2 * b_w],
+            tmp.u.data[:, b_w : 2 * b_w],
             Grid(
-                tmp.u.grid.x[:, b_w: 2 * b_w],
-                tmp.u.grid.y[:, b_w: 2 * b_w],
-                tmp.u.grid.mask[:, b_w: 2 * b_w],
+                tmp.u.grid.x[:, b_w : 2 * b_w],
+                tmp.u.grid.y[:, b_w : 2 * b_w],
+                tmp.u.grid.mask[:, b_w : 2 * b_w],
             ),
         )
 
         v = Variable(
-            tmp.v.safe_data[:, b_w: 2 * b_w],
+            tmp.v.safe_data[:, b_w : 2 * b_w],
             Grid(
-                tmp.v.grid.x[:, b_w: 2 * b_w],
-                tmp.v.grid.y[:, b_w: 2 * b_w],
-                tmp.v.grid.mask[:, b_w: 2 * b_w],
+                tmp.v.grid.x[:, b_w : 2 * b_w],
+                tmp.v.grid.y[:, b_w : 2 * b_w],
+                tmp.v.grid.mask[:, b_w : 2 * b_w],
             ),
         )
 
         eta = Variable(
-            tmp.eta.safe_data[:, b_w: 2 * b_w],
+            tmp.eta.safe_data[:, b_w : 2 * b_w],
             Grid(
-                tmp.eta.grid.x[:, b_w: 2 * b_w],
-                tmp.eta.grid.y[:, b_w: 2 * b_w],
-                tmp.eta.grid.mask[:, b_w: 2 * b_w],
+                tmp.eta.grid.x[:, b_w : 2 * b_w],
+                tmp.eta.grid.y[:, b_w : 2 * b_w],
+                tmp.eta.grid.mask[:, b_w : 2 * b_w],
             ),
         )
 
-        return BorderState(u, v, eta,
-                           past.history,
-                           past.p,
-                           border.get_width(),
-                           dim,
-                           domain.increment_iteration(),
-                           domain.get_id())
+        return BorderState(
+            u,
+            v,
+            eta,
+            past.history,
+            past.p,
+            border.get_width(),
+            dim,
+            domain.increment_iteration(),
+            domain.get_id(),
+        )
 
     def window(self, domain: Future, client: Client) -> Future:
         """Do nothing."""
