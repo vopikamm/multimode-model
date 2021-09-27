@@ -1,12 +1,12 @@
 """Implementation of domain split API."""
-from .domain_split_API import Domain, Border, Solver, Tailor, Splitable
+from .domain_split_API import Domain, Border, Solver, SplitMerger, Tailor, Splitable
 from .datastructure import State, Variable, np, Parameters
-from .grid import Grid
+from .grid import Grid, StaggeredGrid
 from dask.distributed import Client, Future
 from redis import Redis
 from struct import pack
 from collections import deque
-from typing import Tuple
+from typing import Optional, Sequence, Tuple
 
 
 def _new_grid(x: np.ndarray, y: np.ndarray, mask: np.ndarray) -> Grid:
@@ -27,6 +27,50 @@ def _copy_variable(var: Variable) -> Variable:
     )
 
 
+class RegularSplitMerger(SplitMerger):
+    """Implements splitting and merging into regular grid."""
+
+    __slots__ = ["tuple", "_parts"]
+
+    def __init__(self, parts: int, dim: Tuple[int]):
+        """Initialize class instance."""
+        self._parts = parts
+        self.dim = dim
+
+    def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
+        """Split array.
+
+        Parameter
+        ---------
+        array: np.ndarray
+          Array to split.
+
+        Returns
+        -------
+        Tuple[np.ndarray, ...]
+        """
+        return np.array_split(array, indices_or_sections=self.parts, axis=self.dim[0])
+
+    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
+        """Merge array.
+
+        Parameter
+        ---------
+        arrays: Sequence[np.ndarray]
+          Arrays to merge.
+
+        Returns
+        -------
+        np.ndarray
+        """
+        return np.concatenate(arrays, axis=self.dim[0])
+
+    @property
+    def parts(self) -> int:
+        """Return number of parts created by split."""
+        return self._parts
+
+
 class ParameterSplit(Parameters, Splitable):
     """Implements splitting and merging on Parameters class."""
 
@@ -37,64 +81,240 @@ class ParameterSplit(Parameters, Splitable):
         self.rho_0 = other.rho_0
         self._f = data
 
-    def split(self, parts: int, dim: tuple) -> Tuple["ParameterSplit", ...]:
-        """Split Parameter's Coriolis data."""
+    def split(self, splitter: SplitMerger):
+        """Split Parameter's spatially dependent data."""
         data = None
         try:
             data = self.f
         except RuntimeError:
-            return parts * (self,)
+            return splitter.parts * (self,)
 
         # Split array for each key, creating a new dictionary with the same keys
         # but holding lists of arrays
-        new = {key: np.array_split(data[key], parts, dim[0]) for key in data}
+        new = {key: splitter.split_array(data[key]) for key in data}
 
-        # Create list or dictionaries that hold just one part of splitted arrays
-        out = [{key: new[key][i] for key in new} for i in range(parts)]
+        # Create list of dictionaries that hold just one part of splitted arrays
+        out = [{key: new[key][i] for key in new} for i in range(splitter.parts)]
 
         return tuple(self.__class__(self, o) for o in out)
 
     @classmethod
-    def merge(cls, others, dim: int):
+    def merge(cls, others: Sequence[Parameters], merger: SplitMerger):
         """Merge Parameter's Coriolis data."""
         data = {}
         try:
             data = {
-                key: np.concatenate([o.f[key] for o in others], dim)
+                key: merger.merge_array([o.f[key] for o in others])
                 for key in others[0].f
             }
         except RuntimeError:
             pass
 
-        return ParameterSplit(others[0], data)
+        return cls(others[0], data)
+
+    @classmethod
+    def from_parameters(cls, params):
+        """Create from Parameters object."""
+        return cls(params, params.f)
 
 
-class DomainState(State, Domain):
-    """Implements Domain interface on State class."""
+class GridSplit(Grid, Splitable):
+    """Implements splitting and merging on Grid class."""
+
+    def split(self, splitter: SplitMerger):
+        """Split grid."""
+        x, y, mask = (splitter.split_array(arr) for arr in (self.x, self.y, self.mask))
+        return tuple(self.__class__(*args) for args in zip(x, y, mask))
+
+    @classmethod
+    def merge(cls, others, merger: SplitMerger):
+        """Merge grids."""
+        x = merger.merge_array(tuple(o.x for o in others))
+        y = merger.merge_array(tuple(o.y for o in others))
+        mask = merger.merge_array(tuple(o.mask for o in others))
+        return cls(x, y, mask)
+
+    @classmethod
+    def from_grid(cls, grid):
+        """Create from Grid object."""
+        return cls(x=grid.x, y=grid.y, mask=grid.mask)
+
+
+class StaggeredGridSplit(StaggeredGrid, Splitable):
+    """Implements splitting and merging on StaggeredGrid class."""
+
+    def __post_init__(self, *args, **kwargs):
+        """Cast Grid objects to GridSplit."""
+        # super().__post_init__(*args, **kwargs)  # Not defined on StaggeredGrid
+        self.u = GridSplit.from_grid(self.u)
+        self.v = GridSplit.from_grid(self.v)
+        self.eta = GridSplit.from_grid(self.eta)
+        self.q = GridSplit.from_grid(self.q)
+
+    def split(self, splitter: SplitMerger):
+        """Split staggered grids."""
+        splitted_grids = {
+            g: getattr(self, g).split(splitter) for g in ("u", "v", "eta", "q")
+        }
+        return tuple(
+            self.__class__(**{g: splitted_grids[g][i] for g in ("u", "v", "eta", "q")})
+            for i in range(splitter.parts)
+        )
+
+    @classmethod
+    def merge(cls, others, merger: SplitMerger):
+        """Merge staggered grids."""
+        return cls(
+            **{
+                g: GridSplit.merge((getattr(o, g) for o in others), merger)
+                for g in ("u", "v", "eta", "q")
+            }
+        )
+
+    @classmethod
+    def from_staggered_grid(cls, staggered_grid):
+        """Create from StaggeredGrid object."""
+        return cls(**{k: getattr(staggered_grid, k) for k in ("u", "v", "eta", "q")})
+
+
+class VariableSplit(Variable, Splitable):
+    """Implements splitting and merging on Variable class."""
+
+    def __post_init__(self):
+        """Post initialization logic."""
+        if not isinstance(self.grid, Splitable):
+            self.grid: GridSplit = GridSplit.from_grid(self.grid)
+
+    def split(self, splitter: SplitMerger):
+        """Split variable."""
+        data = self.safe_data
+        splitted_grid = self.grid.split(splitter)
+        if self.data is None:
+            splitted_data = splitter.parts * (None,)
+        else:
+            splitted_data = splitter.split_array(data)
+        return tuple(
+            self.__class__(data=d, grid=g) for d, g in zip(splitted_data, splitted_grid)
+        )
+
+    @classmethod
+    def merge(cls, others, merger: SplitMerger):
+        """Merge variable."""
+        return cls(
+            data=merger.merge_array([o.data for o in others]),
+            grid=GridSplit.merge([o.grid for o in others], merger),
+        )
+
+    @classmethod
+    def from_variable(cls, var):
+        """Create from Variable object."""
+        return cls(data=var.data, grid=GridSplit.from_grid(var.grid))
+
+
+class StateSplit(State, Splitable):
+    """Implements splitting and merging on State class."""
+
+    def split(self, splitter: SplitMerger):
+        """Split state."""
+        splitted_u = VariableSplit.from_variable(self.u).split(splitter)
+        splitted_v = VariableSplit.from_variable(self.v).split(splitter)
+        splitted_eta = VariableSplit.from_variable(self.eta).split(splitter)
+        return tuple(
+            self.__class__(u, v, eta)
+            for u, v, eta in zip(splitted_u, splitted_v, splitted_eta)
+        )
+
+    @classmethod
+    def merge(cls, others, merger: SplitMerger):
+        """Merge variables."""
+        return cls(
+            u=VariableSplit.merge([o.u for o in others], merger),
+            v=VariableSplit.merge([o.v for o in others], merger),
+            eta=VariableSplit.merge([o.eta for o in others], merger),
+        )
+
+    @classmethod
+    def from_state(cls, state):
+        """Create from state."""
+        return cls(
+            u=VariableSplit.from_variable(state.u),
+            v=VariableSplit.from_variable(state.v),
+            eta=VariableSplit.from_variable(state.eta),
+        )
+
+
+class StateDequeSplit(deque, Splitable):
+    """Implements splitting and merging on deque class."""
+
+    def split(self, splitter: SplitMerger):
+        """Split StateDeque."""
+        splitted_states = tuple(StateSplit.from_state(s).split(splitter) for s in self)
+        if len(splitted_states) == 0:
+            return splitter.parts * (self.__class__([], maxlen=self.maxlen),)
+        return tuple(
+            self.__class__(states, maxlen=self.maxlen)
+            for states in zip(*splitted_states)
+        )
+
+    @classmethod
+    def merge(cls, others, merger: SplitMerger):
+        """Merge StateDeques."""
+        return cls(
+            (StateSplit.merge(states, merger) for states in zip(*others)),
+            maxlen=others[0].maxlen,
+        )
+
+    @classmethod
+    def from_state_deque(cls, state_deque):
+        """Create from StateDeque object."""
+        return cls(state_deque, maxlen=state_deque.maxlen)
+
+
+class DomainState(State, Domain, Splitable):
+    """Implements Domain and Splitable interface on State class."""
+
+    __slots__ = ["u", "v", "eta", "id", "it", "history", "p"]
 
     def __init__(
         self,
         u: Variable,
         v: Variable,
         eta: Variable,
-        h: deque = deque([], maxlen=3),  # TODO: Remove mutable default value
-        p: Parameters = Parameters(),  # TODO: Remove mutable default value
+        history: Optional[StateDequeSplit] = None,
+        parameter: Optional[ParameterSplit] = None,
         it: int = 0,
         id: int = 0,
     ):
         """Create new DomainState instance from references on Variable objects."""
-        self.u = u
-        self.v = v
-        self.eta = eta
+        self.u: VariableSplit = VariableSplit.from_variable(u)
+        self.v: VariableSplit = VariableSplit.from_variable(v)
+        self.eta: VariableSplit = VariableSplit.from_variable(eta)
+        if history is None:
+            self.history: StateDequeSplit = StateDequeSplit([], maxlen=3)
+        else:
+            self.history = history
+        if parameter is None:
+            self.parameter = ParameterSplit(Parameters(), {})
+        else:
+            self.parameter = parameter
+
         self.id = id
         self.it = it
-        self.history = h
-        self.p = p
 
     @classmethod
-    def make_from_State(cls, s: State, h, p, it: int, id: int = 0):
+    def make_from_State(
+        cls, s: State, history, parameter: Parameters, it: int, id: int = 0
+    ):
         """Make DomainState object from State objects, without copying Variables."""
-        return cls(s.u, s.v, s.eta, h, p, it, id)
+        return cls(
+            VariableSplit.from_variable(s.u),
+            VariableSplit.from_variable(s.v),
+            VariableSplit.from_variable(s.eta),
+            StateDequeSplit.from_state_deque(history),
+            ParameterSplit.from_parameters(parameter),
+            it,
+            id,
+        )
 
     def set_id(self, id):
         """Set id value."""
@@ -118,69 +338,47 @@ class DomainState(State, Domain):
         return self.it + 1
 
     def split(
-        self, parts: int, dim: tuple
+        self, splitter: SplitMerger
     ):  # TODO: raise error if shape[dim[0]] // parts < 2
         """Implement the split method from API."""
-        v_x = np.array_split(self.v.grid.x, parts, dim[0])
-        v_y = np.array_split(self.v.grid.y, parts, dim[0])
-        v_mask = np.array_split(self.v.grid.mask, parts, dim[0])
-        v = np.array_split(self.v.safe_data, parts, dim[0])
+        splitted = (
+            self.u.split(splitter),
+            self.v.split(splitter),
+            self.eta.split(splitter),
+            self.history.split(splitter),
+            self.parameter.split(splitter),
+        )
 
-        u_x = np.array_split(self.u.grid.x, parts, dim[0])
-        u_y = np.array_split(self.u.grid.y, parts, dim[0])
-        u_mask = np.array_split(self.u.grid.mask, parts, dim[0])
-        u = np.array_split(self.u.safe_data, parts, dim[0])
+        # [print(len(e)) for e in splitted]
 
-        eta_x = np.array_split(self.eta.grid.x, parts, dim[0])
-        eta_y = np.array_split(self.eta.grid.y, parts, dim[0])
-        eta_mask = np.array_split(self.eta.grid.mask, parts, dim[0])
-        eta = np.array_split(self.eta.safe_data, parts, dim[0])
-
-        out = [
+        out = tuple(
             self.__class__(
-                _new_variable(u[i], u_x[i], u_y[i], u_mask[i]),  # TODO: use GridSplit
-                _new_variable(v[i], v_x[i], v_y[i], v_mask[i]),
-                _new_variable(eta[i], eta_x[i], eta_y[i], eta_mask[i]),
-                deque(
-                    [], maxlen=self.history.maxlen
-                ),  # TODO: splitting causes loss of history
-                self.p,  # TODO: parameters are referenced, but not splitted
-                0,  # TODO: splitting resets iteration counter
+                u,
+                v,
+                eta,
+                h,
+                p,
+                self.it,
                 i,
             )
-            for i in range(parts)
-        ]
+            for i, (u, v, eta, h, p) in enumerate(zip(*splitted))
+        )
 
         return out
 
     @classmethod
-    def merge(cls, others, dim: int):
+    def merge(cls, others, merger: SplitMerger):
         """Implement merge method from API."""
-        v_x = np.concatenate([o.v.grid.x for o in others], dim)
-        v_y = np.concatenate([o.v.grid.y for o in others], dim)
-        v_mask = np.concatenate([o.v.grid.mask for o in others], dim)
-        v = np.concatenate([o.v.safe_data for o in others], dim)
-
-        u_x = np.concatenate([o.u.grid.x for o in others], dim)
-        u_y = np.concatenate([o.u.grid.y for o in others], dim)
-        u_mask = np.concatenate([o.u.grid.mask for o in others], dim)
-        u = np.concatenate([o.u.safe_data for o in others], dim)
-
-        eta_x = np.concatenate([o.eta.grid.x for o in others], dim)
-        eta_y = np.concatenate([o.eta.grid.y for o in others], dim)
-        eta_mask = np.concatenate([o.eta.grid.mask for o in others], dim)
-        eta = np.concatenate([o.eta.safe_data for o in others], dim)
-
+        if any(tuple(o.it != others[0].it for o in others)):
+            raise ValueError(
+                "Try to merge DomainStates that differ in iteration counter."
+            )
         return DomainState(
-            _new_variable(u, u_x, u_y, u_mask),
-            _new_variable(v, v_x, v_y, v_mask),
-            _new_variable(eta, eta_x, eta_y, eta_mask),
-            deque(
-                [], maxlen=others[0].history.maxlen
-            ),  # TODO: mergin cause loss of history
-            ParameterSplit.merge(
-                [o.p for o in others], dim
-            ),  # TODO: asymmetric to split
+            VariableSplit.merge([o.u for o in others], merger),
+            VariableSplit.merge([o.v for o in others], merger),
+            VariableSplit.merge([o.eta for o in others], merger),
+            StateDequeSplit.merge([o.history for o in others], merger),
+            ParameterSplit.merge([o.parameter for o in others], merger),
             others[0].get_iteration(),
             others[0].get_id(),
         )
@@ -194,15 +392,15 @@ class BorderState(DomainState, Border):
         u: Variable,
         v: Variable,
         eta: Variable,
-        ancestors: deque,  # TODO: keep same parameter names as in DomainState
-        p: Parameters,
         width: int,
         dim: int,
         iteration: int,
+        history: Optional[StateDequeSplit] = None,
+        parameter: Optional[ParameterSplit] = None,
         id: int = 0,
     ):
         """Create BorderState in the same way as DomainState."""
-        super().__init__(u, v, eta, ancestors, p, iteration, id)
+        super().__init__(u, v, eta, history, parameter, iteration, id)
         self.width = width
         self.dim = dim
 
@@ -227,11 +425,12 @@ class BorderState(DomainState, Border):
         eta = eta.safe_data
 
         place = u.shape[dim] - width
-        p = base.p
+        p = base.parameter
         if direction:
             try:
                 p = ParameterSplit(
-                    base.p, {key: base.p.f[key][:, place:] for key in base.p.f}
+                    base.parameter,
+                    {key: base.parameter.f[key][:, place:] for key in base.parameter.f},
                 )
             except RuntimeError:  # TODO: where could that error been thrown?
                 pass
@@ -252,17 +451,18 @@ class BorderState(DomainState, Border):
                     eta_y[:, place:],
                     eta_mask[:, place:],
                 ),
-                deque([], base.history.maxlen),
-                p,
                 width,
                 dim,
                 base.get_iteration(),
+                StateDequeSplit([], base.history.maxlen),
+                p,
                 base.get_id(),
             )
         else:
             try:
                 p = ParameterSplit(
-                    base.p, {key: base.p.f[key][:, :width] for key in base.p.f}
+                    base.parameter,
+                    {key: base.parameter.f[key][:, :width] for key in base.parameter.f},
                 )
             except RuntimeError:
                 pass
@@ -280,11 +480,11 @@ class BorderState(DomainState, Border):
                     eta_y[:, :width],
                     eta_mask[:, :width],
                 ),
-                deque([], base.history.maxlen),
-                p,
                 width,
                 dim,
                 base.get_iteration(),
+                StateDequeSplit([], base.history.maxlen),
+                p,
                 base.get_id(),
             )
 
@@ -300,7 +500,9 @@ class BorderState(DomainState, Border):
 class Tail(Tailor):
     """Implement Tailor class from API."""
 
-    def make_borders(self, base: Domain, width: int, dim: int) -> (Border, Border):
+    def make_borders(
+        self, base: DomainState, width: int, dim: int
+    ) -> Tuple[BorderState, BorderState]:
         """Implement make_borders method from API."""
         return (
             BorderState.create_border(base, width, False, dim),
@@ -338,7 +540,7 @@ class Tail(Tailor):
         eta.data[:, : l_border.get_width()] = l_border.get_data()[2].safe_data.copy()
 
         return DomainState(
-            u, v, eta, base.history, base.p, base.get_iteration(), base.get_id()
+            u, v, eta, base.history, base.parameter, base.get_iteration(), base.get_id()
         )
 
 
@@ -385,20 +587,20 @@ class GeneralSolver(Solver):
         self.sch = schema
 
     def _integrate(self, domain: DomainState) -> DomainState:
-        inc = self.slv(domain, domain.p)
+        inc = self.slv(domain, domain.parameter)
         domain.history.append(inc)
-        new = self.sch(domain.history, domain.p, self.step)
+        new = self.sch(domain.history, domain.parameter, self.step)
         return DomainState(
             domain.u + new.u,
             domain.v + new.v,
             domain.eta + new.eta,
             domain.history,
-            domain.p,
+            domain.parameter,
             domain.increment_iteration(),
             domain.get_id(),
         )
 
-    def integration(self, domain: Domain) -> Domain:
+    def integration(self, domain: DomainState) -> DomainState:
         """Implement integration method from API."""
         return self._integrate(domain)
 
@@ -407,7 +609,12 @@ class GeneralSolver(Solver):
         return 2
 
     def partial_integration(
-        self, domain: Domain, border: Border, past: Border, direction: bool, dim: int
+        self,
+        domain: DomainState,
+        border: BorderState,
+        past: BorderState,
+        direction: bool,
+        dim: int,
     ) -> Border:
         """Implement partial_integration from API."""
         b_w = border.get_width()
@@ -415,7 +622,9 @@ class GeneralSolver(Solver):
         list = (
             [dom, border] if direction else [border, dom]
         )  # order inside list shows if it's left of right border
-        tmp = DomainState.merge(list, dim)
+        tmp = DomainState.merge(
+            list, RegularSplitMerger(2, (dim,))
+        )  # TODO: refactor this
         tmp.history = past.history
         tmp = self._integrate(tmp)
 
@@ -450,11 +659,11 @@ class GeneralSolver(Solver):
             u,
             v,
             eta,
-            past.history,
-            past.p,
             border.get_width(),
             dim,
             domain.increment_iteration(),
+            past.history,
+            past.parameter,
             domain.get_id(),
         )
 
