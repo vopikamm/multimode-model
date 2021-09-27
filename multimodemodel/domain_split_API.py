@@ -1,27 +1,58 @@
 """Provide API for spliting domain and computing it asynchronously."""
 from abc import ABC, abstractmethod
+from typing import (
+    Sequence,  # TODO: deprication handling
+    # https://docs.python.org/3/library/typing.html#typing.Sequence
+    Tuple,
+)
 from dask.distributed import Future, Client
 from copy import deepcopy
+import numpy as np
+
+
+class SplitMerger(ABC):
+    """SplitMerger class has methods for splitting and merging arrays.
+
+    Classes implementing the interface are used as arguments to `split`
+    and `merge` methods of classes implementing the `Splittable` interface.
+    """
+
+    @abstractmethod
+    def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
+        """Split numpy array in various parts."""
+        pass
+
+    @abstractmethod
+    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
+        """Merge numpy array in various parts."""
+        pass
+
+    @property
+    @abstractmethod
+    def parts(self) -> int:
+        """Return number of splits."""
+        pass
 
 
 class Splitable(ABC):
     """Splitable class has methods for splitting and merging its instances."""
 
     @abstractmethod
-    def split(self, parts: int, dim: tuple):
+    def split(self, splitter: SplitMerger):
         """Split the Domain into given number of parts along axis given by dim.
 
         For splitting among more than one axis pass tuple as dim.
         """
         pass
 
+    @classmethod
     @abstractmethod
-    def merge(self, others, dim: int):
+    def merge(cls, others, merger: SplitMerger):
         """Merge multiple Domains into one new domain."""
         pass
 
 
-class Domain(Splitable):
+class Domain(ABC):
     """Domain class holds all of the interesting data.
 
     Class has methods allowing to split and merge with others.
@@ -59,7 +90,7 @@ class Domain(Splitable):
         return deepcopy(self)
 
 
-class Border(Domain):
+class Border(ABC):
     """
     Border class holds minimal required data for computing subdomains.
 
@@ -203,12 +234,20 @@ def magic(
                 top = i + 1 if i + 1 < split else 0
 
                 new_borders[(i, d, 0)] = client.submit(
-                    compute_borders, subs[i], brd[(bottom, d, 1)],
-                    brd[(i, d, 0)], False, slv
+                    compute_borders,
+                    subs[i],
+                    brd[(bottom, d, 1)],
+                    brd[(i, d, 0)],
+                    False,
+                    slv,
                 )
                 new_borders[(i, d, 1)] = client.submit(
-                    compute_borders, subs[i], brd[(top, d, 0)],
-                    brd[(i, d, 1)], True, slv
+                    compute_borders,
+                    subs[i],
+                    brd[(top, d, 0)],
+                    brd[(i, d, 1)],
+                    True,
+                    slv,
                 )
 
         for i in range(len(subs)):

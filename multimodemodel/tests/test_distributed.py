@@ -1,7 +1,5 @@
 """Test implementation of distributed API."""
 # flake8: noqa
-from multimodemodel import domain_split_API
-from multimodemodel.domain_split_API import Border, Domain
 import pytest
 import numpy as np
 from collections import deque
@@ -10,6 +8,9 @@ from multimodemodel.API_implementation import (
     ParameterSplit,
     DomainState,
     BorderState,
+    RegularSplitMerger,
+    StateDequeSplit,
+    VariableSplit,
 )
 from multimodemodel import (
     Parameters,
@@ -71,12 +72,9 @@ def dim(request):
     return (request.param,)
 
 
-def test_ParameterSplit_init(param):
-    ps = ParameterSplit(param, data=param.f)
-    assert ps.g == param.g
-    assert ps.H == param.H
-    assert ps.rho_0 == param.rho_0
-    assert ps.f == param.f
+@pytest.fixture(params=[RegularSplitMerger])
+def split_merger(parts, dim, request):
+    return request.param(parts, dim)
 
 
 @pytest.fixture
@@ -105,7 +103,7 @@ def ident(request):
 @pytest.fixture
 def domain_state(state_param):
     state, param = state_param
-    return DomainState.make_from_State(state, h=deque(), p=param, it=0)
+    return DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
 
 
 @pytest.fixture(params=[-1, 0, 99])
@@ -118,37 +116,40 @@ def border_direction(request):
     return request.param
 
 
-def test_ParameterSplit_split(param_split, parts, dim):
-    out = param_split.split(parts, dim)
-    assert len(out) == parts
-    assert all(isinstance(o, ParameterSplit) for o in out)
+def test_ParameterSplit_init(param):
+    ps = ParameterSplit(param, data=param.f)
+    assert ps.g == param.g
+    assert ps.H == param.H
+    assert ps.rho_0 == param.rho_0
+    assert ps.f == param.f
+
+
+def test_ParameterSplit_split(param_split, split_merger):
+    out = param_split.split(split_merger)
+    assert len(out) == split_merger.parts
+    assert all(isinstance(o, param_split.__class__) for o in out)
     assert all(o.g == param_split.g for o in out)
     assert all(o.H == param_split.H for o in out)
     assert all(o.rho_0 == param_split.rho_0 for o in out)
     assert all((g in o.f for o in out) for g in ("u", "v", "eta", "q"))
     assert all(
-        (
-            (
-                np.concatenate(tuple(o.f[g] for o in out), axis=dim[0])
-                == param_split.f[g]
-            ).all()
-            for g in ("u", "v", "eta", "q")
-        )
+        (split_merger.merge_array(tuple(o.f[g] for o in out)) == param_split.f[g]).all()
+        for g in ("u", "v", "eta", "q")
     )
     assert all(
         (~np.may_share_memory(o.f[g], param_split.f[g]) for g in ("u", "v", "eta", "q"))
         for o in out
     )
     param_split._f = {}
-    out = param_split.split(parts, dim)
+    out = param_split.split(split_merger)
     assert all(o is param_split for o in out)
-    assert len(out) == parts
+    assert len(out) == split_merger.parts
 
 
-def test_ParameterSplit_merge(param_split, parts, dim):
-    others = param_split.split(parts, dim)
+def test_ParameterSplit_merge(param_split, split_merger):
+    others = param_split.split(split_merger)
 
-    merged = ParameterSplit.merge(others, dim[0])
+    merged = ParameterSplit.merge(others, split_merger)
 
     assert all((merged.f[k] == param_split.f[k]).all() for k in param_split.f)
     assert all(
@@ -159,12 +160,10 @@ def test_ParameterSplit_merge(param_split, parts, dim):
     assert merged.rho_0 == param_split.rho_0
 
 
-def test_ParameterSplit_merge_no_coriolis(param_split):
+def test_ParameterSplit_merge_no_coriolis(param_split, split_merger):
     param_split._f = {}
-    dim = (0,)
-    parts = 2
-    others = param_split.split(parts, dim)
-    merged = ParameterSplit.merge(others, dim[0])
+    others = param_split.split(split_merger)
+    merged = ParameterSplit.merge(others, split_merger)
     assert merged.g == param_split.g
     assert merged.H == param_split.H
     assert merged.rho_0 == param_split.rho_0
@@ -172,7 +171,7 @@ def test_ParameterSplit_merge_no_coriolis(param_split):
 
 def test_DomainState_init(state_param):
     state, param = state_param
-    ds = DomainState.make_from_State(state, h=deque(), p=param, it=0)
+    ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
     assert (ds.u.data == state.u.data).all()
     assert np.may_share_memory(ds.u.data, state.u.data)
     assert (ds.v.data == state.v.data).all()
@@ -210,18 +209,16 @@ def test_DomainState_increment_iteration(domain_state, it):
     assert domain_state.increment_iteration() == it + 1
 
 
-def test_DomainState_split(domain_state, parts, dim):
-    out = domain_state.split(parts, dim)
-    assert len(out) == parts
+def test_DomainState_split(domain_state, split_merger):
+    out = domain_state.split(split_merger)
+    assert len(out) == split_merger.parts
     assert all(isinstance(o, domain_state.__class__) for o in out)
     assert all(
         (
-            (
-                np.concatenate(tuple(getattr(o, v).data for o in out), axis=dim[0])
-                == getattr(domain_state, v).data
-            ).all()
-            for v in ("u", "v", "eta")
-        )
+            VariableSplit.merge(tuple(getattr(o, v) for o in out), split_merger).data
+            == getattr(domain_state, v).data
+        ).all()
+        for v in ("u", "v", "eta")
     )
     assert all(
         (
@@ -232,29 +229,39 @@ def test_DomainState_split(domain_state, parts, dim):
     )
 
 
-@pytest.mark.xfail(reason="Parameter object is not splitted")
-def test_DomainState_split_splits_params(domain_state):
-    out = domain_state.split(2, (0,))
-    out_params = domain_state.p.split(2, (0,))
+def test_DomainState_split_splits_params(domain_state, split_merger):
+    out = domain_state.split(split_merger)
+    out_params = domain_state.parameter.split(split_merger)
     assert all(
-        (o.p.f[g] == o_p.f[g] for g in domain_state.p.f)
+        (o.p.f[g] == o_p.f[g] for g in domain_state.parameter.f)
         for o, o_p in zip(out, out_params)
     )
 
 
-def test_DomainState_split_conserves_iteration_counter(domain_state, it, request):
-    if it != 0:
-        request.node.add_marker(
-            pytest.mark.xfail(reason="Iteration counter not passed through in split.")
-        )
+def test_DomainState_split_conserves_iteration_counter(
+    domain_state, it, split_merger, request
+):
     domain_state.it = it
-    out = domain_state.split(2, (0,))
+    out = domain_state.split(split_merger)
     assert all(o.get_iteration() == it for o in out)
 
 
-def test_DomainState_merge(domain_state, parts, dim):
-    splitted = domain_state.split(parts, dim)
-    merged = DomainState.merge(splitted, dim[0])
+def test_DomainState_merge_raises_on_iteration_counter_discrepancy(
+    domain_state, split_merger
+):
+    out = domain_state.split(split_merger)
+    out[0].it = 6
+    if split_merger.parts > 1:
+        with pytest.raises(
+            ValueError,
+            match="Try to merge DomainStates that differ in iteration counter.",
+        ):
+            _ = DomainState.merge(out, split_merger)
+
+
+def test_DomainState_merge(domain_state, split_merger):
+    splitted = domain_state.split(split_merger)
+    merged = DomainState.merge(splitted, split_merger)
     assert all(
         (getattr(merged, v).data == getattr(domain_state, v).data).all()
         for v in ("u", "v", "eta")
@@ -265,16 +272,16 @@ def test_DomainState_merge(domain_state, parts, dim):
     )
 
 
-@pytest.mark.xfail(reason="parameters are not splitted")
-def test_DomainState_merge_param(domain_state, parts, dim):
-    splitted = domain_state.split(parts, dim)
-    merged = DomainState.merge(splitted, dim[0])
+def test_DomainState_merge_param(domain_state, split_merger):
+    splitted = domain_state.split(split_merger)
+    merged = DomainState.merge(splitted, split_merger)
     assert all(
-        getattr(merged.p, a) == getattr(domain_state.p, a) for a in ("g", "H", "rho_0")
+        getattr(merged.parameter, a) == getattr(domain_state.parameter, a)
+        for a in ("g", "H", "rho_0")
     )
     assert all(
-        (getattr(merged.p.f, g) == getattr(domain_state.p.f, g)).all()
-        for g in domain_state.p.f
+        (merged.parameter.f[g] == domain_state.parameter.f[g]).all()
+        for g in domain_state.parameter.f
     )
 
 
@@ -312,8 +319,8 @@ def test_BorderState_init(state_param):
         state.u,
         state.v,
         state.eta,
-        ancestors=deque(),
-        p=param,
+        history=StateDequeSplit(),
+        parameter=param,
         width=width,
         dim=0,
         iteration=0,
@@ -346,11 +353,11 @@ def test_BorderState_create_border(state_param, border_direction, dim, request):
     ]
     b_slices[dim] = b_slice
     b_slices = tuple(b_slices)
-    ds = DomainState.make_from_State(state, h=deque(), p=param, it=0)
+    ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
     bs = BorderState.create_border(ds, width=width, direction=direction, dim=dim)
     assert np.allclose(bs.u.data, state.u.data[b_slices])
-    assert not np.may_share_memory(bs.u.data, state.u.data)
     assert (bs.v.data == state.v.data[b_slices]).all()
-    assert not np.may_share_memory(bs.v.data, state.v.data)
     assert (bs.eta.data == state.eta.data[b_slices]).all()
+    assert not np.may_share_memory(bs.u.data, state.u.data)
+    assert not np.may_share_memory(bs.v.data, state.v.data)
     assert not np.may_share_memory(bs.eta.data, state.eta.data)
