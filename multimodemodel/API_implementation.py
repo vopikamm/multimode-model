@@ -77,8 +77,8 @@ class DomainState(State, Domain):
         u: Variable,
         v: Variable,
         eta: Variable,
-        h: deque = deque([], maxlen=3),
-        p: Parameters = Parameters(),
+        h: deque = deque([], maxlen=3),  # TODO: Remove mutable default value
+        p: Parameters = Parameters(),  # TODO: Remove mutable default value
         it: int = 0,
         id: int = 0,
     ):
@@ -117,7 +117,9 @@ class DomainState(State, Domain):
         """Return incremented iteration from domain, not modify object itself."""
         return self.it + 1
 
-    def split(self, parts: int, dim: tuple):
+    def split(
+        self, parts: int, dim: tuple
+    ):  # TODO: raise error if shape[dim[0]] // parts < 2
         """Implement the split method from API."""
         v_x = np.array_split(self.v.grid.x, parts, dim[0])
         v_y = np.array_split(self.v.grid.y, parts, dim[0])
@@ -136,12 +138,14 @@ class DomainState(State, Domain):
 
         out = [
             self.__class__(
-                _new_variable(u[i], u_x[i], u_y[i], u_mask[i]),
+                _new_variable(u[i], u_x[i], u_y[i], u_mask[i]),  # TODO: use GridSplit
                 _new_variable(v[i], v_x[i], v_y[i], v_mask[i]),
                 _new_variable(eta[i], eta_x[i], eta_y[i], eta_mask[i]),
-                deque([], maxlen=self.history.maxlen),
-                self.p,
-                0,
+                deque(
+                    [], maxlen=self.history.maxlen
+                ),  # TODO: splitting causes loss of history
+                self.p,  # TODO: parameters are referenced, but not splitted
+                0,  # TODO: splitting resets iteration counter
                 i,
             )
             for i in range(parts)
@@ -171,8 +175,12 @@ class DomainState(State, Domain):
             _new_variable(u, u_x, u_y, u_mask),
             _new_variable(v, v_x, v_y, v_mask),
             _new_variable(eta, eta_x, eta_y, eta_mask),
-            deque([], maxlen=others[0].history.maxlen),
-            ParameterSplit.merge([o.p for o in others], dim),
+            deque(
+                [], maxlen=others[0].history.maxlen
+            ),  # TODO: mergin cause loss of history
+            ParameterSplit.merge(
+                [o.p for o in others], dim
+            ),  # TODO: asymmetric to split
             others[0].get_iteration(),
             others[0].get_id(),
         )
@@ -181,12 +189,12 @@ class DomainState(State, Domain):
 class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
 
-    def __init__(
+    def __init__(  # differs from Border.__init__ signature
         self,
         u: Variable,
         v: Variable,
         eta: Variable,
-        ancestors: deque,
+        ancestors: deque,  # TODO: keep same parameter names as in DomainState
         p: Parameters,
         width: int,
         dim: int,
@@ -225,13 +233,16 @@ class BorderState(DomainState, Border):
                 p = ParameterSplit(
                     base.p, {key: base.p.f[key][:, place:] for key in base.p.f}
                 )
-            except RuntimeError:
+            except RuntimeError:  # TODO: where could that error been thrown?
                 pass
 
             return BorderState(
                 _new_variable(
-                    u[:, place:], u_x[:, place:], u_y[:, place:], u_mask[:, place:]
-                ),
+                    u[:, place:],
+                    u_x[:, place:],
+                    u_y[:, place:],
+                    u_mask[:, place:],  # TODO: only works for dim==1
+                ),  # TODO: does not work for width==1
                 _new_variable(
                     v[:, place:], v_x[:, place:], v_y[:, place:], v_mask[:, place:]
                 ),
