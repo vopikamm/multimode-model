@@ -126,7 +126,8 @@ class MultimodeParameters(Parameters):
             raise ValueError(
                 "The requested mode number is higher then the available modes."
             )
-        return Parameters(H=self.H[k])
+        self.H = self.H[k]
+        return self
 
 
 @dataclass

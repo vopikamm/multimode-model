@@ -17,6 +17,8 @@ def _extract_horizontal_slice(var, k):
     try:
         if var.ndim == 3:
             return var[k]
+        elif var.ndim == 1:
+            return float(var[k])
         else:
             return var
     except AttributeError:
