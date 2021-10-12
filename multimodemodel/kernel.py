@@ -7,7 +7,9 @@ computationally costly operations.
 
 from typing import Callable, Tuple, Any
 import numpy as np
-from .jit import _numba_2D_grid_iterator, _cyclic_shift
+
+# from numpy.core.fromnumeric import shape
+from .jit import _numba_2D_grid_iterator, _numba_3D_grid_iterator, _cyclic_shift
 from .datastructure import State, Variable, Parameters
 from .grid import Grid
 from functools import partial
@@ -17,8 +19,6 @@ def _extract_horizontal_slice(var, k):
     try:
         if var.ndim == 3:
             return var[k]
-        elif var.ndim == 1:
-            return float(var[k])
         else:
             return var
     except AttributeError:
@@ -79,10 +79,10 @@ def _divergence_i(
     nj: int,
     u: np.ndarray,
     mask_u: np.ndarray,
-    H: float,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
     dy_u: np.ndarray,
+    H: float,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the first dimension."""
     ip1 = _cyclic_shift(i, ni, 1)
@@ -105,10 +105,10 @@ def _divergence_j(
     nj: int,
     v: np.ndarray,
     mask_v: np.ndarray,
-    H: float,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
     dx_v: np.ndarray,
+    H: float,
 ) -> float:  # pragma: no cover
     """Compute the divergence of the flow along the second dimension."""
     jp1 = _cyclic_shift(j, nj, 1)
@@ -117,6 +117,68 @@ def _divergence_j(
         * (
             mask_v[jp1, i] * dx_v[jp1, i] * v[jp1, i]
             - mask_v[j, i] * dx_v[j, i] * v[j, i]
+        )
+        / dx_eta[j, i]
+        / dy_eta[j, i]
+    )
+
+
+@_numba_3D_grid_iterator
+def _multimode_divergence_i(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    u: np.ndarray,
+    mask_u: np.ndarray,
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    dy_u: np.ndarray,
+    H: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the divergence of the flow along the first dimension.
+
+    This term depends on the mode number k.
+    """
+    ip1 = _cyclic_shift(i, ni, 1)
+    return (
+        -H[k]
+        * (
+            mask_u[k, j, ip1] * dy_u[j, ip1] * u[k, j, ip1]
+            - mask_u[k, j, i] * dy_u[j, i] * u[k, j, i]
+        )
+        / dx_eta[j, i]
+        / dy_eta[j, i]
+    )
+
+
+@_numba_3D_grid_iterator
+def _multimode_divergence_j(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    v: np.ndarray,
+    mask_v: np.ndarray,
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    dx_v: np.ndarray,
+    H: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the divergence of the flow along the second dimension.
+
+    This term depends on the mode number k.
+    """
+    jp1 = _cyclic_shift(j, nj, 1)
+    return (
+        -H[k]
+        * (
+            mask_v[k, jp1, i] * dx_v[jp1, i] * v[k, jp1, i]
+            - mask_v[k, j, i] * dx_v[j, i] * v[k, j, i]
         )
         / dx_eta[j, i]
         / dy_eta[j, i]
@@ -244,14 +306,20 @@ def divergence_i(state: State, params: Parameters) -> State:
         grid.shape[grid.dim_y],
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
-        params.H,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
+        grid.dx,
+        grid.dy,
         state.variables["u"].grid.dy,
+        params.H,
     )
+
+    if grid.ndim == 3:
+        div_i = _multimode_divergence_i(*args)
+    else:
+        div_i = _divergence_i(*args)
+
     return State(
         eta=Variable(
-            _apply_2D_iterator(_divergence_i, args, grid),
+            div_i,
             grid,
             state.variables["eta"].time,
         )
@@ -266,14 +334,20 @@ def divergence_j(state: State, params: Parameters) -> State:
         grid.shape[grid.dim_y],
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
-        params.H,
         state.variables["eta"].grid.dx,
         state.variables["eta"].grid.dy,
         state.variables["v"].grid.dx,
+        params.H,
     )
+
+    if grid.ndim == 3:
+        div_j = _multimode_divergence_j(*args)
+    else:
+        div_j = _divergence_j(*args)
+
     return State(
         eta=Variable(
-            _apply_2D_iterator(_divergence_j, args, grid),
+            div_j,
             grid,
             state.variables["eta"].time,
         )
