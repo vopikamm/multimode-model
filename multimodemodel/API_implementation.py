@@ -424,69 +424,50 @@ class BorderState(DomainState, Border):
         eta_mask = eta.grid.mask
         eta = eta.safe_data
 
-        place = u.shape[dim] - width
         p = base.parameter
+
         if direction:
-            try:
-                p = ParameterSplit(
-                    base.parameter,
-                    {key: base.parameter.f[key][:, place:] for key in base.parameter.f},
-                )
-            except RuntimeError:  # TODO: where could that error been thrown?
-                pass
-
-            return BorderState(
-                _new_variable(
-                    u[:, place:],
-                    u_x[:, place:],
-                    u_y[:, place:],
-                    u_mask[:, place:],  # TODO: only works for dim==1
-                ),  # TODO: does not work for width==1
-                _new_variable(
-                    v[:, place:], v_x[:, place:], v_y[:, place:], v_mask[:, place:]
-                ),
-                _new_variable(
-                    eta[:, place:],
-                    eta_x[:, place:],
-                    eta_y[:, place:],
-                    eta_mask[:, place:],
-                ),
-                width,
-                dim,
-                base.get_iteration(),
-                StateDequeSplit([], base.history.maxlen),
-                p,
-                base.get_id(),
-            )
+            border_slice = slice(-width, None)
         else:
-            try:
-                p = ParameterSplit(
-                    base.parameter,
-                    {key: base.parameter.f[key][:, :width] for key in base.parameter.f},
-                )
-            except RuntimeError:
-                pass
+            border_slice = slice(None, width)
 
-            return BorderState(
-                _new_variable(
-                    u[:, :width], u_x[:, :width], u_y[:, :width], u_mask[:, :width]
-                ),
-                _new_variable(
-                    v[:, :width], v_x[:, :width], v_y[:, :width], v_mask[:, :width]
-                ),
-                _new_variable(
-                    eta[:, :width],
-                    eta_x[:, :width],
-                    eta_y[:, :width],
-                    eta_mask[:, :width],
-                ),
-                width,
-                dim,
-                base.get_iteration(),
-                StateDequeSplit([], base.history.maxlen),
-                p,
-                base.get_id(),
+        try:
+            p = ParameterSplit(
+                base.parameter,
+                {
+                    key: base.parameter.f[key][:, border_slice]
+                    for key in base.parameter.f
+                },
             )
+        except RuntimeError:  # TODO: where could that error been thrown?
+            pass
+
+        return BorderState(
+            _new_variable(
+                u[:, border_slice],
+                u_x[:, border_slice],
+                u_y[:, border_slice],
+                u_mask[:, border_slice],  # TODO: only works for dim==1
+            ),  # TODO: does not work for width==1
+            _new_variable(
+                v[:, border_slice],
+                v_x[:, border_slice],
+                v_y[:, border_slice],
+                v_mask[:, border_slice],
+            ),
+            _new_variable(
+                eta[:, border_slice],
+                eta_x[:, border_slice],
+                eta_y[:, border_slice],
+                eta_mask[:, border_slice],
+            ),
+            width,
+            dim,
+            base.get_iteration(),
+            StateDequeSplit([], base.history.maxlen),
+            p,
+            base.get_id(),
+        )
 
     def get_width(self) -> int:
         """Get border's width."""
