@@ -71,6 +71,60 @@ class RegularSplitMerger(SplitMerger):
         return self._parts
 
 
+class BorderSplitter(SplitMerger):
+    """Implements splitting off the borders of a DomainState along a dimension.
+
+    The required merge_array method is not implemented, hence the use in a call to merge
+    of a class implementing the `Splittable` interface will raise an runtime exception.
+    """
+
+    __slots__ = ["_axis", "_slice"]
+
+    def __init__(self, width: int, axis: int, direction: bool):
+        """Initialize class instance."""
+        self._axis = axis
+
+        if direction:
+            self._slice = slice(-width, None)
+        else:
+            self._slice = slice(None, width)
+
+    def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
+        """Split array.
+
+        Parameter
+        ---------
+        array: np.ndarray
+          Array to split.
+
+        Returns
+        -------
+        Tuple[np.ndarray, ...]
+        """
+        slices = array.ndim * [slice(None)]
+        slices[self._axis] = self._slice
+        return (array[tuple(slices)],)
+
+    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
+        """Merge array.
+
+        Parameter
+        ---------
+        arrays: Sequence[np.ndarray]
+          Arrays to merge.
+
+        Returns
+        -------
+        np.ndarray
+        """
+        raise NotImplementedError("Merging not supported by {self.__class__.__name__}")
+
+    @property
+    def parts(self) -> int:
+        """Return number of parts created by split."""
+        return 1
+
+
 class ParameterSplit(Parameters, Splitable):
     """Implements splitting and merging on Parameters class."""
 
@@ -407,66 +461,27 @@ class BorderState(DomainState, Border):
     @classmethod
     def create_border(cls, base: DomainState, width: int, direction: bool, dim: int):
         """Create BorderState instance from DomainState."""
-        u, v, eta = base.get_data()
+        splitter = BorderSplitter(width=width, axis=dim, direction=direction)
+        splitted_state = base.split(splitter)[0]
 
-        u_x = u.grid.x
-        u_y = u.grid.y
-        u_mask = u.grid.mask
-        u = u.safe_data
+        return cls.from_domain_state(splitted_state, width=width, dim=dim)
 
-        v_x = v.grid.x
-        v_y = v.grid.y
-        v_mask = v.grid.mask
-        v = v.safe_data
+    @classmethod
+    def from_domain_state(cls, domain_state: DomainState, width: int, dim: int):
+        """Create an instance from a DomainState instance.
 
-        eta_x = eta.grid.x
-        eta_y = eta.grid.y
-        eta_mask = eta.grid.mask
-        eta = eta.safe_data
-
-        p = base.parameter
-
-        if direction:
-            border_slice = slice(-width, None)
-        else:
-            border_slice = slice(None, width)
-
-        try:
-            p = ParameterSplit(
-                base.parameter,
-                {
-                    key: base.parameter.f[key][:, border_slice]
-                    for key in base.parameter.f
-                },
-            )
-        except RuntimeError:  # TODO: where could that error been thrown?
-            pass
-
-        return BorderState(
-            _new_variable(
-                u[:, border_slice],
-                u_x[:, border_slice],
-                u_y[:, border_slice],
-                u_mask[:, border_slice],  # TODO: only works for dim==1
-            ),  # TODO: does not work for width==1
-            _new_variable(
-                v[:, border_slice],
-                v_x[:, border_slice],
-                v_y[:, border_slice],
-                v_mask[:, border_slice],
-            ),
-            _new_variable(
-                eta[:, border_slice],
-                eta_x[:, border_slice],
-                eta_y[:, border_slice],
-                eta_mask[:, border_slice],
-            ),
-            width,
-            dim,
-            base.get_iteration(),
-            StateDequeSplit([], base.history.maxlen),
-            p,
-            base.get_id(),
+        No copies are created.
+        """
+        return cls(
+            u=domain_state.u,
+            v=domain_state.v,
+            eta=domain_state.eta,
+            width=width,
+            dim=dim,
+            iteration=domain_state.get_iteration(),
+            history=domain_state.history,
+            parameter=domain_state.parameter,
+            id=domain_state.get_id(),
         )
 
     def get_width(self) -> int:
