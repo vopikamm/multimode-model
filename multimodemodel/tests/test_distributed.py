@@ -116,6 +116,20 @@ def border_direction(request):
     return request.param
 
 
+@pytest.fixture
+def border_state(domain_state):
+    return BorderState(
+        u=domain_state.u,
+        v=domain_state.v,
+        eta=domain_state.eta,
+        history=domain_state.history,
+        iteration=domain_state.it,
+        id=domain_state.id,
+        width=2,
+        dim=-1,
+    )
+
+
 def test_ParameterSplit_init(param):
     ps = ParameterSplit(param, data=param.f)
     assert ps.g == param.g
@@ -313,7 +327,7 @@ def test_DomainState_copy(domain_state):
 
 
 def test_BorderState_init(state_param):
-    width = 1
+    width, dim = 1, 0
     state, param = state_param
     bs = BorderState(
         state.u,
@@ -332,6 +346,16 @@ def test_BorderState_init(state_param):
     assert np.may_share_memory(bs.v.data, state.v.data)
     assert (bs.eta.data == state.eta.data).all()
     assert np.may_share_memory(bs.eta.data, state.eta.data)
+    assert bs.width == width
+    assert bs.dim == dim
+
+
+def test_BorderState_get_width_returns_width(border_state):
+    assert border_state.get_width() == border_state.width
+
+
+def test_BorderState_get_dim_returns_dim(border_state):
+    assert border_state.get_dim() == border_state.dim
 
 
 def test_BorderState_create_border(state_param, border_direction, dim, request):
