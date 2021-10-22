@@ -1,6 +1,6 @@
 """Logic related to creation of grids."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, Union
 import numpy as np
 import numpy.typing as npt
@@ -196,6 +196,19 @@ class Grid:
         mask[:, 0] = 0
         mask[:, -1] = 0
         return mask
+
+    def __eq__(self, other) -> bool:
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, Grid):
+            return NotImplemented
+        if self is other:
+            return True
+        return all(
+            (getattr(self, f.name) == getattr(other, f.name)).all()
+            if f.name in ("x", "y", "mask", "dx", "dy")
+            else getattr(self, f.name) == getattr(other, f.name)
+            for f in fields(self)
+        )
 
 
 @dataclass

@@ -1,4 +1,5 @@
 """Test the behavior of the dataclasses."""
+# flake8: noqa
 import numpy as np
 import pytest
 
@@ -84,6 +85,45 @@ class TestParameters:
             ):
                 _ = p.f
 
+    def test_comparison_with_identical_returns_true(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        p2 = p
+        assert p == p2
+
+    def test_comparison_with_same_returns_true(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        p2 = Parameters(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        assert p == p2
+
+    def test_comparison_with_different_returns_false(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        p2 = Parameters(coriolis_func=f_constant(f=2.0), on_grid=staggered_grid)
+        assert p != p2
+
+    def test_comparison_with_wrong_type_returns_false(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        assert p != 5
+
 
 class TestGrid:
     """Test Grid class."""
@@ -132,6 +172,52 @@ class TestGrid:
         assert g2.y.shape == (ny, nx)
         assert g2.dx.shape == (ny, nx)
         assert g2.dy.shape == (ny, nx)
+
+    def test_comparison_of_identical_returns_true(self):
+        """Test comparison of references."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x, y)
+        g2 = g
+        assert g2 == g
+
+    def test_comparison_of_same_returns_true(self):
+        """Test comparison of references."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x, y)
+        g2 = Grid.cartesian(x, y)
+        assert g2 == g
+
+    def test_comparison_of_different_returns_false(self):
+        """Test comparison of references."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x, y)
+        g2 = Grid.cartesian(x, y + 1)
+        assert g2 != g
+
+    def test_comparison_with_other_returns_false(self):
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x, y)
+        assert g != 5
 
     def test_cartesian_grid(self):
         """Test construction of cartesian grid."""
@@ -312,6 +398,25 @@ class TestStaggeredGrid:
         assert np.all(staggered_grid.q.mask == q_mask)
         assert np.all(staggered_grid.eta.mask == mask)
 
+    def test_comparison_of_identical_returns_true(self):
+        grids = self.get_regular_staggered_grids()
+        grids2 = grids
+        assert grids == grids2
+
+    def test_comparison_of_same_returns_true(self):
+        grids = self.get_regular_staggered_grids()
+        grids2 = self.get_regular_staggered_grids()
+        assert grids == grids2
+
+    def test_comparison_of_different_returns_false(self):
+        grids = self.get_regular_staggered_grids(ys=1)
+        grids2 = self.get_regular_staggered_grids(ys=2)
+        assert grids != grids2
+
+    def test_comparison_of_wrong_type_returns_false(self):
+        grids = self.get_regular_staggered_grids()
+        assert grids != 5
+
 
 class TestVariable:
     """Test Variable class."""
@@ -382,6 +487,57 @@ class TestVariable:
         with pytest.raises(TypeError) as excinfo:
             _ = v1 + 1.0
         assert "unsupported operand type(s)" in str(excinfo.value)
+
+    def test_comparison_with_identical_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        d1 = np.zeros_like(g1.x) + 1.0
+        v1 = Variable(d1, g1)
+        v2 = v1
+        assert v1 == v2
+
+    def test_comparison_with_same_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        d1 = np.zeros_like(g1.x) + 1.0
+        v1 = Variable(d1, g1)
+        v2 = Variable(d1.copy(), g1)
+        assert v1 == v2
+
+    def test_comparison_with_both_none_data_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        v1 = Variable(None, g1)
+        v2 = Variable(None, g1)
+        assert v1 == v2
+
+    def test_comparison_with_different_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        v1 = Variable(np.zeros_like(g1.x) + 1.0, g1)
+        v2 = Variable(np.zeros_like(g1.x) + 2.0, g1)
+        assert v1 != v2
+
+    def test_comparison_with_wrong_type_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+
+        v1 = Variable(np.zeros_like(g1.x) + 1.0, g1)
+        assert v1 != 5
 
 
 # @pytest.mark.xarray
@@ -457,3 +613,66 @@ class TestState:
         assert np.all(s3.u.data == 3.0)
         assert np.all(s3.v.data == 3.0)
         assert np.all(s3.eta.data == 3.0)
+
+    def test_comparison_with_identical_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+        s2 = s1
+        assert s1 == s2
+
+    def test_comparison_with_same_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+        s2 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+        assert s1 == s2
+
+    def test_comparison_with_different_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+        s2 = State(
+            u=Variable(np.zeros_like(g1.x) + 2.0, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+        assert s1 != s2
+
+    def test_comparison_with_wrong_type_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+        assert s1 != 5

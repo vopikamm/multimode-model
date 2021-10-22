@@ -5,7 +5,7 @@ and their associated grids.
 """
 
 import numpy as np
-from dataclasses import dataclass, field, asdict, InitVar
+from dataclasses import dataclass, field, asdict, InitVar, fields
 from .grid import Grid, StaggeredGrid
 from .coriolis import CoriolisFunc
 from typing import Dict, Optional
@@ -104,6 +104,19 @@ class Parameters:
         _f = {name: coriolis_func(grid["y"]) for name, grid in asdict(grids).items()}
         return _f
 
+    def __eq__(self, other):
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, Parameters):
+            return NotImplemented
+        if self is other:
+            return True
+        return all(
+            all((self._f[v] == other._f[v]).all() for v in self._f)
+            if f.name == "_f"
+            else getattr(self, f.name) == getattr(other, f.name)
+            for f in fields(self)
+        )
+
 
 @dataclass
 class Variable:
@@ -166,6 +179,22 @@ class Variable:
         except (TypeError, AttributeError):
             return NotImplemented
         return self.__class__(data=new_data, grid=self.grid)
+
+    def __eq__(self, other):
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, Variable):
+            return NotImplemented
+        if self is other:
+            return True
+        if self.data is other.data:  # captures both data attributes are None
+            same_data = True
+        else:
+            same_data = (self.safe_data == other.safe_data).all()
+        return same_data and all(
+            getattr(self, f.name) == getattr(other, f.name)
+            for f in fields(self)
+            if f.name != "data"
+        )
 
 
 @dataclass
