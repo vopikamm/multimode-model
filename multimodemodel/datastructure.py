@@ -186,14 +186,15 @@ class Variable:
             return NotImplemented
         if self is other:
             return True
-        if self.data is other.data:  # captures both data attributes are None
-            same_data = True
-        else:
-            same_data = (self.safe_data == other.safe_data).all()
-        return same_data and all(
-            getattr(self, f.name) == getattr(other, f.name)
+        if (
+            self.data is other.data and self.grid == other.grid
+        ):  # captures both data attributes are None
+            return True
+        return all(
+            (self.safe_data == other.safe_data).all()
+            if f.name == "data"
+            else getattr(self, f.name) == getattr(other, f.name)
             for f in fields(self)
-            if f.name != "data"
         )
 
 

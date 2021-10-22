@@ -176,13 +176,7 @@ def test_ParameterSplit_merge(param_split, split_merger):
 
     merged = ParameterSplit.merge(others, split_merger)
 
-    assert all((merged.f[k] == param_split.f[k]).all() for k in param_split.f)
-    assert all(
-        ~np.may_share_memory(merged.f[k], param_split.f[k]) for k in param_split.f
-    )
-    assert merged.g == param_split.g
-    assert merged.H == param_split.H
-    assert merged.rho_0 == param_split.rho_0
+    assert param_split == merged
 
 
 def test_ParameterSplit_merge_no_coriolis(param_split, split_merger):
@@ -196,15 +190,8 @@ def test_ParameterSplit_merge_no_coriolis(param_split, split_merger):
 
 def test_GridSplit_split_merge_roundtrip(staggered_grid, split_merger):
     grid = GridSplit.from_grid(staggered_grid.u)
-    sm_rountrip = GridSplit.merge(grid.split(split_merger), split_merger)
-    assert all(
-        (getattr(grid, a) == getattr(sm_rountrip, a)).all()
-        for a in ("x", "y", "mask", "dx", "dy")
-    )
-    assert all(
-        (getattr(grid, a) == getattr(sm_rountrip, a))
-        for a in ("dim_x", "dim_y", "len_x", "len_y")
-    )
+    sm_roundtrip = GridSplit.merge(grid.split(split_merger), split_merger)
+    assert grid == sm_roundtrip
 
 
 def test_StaggeredGrid_init(staggered_grid):
@@ -219,16 +206,7 @@ def test_StaggeredGrid_split_merge_roundtrip(staggered_grid, split_merger):
     sm_roundtrip = StaggeredGridSplit.merge(
         splittable.split(split_merger), split_merger
     )
-    assert all(
-        (
-            (
-                getattr(getattr(splittable, g), v)
-                == getattr(getattr(sm_roundtrip, g), v)
-            ).all()
-            for v in ("x", "y", "mask", "dx", "dy")
-        )
-        for g in ("u", "v", "eta", "q")
-    )
+    assert splittable == sm_roundtrip
 
 
 def test_VariableSplit_init(state_param):
@@ -265,19 +243,8 @@ def test_VariableSplit_merge_none_properly_treated(state_param, split_merger):
 
 def test_StateSplit_split_merge_roundtrip(state_param, split_merger):
     splittable_state = StateSplit.from_state(state_param[0])
-    sm_roundrtip = StateSplit.merge(splittable_state.split(split_merger), split_merger)
-    assert all(
-        (getattr(state_param[0], v).data == getattr(sm_roundrtip, v).data).all()
-        for v in ("u", "v", "eta")
-    )
-    assert all(
-        (
-            getattr(getattr(state_param[0], v).grid, gv).data
-            == getattr(getattr(sm_roundrtip, v).grid, gv).data
-        )
-        for gv in ("x", "y", "dx", "dy", "mask")
-        for v in ("u", "v", "eta")
-    )
+    sm_roundtrip = StateSplit.merge(splittable_state.split(split_merger), split_merger)
+    assert splittable_state == sm_roundtrip
 
 
 def test_DomainState_init(state_param):
@@ -341,7 +308,7 @@ def test_DomainState_split(domain_state, split_merger):
     )
     assert all(
         (
-            ~np.may_share_memory(getattr(o, v).data, getattr(domain_state, v).data)
+            not np.may_share_memory(getattr(o, v).data, getattr(domain_state, v).data)
             for v in ("u", "v", "eta")
         )
         for o in out
@@ -395,31 +362,18 @@ def test_DomainState_merge_raises_on_iteration_counter_discrepancy(
 def test_DomainState_merge(domain_state, split_merger):
     splitted = domain_state.split(split_merger)
     merged = DomainState.merge(splitted, split_merger)
-    assert all(
-        (getattr(merged, v).data == getattr(domain_state, v).data).all()
-        for v in ("u", "v", "eta")
-    )
-    assert all(
-        (getattr(merged, v).grid.mask == getattr(domain_state, v).grid.mask).all()
-        for v in ("u", "v", "eta")
-    )
+    merged == domain_state
 
 
 def test_DomainState_merge_param(domain_state, split_merger):
     splitted = domain_state.split(split_merger)
     merged = DomainState.merge(splitted, split_merger)
-    assert all(
-        getattr(merged.parameter, a) == getattr(domain_state.parameter, a)
-        for a in ("g", "H", "rho_0")
-    )
-    assert all(
-        (merged.parameter.f[g] == domain_state.parameter.f[g]).all()
-        for g in domain_state.parameter.f
-    )
+    assert merged.parameter == domain_state.parameter
 
 
 def test_DomainState_copy(domain_state):
     ds_copy = copy(domain_state)
+    assert ds_copy == domain_state
     assert id(ds_copy) is not id(domain_state)
     assert all(
         id(getattr(ds_copy, v)) is not id(getattr(domain_state, v))
@@ -443,6 +397,26 @@ def test_DomainState_copy(domain_state):
         )
         for v in ("u", "v", "eta")
     )
+
+
+def test_DomainState_comparison_with_identical_returns_true(domain_state):
+    d2 = domain_state
+    assert domain_state == d2
+
+
+def test_DomainState_comparison_with_same_returns_true(domain_state):
+    d2 = domain_state.copy()
+    assert domain_state == d2
+
+
+def test_DomainState_comparison_with_different_returns_false(domain_state):
+    d2 = domain_state.copy()
+    d2.id = 100
+    assert domain_state != d2
+
+
+def test_DomainState_comparison_with_wrong_type_returns_false(domain_state):
+    assert domain_state != 5
 
 
 def test_BorderState_init(state_param):
@@ -527,6 +501,15 @@ def test_Tail_stitch_correctly_stitch(domain_state):
     t = Tail()
     borders = t.make_borders(domain_state, width, dim)
     stitched_domain = t.stitch(base=domain_state, borders=borders, dims=(dim,))
+    assert domain_state == stitched_domain
+
+
+def test_Tail_stitch_returns_copy(domain_state):
+    width = 2
+    dim = 1
+    t = Tail()
+    borders = t.make_borders(domain_state, width, dim)
+    stitched_domain = t.stitch(base=domain_state, borders=borders, dims=(dim,))
     assert all(
         (
             not np.may_share_memory(
@@ -535,15 +518,13 @@ def test_Tail_stitch_correctly_stitch(domain_state):
             for v in ("u", "v", "eta")
         )
     )
-    assert all(
-        (
-            (getattr(domain_state, v).data == getattr(stitched_domain, v).data).all()
-            for v in ("u", "v", "eta")
-        )
-    )
-    assert all(
-        (
-            (getattr(domain_state, v).data == getattr(stitched_domain, v).data).all()
-            for v in ("u", "v", "eta")
-        )
-    )
+
+
+def test_Tail_stitch_raise_ValueError_on_iteration_mismatch(domain_state):
+    width = 2
+    dim = 1
+    t = Tail()
+    borders = t.make_borders(domain_state, width, dim)
+    domain_state.it += 1
+    with pytest.raises(ValueError, match="Borders iteration mismatch"):
+        _ = t.stitch(base=domain_state, borders=borders, dims=(dim,))

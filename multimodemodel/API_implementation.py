@@ -288,6 +288,10 @@ class VariableSplit(Variable, Splitable):
         """Create from Variable object."""
         return cls(data=var.data, grid=GridSplit.from_grid(var.grid))
 
+    def __eq__(self, other):
+        """Return true if other is identical or the same as self."""
+        return super().__eq__(other)
+
 
 class StateSplit(State, Splitable):
     """Implements splitting and merging on State class."""
@@ -351,7 +355,7 @@ class StateDequeSplit(deque, Splitable):
 class DomainState(State, Domain, Splitable):
     """Implements Domain and Splitable interface on State class."""
 
-    __slots__ = ["u", "v", "eta", "id", "it", "history", "p"]
+    __slots__ = ["u", "v", "eta", "id", "it", "history", "parameter"]
 
     def __init__(
         self,
@@ -465,6 +469,14 @@ class DomainState(State, Domain, Splitable):
         """Return a deep copy of the object."""
         return deepcopy(self)
 
+    def __eq__(self, other) -> bool:
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, DomainState):
+            return NotImplemented
+        if self is other:
+            return True
+        return all(getattr(self, a) == getattr(other, a) for a in self.__slots__)
+
 
 class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
@@ -545,7 +557,7 @@ class Tail(Tailor):
         if base.get_iteration() == l_border.get_iteration() == r_border.get_iteration():
             assert base.get_id() == l_border.get_id() == r_border.get_id()
         else:
-            raise Exception(
+            raise ValueError(
                 "Borders iteration mismatch. Left: {}, right: {}, domain: {}".format(
                     l_border.get_iteration(),
                     r_border.get_iteration(),
