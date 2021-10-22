@@ -7,6 +7,8 @@ from redis import Redis
 from struct import pack
 from collections import deque
 from typing import Optional, Sequence, Tuple
+from dataclasses import dataclass
+from copy import deepcopy
 
 
 def _new_grid(x: np.ndarray, y: np.ndarray, mask: np.ndarray) -> Grid:
@@ -194,6 +196,7 @@ class GridSplit(Grid, Splitable):
         return cls(x=grid.x, y=grid.y, mask=grid.mask)
 
 
+@dataclass
 class StaggeredGridSplit(StaggeredGrid, Splitable):
     """Implements splitting and merging on StaggeredGrid class."""
 
@@ -220,7 +223,7 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
         """Merge staggered grids."""
         return cls(
             **{
-                g: GridSplit.merge((getattr(o, g) for o in others), merger)
+                g: GridSplit.merge(tuple(getattr(o, g) for o in others), merger)
                 for g in ("u", "v", "eta", "q")
             }
         )
@@ -231,6 +234,7 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
         return cls(**{k: getattr(staggered_grid, k) for k in ("u", "v", "eta", "q")})
 
 
+@dataclass
 class VariableSplit(Variable, Splitable):
     """Implements splitting and merging on Variable class."""
 
@@ -254,8 +258,12 @@ class VariableSplit(Variable, Splitable):
     @classmethod
     def merge(cls, others, merger: SplitMerger):
         """Merge variable."""
+        if all(o.data is None for o in others):
+            data = None
+        else:
+            data = merger.merge_array([o.safe_data for o in others])
         return cls(
-            data=merger.merge_array([o.data for o in others]),
+            data=data,
             grid=GridSplit.merge([o.grid for o in others], merger),
         )
 
@@ -334,8 +342,8 @@ class DomainState(State, Domain, Splitable):
         u: Variable,
         v: Variable,
         eta: Variable,
-        history: Optional[StateDequeSplit] = None,
-        parameter: Optional[ParameterSplit] = None,
+        history: Optional[deque] = None,
+        parameter: Optional[Parameters] = None,
         it: int = 0,
         id: int = 0,
     ):
@@ -344,28 +352,28 @@ class DomainState(State, Domain, Splitable):
         self.v: VariableSplit = VariableSplit.from_variable(v)
         self.eta: VariableSplit = VariableSplit.from_variable(eta)
         if history is None:
-            self.history: StateDequeSplit = StateDequeSplit([], maxlen=3)
+            self.history = StateDequeSplit([], maxlen=3)
         else:
-            self.history = history
+            self.history = StateDequeSplit.from_state_deque(history)
         if parameter is None:
             self.parameter = ParameterSplit(Parameters(), {})
         else:
-            self.parameter = parameter
+            self.parameter = ParameterSplit.from_parameters(parameter)
 
         self.id = id
         self.it = it
 
     @classmethod
     def make_from_State(
-        cls, s: State, history, parameter: Parameters, it: int, id: int = 0
+        cls, s: State, history: deque, parameter: Parameters, it: int, id: int = 0
     ):
         """Make DomainState object from State objects, without copying Variables."""
         return cls(
-            VariableSplit.from_variable(s.u),
-            VariableSplit.from_variable(s.v),
-            VariableSplit.from_variable(s.eta),
-            StateDequeSplit.from_state_deque(history),
-            ParameterSplit.from_parameters(parameter),
+            s.u,
+            s.v,
+            s.eta,
+            history,
+            parameter,
             it,
             id,
         )
@@ -437,6 +445,10 @@ class DomainState(State, Domain, Splitable):
             others[0].get_id(),
         )
 
+    def copy(self):
+        """Return a deep copy of the object."""
+        return deepcopy(self)
+
 
 class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
@@ -460,11 +472,14 @@ class BorderState(DomainState, Border):
 
     @classmethod
     def create_border(cls, base: DomainState, width: int, direction: bool, dim: int):
-        """Create BorderState instance from DomainState."""
+        """Split border of a DomainState instance.
+
+        The data of the boarder will be copied to avoid data races.
+        """
         splitter = BorderSplitter(width=width, axis=dim, direction=direction)
         splitted_state = base.split(splitter)[0]
 
-        return cls.from_domain_state(splitted_state, width=width, dim=dim)
+        return cls.from_domain_state(splitted_state.copy(), width=width, dim=dim)
 
     @classmethod
     def from_domain_state(cls, domain_state: DomainState, width: int, dim: int):
@@ -493,6 +508,7 @@ class BorderState(DomainState, Border):
         return self.dim
 
 
+# TODO: make this work for dim != 1
 class Tail(Tailor):
     """Implement Tailor class from API."""
 
@@ -508,7 +524,7 @@ class Tail(Tailor):
     def stitch(self, base: DomainState, borders: tuple, dims: tuple) -> DomainState:
         """Implement stitch method from API."""
         u, v, eta = (_copy_variable(v) for v in base.get_data())
-        l_border, r_border = borders[0]
+        l_border, r_border = borders
 
         if base.get_iteration() == l_border.get_iteration() == r_border.get_iteration():
             assert base.get_id() == l_border.get_id() == r_border.get_id()

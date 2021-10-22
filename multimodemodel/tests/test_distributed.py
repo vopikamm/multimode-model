@@ -6,11 +6,16 @@ from collections import deque
 from copy import copy
 from multimodemodel.API_implementation import (
     ParameterSplit,
+    GridSplit,
+    StaggeredGridSplit,
+    VariableSplit,
+    StateSplit,
+    StateDequeSplit,
     DomainState,
     BorderState,
     RegularSplitMerger,
-    StateDequeSplit,
-    VariableSplit,
+    BorderSplitter,
+    Tail,
 )
 from multimodemodel import (
     Parameters,
@@ -130,6 +135,12 @@ def border_state(domain_state):
     )
 
 
+def test_BorderSplitter_merge_raise_NotImplemented():
+    bs = BorderSplitter(width=2, axis=0, direction=False)
+    with pytest.raises(NotImplementedError, match="Merging not supported"):
+        _ = bs.merge_array([np.random.randn(3, 3) for i in range(2)])
+
+
 def test_ParameterSplit_init(param):
     ps = ParameterSplit(param, data=param.f)
     assert ps.g == param.g
@@ -183,6 +194,92 @@ def test_ParameterSplit_merge_no_coriolis(param_split, split_merger):
     assert merged.rho_0 == param_split.rho_0
 
 
+def test_GridSplit_split_merge_roundtrip(staggered_grid, split_merger):
+    grid = GridSplit.from_grid(staggered_grid.u)
+    sm_rountrip = GridSplit.merge(grid.split(split_merger), split_merger)
+    assert all(
+        (getattr(grid, a) == getattr(sm_rountrip, a)).all()
+        for a in ("x", "y", "mask", "dx", "dy")
+    )
+    assert all(
+        (getattr(grid, a) == getattr(sm_rountrip, a))
+        for a in ("dim_x", "dim_y", "len_x", "len_y")
+    )
+
+
+def test_StaggeredGrid_init(staggered_grid):
+    splittable = StaggeredGridSplit.from_staggered_grid(staggered_grid)
+    assert all(
+        isinstance(getattr(splittable, g), GridSplit) for g in ("u", "v", "eta", "q")
+    )
+
+
+def test_StaggeredGrid_split_merge_roundtrip(staggered_grid, split_merger):
+    splittable = StaggeredGridSplit.from_staggered_grid(staggered_grid)
+    sm_roundtrip = StaggeredGridSplit.merge(
+        splittable.split(split_merger), split_merger
+    )
+    assert all(
+        (
+            (
+                getattr(getattr(splittable, g), v)
+                == getattr(getattr(sm_roundtrip, g), v)
+            ).all()
+            for v in ("x", "y", "mask", "dx", "dy")
+        )
+        for g in ("u", "v", "eta", "q")
+    )
+
+
+def test_VariableSplit_init(state_param):
+    state, _ = state_param
+    var = state.u
+    assert not isinstance(var.grid, GridSplit)
+    v_splittable = VariableSplit(var.data, var.grid)
+    assert isinstance(v_splittable.grid, GridSplit)
+
+
+def test_VariableSplit_split_None_data_into_tuple_of_None(state_param, split_merger):
+    var = state_param[0].u
+    var.data = None
+    var = VariableSplit.from_variable(var)
+    splitted_var = var.split(split_merger)
+    assert tuple(s.data for s in splitted_var) == split_merger.parts * (None,)
+
+
+def test_VariableSplit_merge_none_properly_treated(state_param, split_merger):
+    var = state_param[0].u
+    var = VariableSplit.from_variable(var)
+    var_split = var.split(split_merger)
+    replace_data = np.zeros_like(var_split[0].data)
+    var_split[0].data = None
+    sm_var = VariableSplit.merge(var_split, split_merger)
+    oracle = split_merger.merge_array(
+        [replace_data if i == 0 else vs.data for i, vs in enumerate(var_split)]
+    )
+    if split_merger.parts == 1:
+        assert None == sm_var.data
+    else:
+        assert (sm_var.data == oracle).all()
+
+
+def test_StateSplit_split_merge_roundtrip(state_param, split_merger):
+    splittable_state = StateSplit.from_state(state_param[0])
+    sm_roundrtip = StateSplit.merge(splittable_state.split(split_merger), split_merger)
+    assert all(
+        (getattr(state_param[0], v).data == getattr(sm_roundrtip, v).data).all()
+        for v in ("u", "v", "eta")
+    )
+    assert all(
+        (
+            getattr(getattr(state_param[0], v).grid, gv).data
+            == getattr(getattr(sm_roundrtip, v).grid, gv).data
+        )
+        for gv in ("x", "y", "dx", "dy", "mask")
+        for v in ("u", "v", "eta")
+    )
+
+
 def test_DomainState_init(state_param):
     state, param = state_param
     ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
@@ -192,6 +289,14 @@ def test_DomainState_init(state_param):
     assert np.may_share_memory(ds.v.data, state.v.data)
     assert (ds.eta.data == state.eta.data).all()
     assert np.may_share_memory(ds.eta.data, state.eta.data)
+
+
+def test_DomainState_init_None_history_to_empty_StateDequeSplit(state_param):
+    state, param = state_param
+    ds = DomainState(state.u, state.v, state.eta, None, param)
+    assert isinstance(ds.history, deque)
+    assert len(ds.history) == 0
+    assert ds.history.maxlen == 3
 
 
 def test_DomainState_set_id(domain_state, ident):
@@ -249,6 +354,20 @@ def test_DomainState_split_splits_params(domain_state, split_merger):
     assert all(
         (o.p.f[g] == o_p.f[g] for g in domain_state.parameter.f)
         for o, o_p in zip(out, out_params)
+    )
+
+
+def test_DomainState_split_splits_history(domain_state, split_merger):
+    hist_state = State(u=domain_state.u, v=domain_state.v, eta=domain_state.eta)
+    domain_state.history.append(hist_state)
+    splitted_hist_states = StateSplit.from_state(hist_state).split(split_merger)
+    out = domain_state.split(split_merger)
+    assert all(
+        (
+            (getattr(splitted_hist_state, v) == getattr(o.history[-1], v)).all()
+            for v in ("u", "v", "eta")
+        )
+        for splitted_hist_state, o in zip(splitted_hist_states, out)
     )
 
 
@@ -358,7 +477,7 @@ def test_BorderState_get_dim_returns_dim(border_state):
     assert border_state.get_dim() == border_state.dim
 
 
-def test_BorderState_create_border(state_param, border_direction, dim, request):
+def test_BorderState_create_border(state_param, border_direction, dim):
     width = 2
     dim = dim[0]
     direction = border_direction
@@ -378,6 +497,53 @@ def test_BorderState_create_border(state_param, border_direction, dim, request):
     assert np.allclose(bs.u.data, state.u.data[b_slices])
     assert (bs.v.data == state.v.data[b_slices]).all()
     assert (bs.eta.data == state.eta.data[b_slices]).all()
-    # assert not np.may_share_memory(bs.u.data, state.u.data)
-    # assert not np.may_share_memory(bs.v.data, state.v.data)
-    # assert not np.may_share_memory(bs.eta.data, state.eta.data)
+
+
+def test_BorderState_create_border_returns_copies(state_param, border_direction, dim):
+    width = 2
+    dim = dim[0]
+    direction = border_direction
+    state, param = state_param
+
+    ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
+    bs = BorderState.create_border(ds, width=width, direction=direction, dim=dim)
+    assert not np.may_share_memory(bs.u.data, state.u.data)
+    assert not np.may_share_memory(bs.v.data, state.v.data)
+    assert not np.may_share_memory(bs.eta.data, state.eta.data)
+
+
+def test_Tail_make_borders_returns_two_borders(domain_state):
+    width = 2
+    dim = 1
+    t = Tail()
+    borders = t.make_borders(domain_state, width, dim)
+    assert type(borders) is tuple
+    assert len(borders) == 2
+
+
+def test_Tail_stitch_correctly_stitch(domain_state):
+    width = 2
+    dim = 1
+    t = Tail()
+    borders = t.make_borders(domain_state, width, dim)
+    stitched_domain = t.stitch(base=domain_state, borders=borders, dims=(dim,))
+    assert all(
+        (
+            not np.may_share_memory(
+                getattr(domain_state, v).data, getattr(stitched_domain, v).data
+            )
+            for v in ("u", "v", "eta")
+        )
+    )
+    assert all(
+        (
+            (getattr(domain_state, v).data == getattr(stitched_domain, v).data).all()
+            for v in ("u", "v", "eta")
+        )
+    )
+    assert all(
+        (
+            (getattr(domain_state, v).data == getattr(stitched_domain, v).data).all()
+            for v in ("u", "v", "eta")
+        )
+    )
