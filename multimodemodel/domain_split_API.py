@@ -4,6 +4,7 @@ from typing import (
     Sequence,  # TODO: deprication handling
     # https://docs.python.org/3/library/typing.html#typing.Sequence
     Tuple,
+    Optional,
 )
 from dask.distributed import Future, Client
 from copy import deepcopy
@@ -18,7 +19,7 @@ class SplitMerger(ABC):
     """
 
     @abstractmethod
-    def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
+    def split_array(self, array: Optional[np.ndarray]) -> Tuple[np.ndarray, ...]:
         """Split numpy array in various parts."""
         pass
 

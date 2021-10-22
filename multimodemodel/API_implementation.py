@@ -7,7 +7,7 @@ from redis import Redis
 from struct import pack
 from collections import deque
 from typing import Optional, Sequence, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from copy import deepcopy
 
 
@@ -130,13 +130,6 @@ class BorderSplitter(SplitMerger):
 class ParameterSplit(Parameters, Splitable):
     """Implements splitting and merging on Parameters class."""
 
-    def __init__(self, other: Parameters, data: dict):
-        """Create class instance from another one and Coriolis data."""
-        self.g = other.g
-        self.H = other.H
-        self.rho_0 = other.rho_0
-        self._f = data
-
     def split(self, splitter: SplitMerger):
         """Split Parameter's spatially dependent data."""
         data = None
@@ -152,7 +145,7 @@ class ParameterSplit(Parameters, Splitable):
         # Create list of dictionaries that hold just one part of splitted arrays
         out = [{key: new[key][i] for key in new} for i in range(splitter.parts)]
 
-        return tuple(self.__class__(self, o) for o in out)
+        return tuple(self.__class__.from_parameters_with_data(self, o) for o in out)
 
     @classmethod
     def merge(cls, others: Sequence[Parameters], merger: SplitMerger):
@@ -166,12 +159,35 @@ class ParameterSplit(Parameters, Splitable):
         except RuntimeError:
             pass
 
-        return cls(others[0], data)
+        return cls.from_parameters_with_data(others[0], data)
 
     @classmethod
-    def from_parameters(cls, params):
+    def from_parameters(cls, other: Parameters) -> "ParameterSplit":
         """Create from Parameters object."""
-        return cls(params, params.f)
+        new = cls(
+            **{
+                f.name: getattr(other, f.name)
+                for f in fields(other)
+                if f.name not in ("_f")
+            }
+        )
+        new._f = other._f
+        return new
+
+    @classmethod
+    def from_parameters_with_data(
+        cls, other: Parameters, data: dict[str, np.ndarray]
+    ) -> "ParameterSplit":
+        """Create from Parameters object."""
+        new = cls(
+            **{
+                f.name: getattr(other, f.name)
+                for f in fields(other)
+                if f.name not in ("_f")
+            }
+        )
+        new._f = data
+        return new
 
 
 class GridSplit(Grid, Splitable):
@@ -356,7 +372,7 @@ class DomainState(State, Domain, Splitable):
         else:
             self.history = StateDequeSplit.from_state_deque(history)
         if parameter is None:
-            self.parameter = ParameterSplit(Parameters(), {})
+            self.parameter = ParameterSplit()
         else:
             self.parameter = ParameterSplit.from_parameters(parameter)
 

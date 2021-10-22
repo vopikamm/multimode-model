@@ -64,7 +64,7 @@ def param(staggered_grid, coriolis_func):
 
 @pytest.fixture
 def param_split(param):
-    return ParameterSplit(param, data=param.f)
+    return ParameterSplit.from_parameters(param)
 
 
 @pytest.fixture(params=[1, 2])
@@ -141,8 +141,8 @@ def test_BorderSplitter_merge_raise_NotImplemented():
         _ = bs.merge_array([np.random.randn(3, 3) for i in range(2)])
 
 
-def test_ParameterSplit_init(param):
-    ps = ParameterSplit(param, data=param.f)
+def test_ParameterSplit_from_parameters(param):
+    ps = ParameterSplit.from_parameters(param)
     assert ps.g == param.g
     assert ps.H == param.H
     assert ps.rho_0 == param.rho_0
