@@ -135,12 +135,6 @@ def border_state(domain_state):
     )
 
 
-def test_BorderSplitter_merge_raise_NotImplemented():
-    bs = BorderSplitter(width=2, axis=0, direction=False)
-    with pytest.raises(NotImplementedError, match="Merging not supported"):
-        _ = bs.merge_array([np.random.randn(3, 3) for i in range(2)])
-
-
 def test_ParameterSplit_from_parameters(param):
     ps = ParameterSplit.from_parameters(param)
     assert ps.g == param.g

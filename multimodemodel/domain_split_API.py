@@ -11,21 +11,16 @@ from copy import deepcopy
 import numpy as np
 
 
-class SplitMerger(ABC):
-    """SplitMerger class has methods for splitting and merging arrays.
+class SplitVisitor(ABC):
+    """SplitVisitor class has methods for splitting arrays.
 
     Classes implementing the interface are used as arguments to `split`
-    and `merge` methods of classes implementing the `Splittable` interface.
+    methods of classes implementing the `Splittable` interface.
     """
 
     @abstractmethod
     def split_array(self, array: Optional[np.ndarray]) -> Tuple[np.ndarray, ...]:
         """Split numpy array in various parts."""
-        pass
-
-    @abstractmethod
-    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
-        """Merge numpy array in various parts."""
         pass
 
     @property
@@ -35,11 +30,24 @@ class SplitMerger(ABC):
         pass
 
 
+class MergeVisitor(ABC):
+    """MergeVisitor class has methods for merging arrays.
+
+    Classes implementing the interface are used as arguments to
+    `merge` methods of classes implementing the `Splittable` interface.
+    """
+
+    @abstractmethod
+    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
+        """Merge numpy array in various parts."""
+        pass
+
+
 class Splitable(ABC):
     """Splitable class has methods for splitting and merging its instances."""
 
     @abstractmethod
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split the Domain into given number of parts along axis given by dim.
 
         For splitting among more than one axis pass tuple as dim.
@@ -48,7 +56,7 @@ class Splitable(ABC):
 
     @classmethod
     @abstractmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Merge multiple Domains into one new domain."""
         pass
 

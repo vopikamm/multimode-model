@@ -1,5 +1,13 @@
 """Implementation of domain split API."""
-from .domain_split_API import Domain, Border, Solver, SplitMerger, Tailor, Splitable
+from .domain_split_API import (
+    Domain,
+    Border,
+    Solver,
+    SplitVisitor,
+    MergeVisitor,
+    Tailor,
+    Splitable,
+)
 from .datastructure import State, Variable, np, Parameters
 from .grid import Grid, StaggeredGrid
 from dask.distributed import Client, Future
@@ -29,7 +37,7 @@ def _copy_variable(var: Variable) -> Variable:
     )
 
 
-class RegularSplitMerger(SplitMerger):
+class RegularSplitMerger(SplitVisitor, MergeVisitor):
     """Implements splitting and merging into regular grid."""
 
     __slots__ = ["tuple", "_parts"]
@@ -73,7 +81,7 @@ class RegularSplitMerger(SplitMerger):
         return self._parts
 
 
-class BorderSplitter(SplitMerger):
+class BorderSplitter(SplitVisitor):
     """Implements splitting off the borders of a DomainState along a dimension.
 
     The required merge_array method is not implemented, hence the use in a call to merge
@@ -107,20 +115,6 @@ class BorderSplitter(SplitMerger):
         slices[self._axis] = self._slice
         return (array[tuple(slices)],)
 
-    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
-        """Merge array.
-
-        Parameter
-        ---------
-        arrays: Sequence[np.ndarray]
-          Arrays to merge.
-
-        Returns
-        -------
-        np.ndarray
-        """
-        raise NotImplementedError("Merging not supported by {self.__class__.__name__}")
-
     @property
     def parts(self) -> int:
         """Return number of parts created by split."""
@@ -130,7 +124,7 @@ class BorderSplitter(SplitMerger):
 class ParameterSplit(Parameters, Splitable):
     """Implements splitting and merging on Parameters class."""
 
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split Parameter's spatially dependent data."""
         data = None
         try:
@@ -148,7 +142,7 @@ class ParameterSplit(Parameters, Splitable):
         return tuple(self.__class__.from_parameters_with_data(self, o) for o in out)
 
     @classmethod
-    def merge(cls, others: Sequence[Parameters], merger: SplitMerger):
+    def merge(cls, others: Sequence[Parameters], merger: MergeVisitor):
         """Merge Parameter's Coriolis data."""
         data = {}
         try:
@@ -193,13 +187,13 @@ class ParameterSplit(Parameters, Splitable):
 class GridSplit(Grid, Splitable):
     """Implements splitting and merging on Grid class."""
 
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split grid."""
         x, y, mask = (splitter.split_array(arr) for arr in (self.x, self.y, self.mask))
         return tuple(self.__class__(*args) for args in zip(x, y, mask))
 
     @classmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Merge grids."""
         x = merger.merge_array(tuple(o.x for o in others))
         y = merger.merge_array(tuple(o.y for o in others))
@@ -224,7 +218,7 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
         self.eta = GridSplit.from_grid(self.eta)
         self.q = GridSplit.from_grid(self.q)
 
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split staggered grids."""
         splitted_grids = {
             g: getattr(self, g).split(splitter) for g in ("u", "v", "eta", "q")
@@ -235,7 +229,7 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Merge staggered grids."""
         return cls(
             **{
@@ -259,7 +253,7 @@ class VariableSplit(Variable, Splitable):
         if not isinstance(self.grid, Splitable):
             self.grid: GridSplit = GridSplit.from_grid(self.grid)
 
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split variable."""
         data = self.safe_data
         splitted_grid = self.grid.split(splitter)
@@ -272,7 +266,7 @@ class VariableSplit(Variable, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Merge variable."""
         if all(o.data is None for o in others):
             data = None
@@ -296,7 +290,7 @@ class VariableSplit(Variable, Splitable):
 class StateSplit(State, Splitable):
     """Implements splitting and merging on State class."""
 
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split state."""
         splitted_u = VariableSplit.from_variable(self.u).split(splitter)
         splitted_v = VariableSplit.from_variable(self.v).split(splitter)
@@ -307,7 +301,7 @@ class StateSplit(State, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Merge variables."""
         return cls(
             u=VariableSplit.merge([o.u for o in others], merger),
@@ -328,7 +322,7 @@ class StateSplit(State, Splitable):
 class StateDequeSplit(deque, Splitable):
     """Implements splitting and merging on deque class."""
 
-    def split(self, splitter: SplitMerger):
+    def split(self, splitter: SplitVisitor):
         """Split StateDeque."""
         splitted_states = tuple(StateSplit.from_state(s).split(splitter) for s in self)
         if len(splitted_states) == 0:
@@ -339,7 +333,7 @@ class StateDequeSplit(deque, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Merge StateDeques."""
         return cls(
             (StateSplit.merge(states, merger) for states in zip(*others)),
@@ -420,7 +414,7 @@ class DomainState(State, Domain, Splitable):
         return self.it + 1
 
     def split(
-        self, splitter: SplitMerger
+        self, splitter: SplitVisitor
     ):  # TODO: raise error if shape[dim[0]] // parts < 2
         """Implement the split method from API."""
         splitted = (
@@ -430,8 +424,6 @@ class DomainState(State, Domain, Splitable):
             self.history.split(splitter),
             self.parameter.split(splitter),
         )
-
-        # [print(len(e)) for e in splitted]
 
         out = tuple(
             self.__class__(
@@ -449,7 +441,7 @@ class DomainState(State, Domain, Splitable):
         return out
 
     @classmethod
-    def merge(cls, others, merger: SplitMerger):
+    def merge(cls, others, merger: MergeVisitor):
         """Implement merge method from API."""
         if any(tuple(o.it != others[0].it for o in others)):
             raise ValueError(
@@ -475,7 +467,10 @@ class DomainState(State, Domain, Splitable):
             return NotImplemented
         if self is other:
             return True
-        return all(getattr(self, a) == getattr(other, a) for a in self.__slots__)
+        for a in self.__slots__:
+            if not getattr(self, a) == getattr(other, a):
+                return False
+        return True
 
 
 class BorderState(DomainState, Border):
@@ -536,6 +531,57 @@ class BorderState(DomainState, Border):
         return self.dim
 
 
+class BorderMerger(MergeVisitor):
+    """Implements merging of the borders with a DomainState along a dimension.
+
+    This merger is suppose to be used in the merge classmethod of the DomainState class.
+    The order of arguments must be (left_border, domain, right_border).
+    """
+
+    __slots__ = ["_axis", "_slice_left", "_slice_right"]
+
+    def __init__(self, width: int, axis: int):
+        """Initialize class instance."""
+        self._axis = axis
+        self._slice_left = slice(None, width)
+        self._slice_right = slice(-width, None)
+
+    @classmethod
+    def from_borders(
+        cls, left_border: BorderState, right_border: BorderState
+    ) -> "BorderMerger":
+        """Create BorderManager from left and right border instance."""
+        assert left_border.width == right_border.width
+        assert left_border.dim == right_border.dim
+        return cls(width=left_border.width, axis=left_border.dim)
+
+    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
+        """Merge array.
+
+        Parameter
+        ---------
+        arrays: Sequence[np.ndarray]
+          Arrays to merge.
+
+        Returns
+        -------
+        np.ndarray
+        """
+        slices = arrays[1].ndim * [slice(None)]
+        slices_left = tuple(
+            s if i != self._axis else self._slice_left for i, s in enumerate(slices)
+        )
+        slices_right = tuple(
+            s if i != self._axis else self._slice_right for i, s in enumerate(slices)
+        )
+
+        left, base, right = arrays
+        out = base.copy()
+        out[slices_left] = left
+        out[slices_right] = right
+        return out
+
+
 # TODO: make this work for dim != 1
 class Tail(Tailor):
     """Implement Tailor class from API."""
@@ -550,38 +596,29 @@ class Tail(Tailor):
         )
 
     def stitch(self, base: DomainState, borders: tuple, dims: tuple) -> DomainState:
-        """Implement stitch method from API."""
-        u, v, eta = (_copy_variable(v) for v in base.get_data())
-        l_border, r_border = borders
+        """Implement stitch method from API.
 
-        if base.get_iteration() == l_border.get_iteration() == r_border.get_iteration():
-            assert base.get_id() == l_border.get_id() == r_border.get_id()
+        borders need to be ordered left_border, right_border
+        """
+        left_border, right_border = borders
+        border_merger = BorderMerger.from_borders(left_border, right_border)
+
+        if (
+            base.get_iteration()
+            == left_border.get_iteration()
+            == right_border.get_iteration()
+        ):
+            assert base.get_id() == left_border.get_id() == right_border.get_id()
         else:
             raise ValueError(
                 "Borders iteration mismatch. Left: {}, right: {}, domain: {}".format(
-                    l_border.get_iteration(),
-                    r_border.get_iteration(),
+                    left_border.get_iteration(),
+                    right_border.get_iteration(),
                     base.get_iteration(),
                 )
             )
 
-        u.data[:, (u.data.shape[1] - r_border.get_width()) :] = r_border.get_data()[
-            0
-        ].safe_data.copy()
-        v.data[:, (u.data.shape[1] - r_border.get_width()) :] = r_border.get_data()[
-            1
-        ].safe_data.copy()
-        eta.data[:, (u.data.shape[1] - r_border.get_width()) :] = r_border.get_data()[
-            2
-        ].safe_data.copy()
-
-        u.data[:, : l_border.get_width()] = l_border.get_data()[0].safe_data.copy()
-        v.data[:, : l_border.get_width()] = l_border.get_data()[1].safe_data.copy()
-        eta.data[:, : l_border.get_width()] = l_border.get_data()[2].safe_data.copy()
-
-        return DomainState(
-            u, v, eta, base.history, base.parameter, base.get_iteration(), base.get_id()
-        )
+        return DomainState.merge((left_border, base, right_border), border_merger)
 
 
 def _dump_to_redis(domain: DomainState):
@@ -596,7 +633,6 @@ def _dump_to_redis(domain: DomainState):
             shape = pack(">II", h, w)
             encoded = shape + domain.eta.safe_data.tobytes()
 
-            print(k)
             r.set(k, encoded)
 
 
