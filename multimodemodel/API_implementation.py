@@ -14,7 +14,7 @@ from dask.distributed import Client, Future
 from redis import Redis
 from struct import pack
 from collections import deque
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple, Dict
 from dataclasses import dataclass, fields
 from copy import deepcopy
 
@@ -170,7 +170,7 @@ class ParameterSplit(Parameters, Splitable):
 
     @classmethod
     def from_parameters_with_data(
-        cls, other: Parameters, data: dict[str, np.ndarray]
+        cls, other: Parameters, data: Dict[str, np.ndarray]
     ) -> "ParameterSplit":
         """Create from Parameters object."""
         new = cls(
