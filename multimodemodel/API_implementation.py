@@ -1,5 +1,6 @@
 """Implementation of domain split API."""
 import sys
+from enum import Enum
 from .integrate import TimeSteppingFunction
 from .domain_split_API import (
     Domain,
@@ -88,23 +89,23 @@ class RegularSplitMerger(SplitVisitor, MergeVisitor):
         return self._parts
 
 
-class BorderSplitter(SplitVisitor):
-    """Implements splitting off the borders of a DomainState along a dimension.
+class BorderDirection(Enum):
+    """Enumerator of border possible directions."""
 
-    The required merge_array method is not implemented, hence the use in a call to merge
-    of a class implementing the `Splittable` interface will raise an runtime exception.
-    """
+    LEFT = lambda w: slice(None, w)  # noqa: E731
+    RIGHT = lambda w: slice(-w, None)  # noqa: E731
+    CENTER = lambda w1, w2: slice(w1, -w2)  # noqa: E731
+
+
+class BorderSplitter(SplitVisitor):
+    """Implements splitting off stripes of a DomainState along a dimension."""
 
     __slots__ = ["_axis", "_slice"]
 
-    def __init__(self, width: int, axis: int, direction: bool):
+    def __init__(self, slice: slice, axis: int):
         """Initialize class instance."""
         self._axis = axis
-
-        if direction:
-            self._slice = slice(-width, None)
-        else:
-            self._slice = slice(None, width)
+        self._slice = slice
 
     def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
         """Split array.
@@ -506,7 +507,11 @@ class BorderState(DomainState, Border):
 
         The data of the boarder will be copied to avoid data races.
         """
-        splitter = BorderSplitter(width=width, axis=dim, direction=direction)
+        if direction:
+            border_slice = BorderDirection.RIGHT(width)
+        else:
+            border_slice = BorderDirection.LEFT(width)
+        splitter = BorderSplitter(slice=border_slice, axis=dim)
         splitted_state = base.split(splitter)[0]
 
         return cls.from_domain_state(splitted_state.copy(), width=width, dim=dim)
@@ -550,8 +555,8 @@ class BorderMerger(MergeVisitor):
     def __init__(self, width: int, axis: int):
         """Initialize class instance."""
         self._axis = axis
-        self._slice_left = slice(None, width)
-        self._slice_right = slice(-width, None)
+        self._slice_left = BorderDirection.LEFT(width)
+        self._slice_right = BorderDirection.RIGHT(width)
 
     @classmethod
     def from_borders(
@@ -731,7 +736,9 @@ class GeneralSolver(Solver):
         tmp = self.integration(tmp)
 
         result = BorderState.from_domain_state(
-            tmp.split(RegularSplitMerger(3, (dim,)))[1],
+            tmp.split(BorderSplitter(slice=BorderDirection.CENTER(b_w, b_w), axis=dim))[
+                0
+            ],
             width=border.get_width(),
             dim=dim,
         )

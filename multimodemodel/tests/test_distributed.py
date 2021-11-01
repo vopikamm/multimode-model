@@ -15,7 +15,6 @@ from multimodemodel.API_implementation import (
     DomainState,
     BorderState,
     RegularSplitMerger,
-    BorderSplitter,
     Tail,
 )
 from multimodemodel import (
