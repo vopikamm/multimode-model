@@ -166,7 +166,7 @@ class Variable:
         if (
             # one is subclass of the other
             (isinstance(self, type(other)) or isinstance(other, type(self)))
-            and self.grid is not other.grid
+            and self.grid != other.grid
         ):
             raise ValueError("Try to add variables defined on different grids.")
         try:

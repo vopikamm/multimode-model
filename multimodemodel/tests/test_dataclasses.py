@@ -461,13 +461,13 @@ class TestVariable:
         v3 = v1 + v2
         assert np.all(v3.data == v1.data)
 
-    def test_grid_mismatch(self):
+    def test_add_grid_mismatch(self):
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask)
-        g2 = Grid(x, y, mask)
+        g2 = Grid(x, y + 1, mask)
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
         v1 = Variable(d1, g1)

@@ -3,8 +3,9 @@
 import pytest
 import numpy as np
 from collections import deque
-from copy import copy
+from copy import copy, deepcopy
 from multimodemodel.API_implementation import (
+    GeneralSolver,
     ParameterSplit,
     GridSplit,
     StaggeredGridSplit,
@@ -26,12 +27,13 @@ from multimodemodel import (
     beta_plane,
     State,
 )
+from multimodemodel.integrate import euler_forward
 
 
 @pytest.fixture(
     params=(
         # (100, 50),
-        (10, 5),
+        (20, 10),
     )
 )
 def staggered_grid(request):
@@ -133,6 +135,11 @@ def border_state(domain_state):
         width=2,
         dim=-1,
     )
+
+
+@pytest.fixture(params=(1, 2, 3))
+def dt(request):
+    return request.param
 
 
 def test_ParameterSplit_from_parameters(param):
@@ -522,3 +529,89 @@ def test_Tail_stitch_raise_ValueError_on_iteration_mismatch(domain_state):
     domain_state.it += 1
     with pytest.raises(ValueError, match="Borders iteration mismatch"):
         _ = t.stitch(base=domain_state, borders=borders, dims=(dim,))
+
+
+def rhs(state, _):
+    new = deepcopy(state)
+    new.u.data = np.ones(new.u.grid.x.shape)
+    new.v.data = np.ones(new.v.grid.x.shape)
+    new.eta.data = np.ones(new.eta.grid.x.shape)
+    return new
+
+
+def test_GeneralSolver_integration_appends_inc_to_history(domain_state):
+    inc = rhs(domain_state, None)
+    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=1)
+    next = gs.integration(domain_state)
+    assert next.history[-1] == inc
+
+
+def test_GeneralSolver_integration_has_no_side_effects_on_domain(domain_state):
+    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=1)
+    next = gs.integration(domain_state)
+    assert next.history != domain_state.history
+
+
+def test_GeneralSolver_integration_with_euler_forward(domain_state, dt):
+    inc = rhs(domain_state, None)
+    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
+    next = gs.integration(domain_state)
+
+    assert all(
+        (
+            getattr(domain_state, v).safe_data + dt * getattr(inc, v).safe_data
+            == getattr(next, v).safe_data
+        ).all()
+        for v in ("u", "v", "eta")
+    )
+    assert all(
+        getattr(domain_state, v).grid == getattr(next, v).grid
+        for v in ("u", "v", "eta")
+    )
+
+
+def test_GeneralSolver_integration_get_border_width_returns_2():
+    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=1)
+    assert gs.get_border_width() == 2
+
+
+def test_GeneralSolver_partial_integration(domain_state, dt):
+    dim = 1
+    splitter = RegularSplitMerger(2, (dim,))
+    tailor = Tail()
+    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
+
+    next = gs.integration(domain_state)
+    next_sub_domains = next.split(splitter)
+    next_borders = [tailor.make_borders(sub, 2, dim) for sub in next_sub_domains]
+
+    sub_domains = domain_state.split(splitter)
+    borders = [tailor.make_borders(sub, 2, dim) for sub in sub_domains]
+    integrate_borders = []
+    for i, s in enumerate(sub_domains):
+        new_left_border = gs.partial_integration(
+            domain=s, border=borders[i - 1][1], direction=False, dim=dim
+        )
+        new_right_border = gs.partial_integration(
+            domain=s,
+            border=borders[(i + 1) % (splitter.parts)][0],
+            direction=True,
+            dim=dim,
+        )
+        integrate_borders.append((new_left_border, new_right_border))
+
+    for (new_l, new_r), (next_l, next_r) in zip(integrate_borders, next_borders):
+        # assert new_l == next_l
+        # assert new_r == next_r
+        for v in ("u", "v", "eta"):
+            assert getattr(new_l, v) == getattr(next_l, v)
+            assert getattr(new_r, v) == getattr(next_r, v)
+        assert new_l.history == next_l.history
+        assert new_r.history == next_r.history
+        assert new_l.parameter == next_l.parameter
+        assert new_r.parameter == next_r.parameter
+
+
+def test_GeneralSolver_window_returns_argument(domain_state, dt):
+    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
+    assert gs.window(domain_state, None) is domain_state

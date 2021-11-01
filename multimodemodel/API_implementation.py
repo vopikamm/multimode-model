@@ -1,4 +1,6 @@
 """Implementation of domain split API."""
+import sys
+from .integrate import TimeSteppingFunction
 from .domain_split_API import (
     Domain,
     Border,
@@ -14,9 +16,14 @@ from dask.distributed import Client, Future
 from redis import Redis
 from struct import pack
 from collections import deque
-from typing import Optional, Sequence, Tuple, Dict
+from typing import Callable, Optional, Sequence, Tuple, Dict
 from dataclasses import dataclass, fields
 from copy import deepcopy
+
+if sys.version_info < (3, 9):
+    from typing import Deque
+else:
+    Deque = deque
 
 
 def _new_grid(x: np.ndarray, y: np.ndarray, mask: np.ndarray) -> Grid:
@@ -356,7 +363,7 @@ class DomainState(State, Domain, Splitable):
         u: Variable,
         v: Variable,
         eta: Variable,
-        history: Optional[deque] = None,
+        history: Optional[Deque] = None,
         parameter: Optional[Parameters] = None,
         it: int = 0,
         id: int = 0,
@@ -379,7 +386,7 @@ class DomainState(State, Domain, Splitable):
 
     @classmethod
     def make_from_State(
-        cls, s: State, history: deque, parameter: Parameters, it: int, id: int = 0
+        cls, s: State, history: Deque, parameter: Parameters, it: int, id: int = 0
     ):
         """Make DomainState object from State objects, without copying Variables."""
         return cls(
@@ -642,43 +649,48 @@ class GeneralSolver(Solver):
     Currently it performs only Euler forward scheme.
     """
 
-    def __init__(self, solution, schema, step=1):
+    __slots__ = ["step", "slv", "schema"]
+
+    def __init__(
+        self,
+        solution: Callable[[State, Parameters], State],
+        schema: TimeSteppingFunction,
+        step: float = 1,
+    ):
         """Initialize GeneralSolver object providing function to compute next iterations.
 
         Arguments
         ---------
-        solution
-            function that takes State and Parameters and returns State.
+        solution: (State, Parameters]) -> State
+            Function that takes State and Parameters and returns State.
             It is used to compute next iteration.
             Functions like linearised_SWE are highly recommended.
 
-        schema
-            integration schema like fourier_forward or adams_bashforth3
+        schema: TimeSteppingFunction
+            integration schema like euler_forward or adams_bashforth3
 
-        step
+        step: float
             Quanta of time in the integration process.
         """
         self.step = step
         self.slv = solution
         self.sch = schema
 
-    def _integrate(self, domain: DomainState) -> DomainState:
+    def integration(self, domain: DomainState) -> DomainState:
+        """Implement integration method from API."""
         inc = self.slv(domain, domain.parameter)
-        domain.history.append(inc)
-        new = self.sch(domain.history, domain.parameter, self.step)
+        history = domain.history.copy()
+        history.append(inc)
+        new = self.sch(history, domain.parameter, self.step)
         return DomainState(
             domain.u + new.u,
             domain.v + new.v,
             domain.eta + new.eta,
-            domain.history,
+            history,
             domain.parameter,
             domain.increment_iteration(),
             domain.get_id(),
         )
-
-    def integration(self, domain: DomainState) -> DomainState:
-        """Implement integration method from API."""
-        return self._integrate(domain)
 
     def get_border_width(self) -> int:
         """Retuns fixed border width."""
@@ -688,12 +700,12 @@ class GeneralSolver(Solver):
         self,
         domain: DomainState,
         border: BorderState,
-        past: BorderState,
         direction: bool,
         dim: int,
     ) -> Border:
         """Implement partial_integration from API."""
         b_w = border.get_width()
+        assert domain.u.grid.x.shape[dim] >= 2 * b_w
         dom = BorderState.create_border(domain, 2 * b_w, direction, dim)
         list = (
             [dom, border] if direction else [border, dom]
@@ -701,47 +713,15 @@ class GeneralSolver(Solver):
         tmp = DomainState.merge(
             list, RegularSplitMerger(2, (dim,))
         )  # TODO: refactor this
-        tmp.history = past.history
-        tmp = self._integrate(tmp)
+        tmp = self.integration(tmp)
 
-        u = Variable(
-            tmp.u.data[:, b_w : 2 * b_w],
-            Grid(
-                tmp.u.grid.x[:, b_w : 2 * b_w],
-                tmp.u.grid.y[:, b_w : 2 * b_w],
-                tmp.u.grid.mask[:, b_w : 2 * b_w],
-            ),
+        result = BorderState.from_domain_state(
+            tmp.split(RegularSplitMerger(3, (dim,)))[1],
+            width=border.get_width(),
+            dim=dim,
         )
-
-        v = Variable(
-            tmp.v.safe_data[:, b_w : 2 * b_w],
-            Grid(
-                tmp.v.grid.x[:, b_w : 2 * b_w],
-                tmp.v.grid.y[:, b_w : 2 * b_w],
-                tmp.v.grid.mask[:, b_w : 2 * b_w],
-            ),
-        )
-
-        eta = Variable(
-            tmp.eta.safe_data[:, b_w : 2 * b_w],
-            Grid(
-                tmp.eta.grid.x[:, b_w : 2 * b_w],
-                tmp.eta.grid.y[:, b_w : 2 * b_w],
-                tmp.eta.grid.mask[:, b_w : 2 * b_w],
-            ),
-        )
-
-        return BorderState(
-            u,
-            v,
-            eta,
-            border.get_width(),
-            dim,
-            domain.increment_iteration(),
-            past.history,
-            past.parameter,
-            domain.get_id(),
-        )
+        result.id = domain.get_id()
+        return result
 
     def window(self, domain: Future, client: Client) -> Future:
         """Do nothing."""
