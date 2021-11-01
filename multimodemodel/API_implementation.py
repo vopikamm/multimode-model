@@ -440,9 +440,9 @@ class DomainState(State, Domain, Splitable):
                 h,
                 p,
                 self.it,
-                i,
+                self.get_id(),
             )
-            for i, (u, v, eta, h, p) in enumerate(zip(*splitted))
+            for u, v, eta, h, p in zip(*splitted)
         )
 
         return out
@@ -593,8 +593,22 @@ class BorderMerger(MergeVisitor):
 class Tail(Tailor):
     """Implement Tailor class from API."""
 
+    @staticmethod
+    def split_domain(
+        base: DomainState, splitter: SplitVisitor
+    ) -> Tuple[DomainState, ...]:
+        """Split domain in subdomains.
+
+        When splitting, the ids of the subdomains are set to `range(0, splitter.parts)`.
+        """
+        splitted = base.split(splitter)
+        for i, s in enumerate(splitted):
+            s.id = i
+        return splitted
+
+    @staticmethod
     def make_borders(
-        self, base: DomainState, width: int, dim: int
+        base: DomainState, width: int, dim: int
     ) -> Tuple[BorderState, BorderState]:
         """Implement make_borders method from API."""
         return (
@@ -602,7 +616,8 @@ class Tail(Tailor):
             BorderState.create_border(base, width, True, dim),
         )
 
-    def stitch(self, base: DomainState, borders: tuple, dims: tuple) -> DomainState:
+    @staticmethod
+    def stitch(base: DomainState, borders: tuple, dims: tuple) -> DomainState:
         """Implement stitch method from API.
 
         borders need to be ordered left_border, right_border

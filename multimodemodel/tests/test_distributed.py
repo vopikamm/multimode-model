@@ -110,7 +110,9 @@ def ident(request):
 @pytest.fixture
 def domain_state(state_param):
     state, param = state_param
-    return DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
+    return DomainState.make_from_State(
+        state, history=deque(), parameter=param, it=0, id=0
+    )
 
 
 @pytest.fixture(params=[-1, 0, 99])
@@ -360,6 +362,12 @@ def test_DomainState_merge_raises_on_iteration_counter_discrepancy(
             _ = DomainState.merge(out, split_merger)
 
 
+def test_DomainState_split_preserves_id(domain_state, split_merger, ident):
+    domain_state.id = ident
+    out = domain_state.split(split_merger)
+    assert all(ident == o.get_id() for o in out)
+
+
 def test_DomainState_merge(domain_state, split_merger):
     splitted = domain_state.split(split_merger)
     merged = DomainState.merge(splitted, split_merger)
@@ -485,6 +493,11 @@ def test_BorderState_create_border_returns_copies(state_param, border_direction,
     assert not np.may_share_memory(bs.u.data, state.u.data)
     assert not np.may_share_memory(bs.v.data, state.v.data)
     assert not np.may_share_memory(bs.eta.data, state.eta.data)
+
+
+def test_Tail_split_domain_sets_ids_correctly(domain_state, split_merger):
+    splitted = Tail.split_domain(domain_state, split_merger)
+    assert all(s.get_id() == i for i, s in enumerate(splitted))
 
 
 def test_Tail_make_borders_returns_two_borders(domain_state):
