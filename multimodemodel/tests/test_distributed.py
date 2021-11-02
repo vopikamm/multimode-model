@@ -33,7 +33,7 @@ from multimodemodel.integrate import adams_bashforth3, euler_forward
 @pytest.fixture(
     params=(
         # (100, 50),
-        (20, 10),
+        (20, 15),
     )
 )
 def staggered_grid(request):
@@ -69,7 +69,7 @@ def param_split(param):
     return ParameterSplit.from_parameters(param)
 
 
-@pytest.fixture(params=[1, 2])
+@pytest.fixture(params=[1, 2, 3])
 def parts(request):
     return request.param
 
@@ -672,9 +672,12 @@ def test_GeneralSolver_partial_integration_with_euler_forward(domain_state, dt):
         assert new_l == next_l
 
 
-def test_GeneralSolver_partial_integration_with_adams_bashforth3(domain_state, dt, dim):
-    splitter = RegularSplitMerger(2, dim)
-    border_merger = BorderMerger(2, dim[0])
+def test_GeneralSolver_partial_integration_with_adams_bashforth3(
+    domain_state, dt, dim, parts
+):
+    border_width = 2
+    splitter = RegularSplitMerger(parts, dim)
+    border_merger = BorderMerger(border_width, dim[0])
     tailor = Tail()
     gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
 
@@ -684,7 +687,8 @@ def test_GeneralSolver_partial_integration_with_adams_bashforth3(domain_state, d
 
     domain_stack = deque([domain_state.split(splitter)], maxlen=2)
     border_stack = deque(
-        [[tailor.make_borders(sub, 2, dim[0]) for sub in domain_stack[-1]]], maxlen=2
+        [[tailor.make_borders(sub, border_width, dim[0]) for sub in domain_stack[-1]]],
+        maxlen=2,
     )
     for _ in range(3):
         new_borders = []
