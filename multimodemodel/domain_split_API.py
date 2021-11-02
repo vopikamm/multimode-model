@@ -167,7 +167,7 @@ class Tailor(ABC):
     """Tailor class keeps functions required for Border class."""
 
     @abstractmethod
-    def make_borders(self, base: Domain, width: int, dim: int) -> (Border, Border):
+    def make_borders(self, base: Domain, width: int, dim: int) -> Tuple[Border, Border]:
         """Wrap user-implemented Border class constructor.
 
         Outputs left border first.
