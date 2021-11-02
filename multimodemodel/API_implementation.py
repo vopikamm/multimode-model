@@ -27,24 +27,6 @@ else:
     Deque = deque
 
 
-def _new_grid(x: np.ndarray, y: np.ndarray, mask: np.ndarray) -> Grid:
-    return Grid(x.copy(), y.copy(), mask.copy())
-
-
-def _new_variable(
-    data: np.ndarray, x: np.ndarray, y: np.ndarray, mask: np.ndarray
-) -> Variable:
-    """Create explicit copies of all input arrays and creates new Variable object."""
-    return Variable(data.copy(), _new_grid(x, y, mask))
-
-
-def _copy_variable(var: Variable) -> Variable:
-    return Variable(
-        var.safe_data.copy(),
-        Grid(var.grid.x.copy(), var.grid.y.copy(), var.grid.mask.copy()),
-    )
-
-
 class RegularSplitMerger(SplitVisitor, MergeVisitor):
     """Implements splitting and merging into regular grid."""
 
