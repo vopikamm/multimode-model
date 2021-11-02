@@ -84,8 +84,8 @@ def split_merger(parts, dim, request):
     return request.param(parts, dim)
 
 
-@pytest.fixture
-def state_param(staggered_grid, coriolis_func):
+@pytest.fixture(params=[True, False])
+def state_param(staggered_grid, coriolis_func, request):
     param = Parameters(coriolis_func=coriolis_func, on_grid=staggered_grid)
     u = Variable(
         np.arange(staggered_grid.u.x.size).reshape(staggered_grid.u.x.shape) + 0.0,
@@ -99,6 +99,8 @@ def state_param(staggered_grid, coriolis_func):
         np.arange(staggered_grid.eta.x.size).reshape(staggered_grid.eta.x.shape) + 2.0,
         staggered_grid.eta,
     )
+    if request.param:
+        eta.data = None
     return State(u=u, v=v, eta=eta), param
 
 
@@ -232,7 +234,7 @@ def test_VariableSplit_merge_none_properly_treated(state_param, split_merger):
     var = state_param[0].u
     var = VariableSplit.from_variable(var)
     var_split = var.split(split_merger)
-    replace_data = np.zeros_like(var_split[0].data)
+    replace_data = np.zeros_like(var_split[0].safe_data)
     var_split[0].data = None
     sm_var = VariableSplit.merge(var_split, split_merger)
     oracle = split_merger.merge_array(
@@ -253,12 +255,15 @@ def test_StateSplit_split_merge_roundtrip(state_param, split_merger):
 def test_DomainState_init(state_param):
     state, param = state_param
     ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
-    assert (ds.u.data == state.u.data).all()
-    assert np.may_share_memory(ds.u.data, state.u.data)
-    assert (ds.v.data == state.v.data).all()
-    assert np.may_share_memory(ds.v.data, state.v.data)
-    assert (ds.eta.data == state.eta.data).all()
-    assert np.may_share_memory(ds.eta.data, state.eta.data)
+    assert (ds.u.safe_data == state.u.safe_data).all()
+    if ds.u.data is not None:
+        assert np.may_share_memory(ds.u.data, state.u.data)
+    assert (ds.v.safe_data == state.v.safe_data).all()
+    if ds.v.data is not None:
+        assert np.may_share_memory(ds.v.data, state.v.data)
+    assert (ds.eta.safe_data == state.eta.safe_data).all()
+    if ds.eta.data is not None:
+        assert np.may_share_memory(ds.eta.data, state.eta.data)
 
 
 def test_DomainState_init_None_history_to_empty_StateDequeSplit(state_param):
@@ -306,12 +311,19 @@ def test_DomainState_split(domain_state, split_merger):
         (
             VariableSplit.merge(tuple(getattr(o, v) for o in out), split_merger).data
             == getattr(domain_state, v).data
+        )
+        if getattr(domain_state, v).data is None
+        else (
+            VariableSplit.merge(tuple(getattr(o, v) for o in out), split_merger).data
+            == getattr(domain_state, v).data
         ).all()
         for v in ("u", "v", "eta")
     )
     assert all(
         (
             not np.may_share_memory(getattr(o, v).data, getattr(domain_state, v).data)
+            if getattr(domain_state, v).data is None
+            else getattr(o, v).data is None
             for v in ("u", "v", "eta")
         )
         for o in out
@@ -442,12 +454,21 @@ def test_BorderState_init(state_param):
         iteration=0,
         id=1,
     )
-    assert (bs.u.data == state.u.data).all()
-    assert np.may_share_memory(bs.u.data, state.u.data)
-    assert (bs.v.data == state.v.data).all()
-    assert np.may_share_memory(bs.v.data, state.v.data)
-    assert (bs.eta.data == state.eta.data).all()
-    assert np.may_share_memory(bs.eta.data, state.eta.data)
+    if state.u.data is None:
+        assert bs.u.data is None
+    else:
+        assert (bs.u.data == state.u.data).all()
+        assert np.may_share_memory(bs.u.data, state.u.data)
+    if state.v.data is None:
+        assert bs.v.data is None
+    else:
+        assert (bs.v.data == state.v.data).all()
+        assert np.may_share_memory(bs.v.data, state.v.data)
+    if state.eta.data is None:
+        assert bs.eta.data is None
+    else:
+        assert (bs.eta.data == state.eta.data).all()
+        assert np.may_share_memory(bs.eta.data, state.eta.data)
     assert bs.width == width
     assert bs.dim == dim
 
@@ -477,9 +498,18 @@ def test_BorderState_create_border(state_param, border_direction, dim):
     b_slices = tuple(b_slices)
     ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
     bs = BorderState.create_border(ds, width=width, direction=direction, dim=dim)
-    assert np.allclose(bs.u.data, state.u.data[b_slices])
-    assert (bs.v.data == state.v.data[b_slices]).all()
-    assert (bs.eta.data == state.eta.data[b_slices]).all()
+    if state.u.data is None:
+        assert bs.u.data is None
+    else:
+        assert (bs.u.data == state.u.data[b_slices]).all()
+    if state.v.data is None:
+        assert bs.v.data is None
+    else:
+        assert (bs.v.data == state.v.data[b_slices]).all()
+    if state.eta.data is None:
+        assert bs.eta.data is None
+    else:
+        assert (bs.eta.data == state.eta.data[b_slices]).all()
 
 
 def test_BorderState_create_border_returns_copies(state_param, border_direction, dim):
@@ -642,10 +672,9 @@ def test_GeneralSolver_partial_integration_with_euler_forward(domain_state, dt):
         assert new_l == next_l
 
 
-def test_GeneralSolver_partial_integration_with_adams_bashforth3(domain_state, dt):
-    dim = 1
-    splitter = RegularSplitMerger(2, (dim,))
-    border_merger = BorderMerger(2, dim)
+def test_GeneralSolver_partial_integration_with_adams_bashforth3(domain_state, dt, dim):
+    splitter = RegularSplitMerger(2, dim)
+    border_merger = BorderMerger(2, dim[0])
     tailor = Tail()
     gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
 
@@ -655,7 +684,7 @@ def test_GeneralSolver_partial_integration_with_adams_bashforth3(domain_state, d
 
     domain_stack = deque([domain_state.split(splitter)], maxlen=2)
     border_stack = deque(
-        [[tailor.make_borders(sub, 2, dim) for sub in domain_stack[-1]]], maxlen=2
+        [[tailor.make_borders(sub, 2, dim[0]) for sub in domain_stack[-1]]], maxlen=2
     )
     for _ in range(3):
         new_borders = []
@@ -667,13 +696,13 @@ def test_GeneralSolver_partial_integration_with_adams_bashforth3(domain_state, d
                         domain=s,
                         border=border_stack[-1][i - 1][1],
                         direction=False,
-                        dim=dim,
+                        dim=dim[0],
                     ),
                     gs.partial_integration(
                         domain=s,
                         border=border_stack[-1][(i + 1) % (splitter.parts)][0],
                         direction=True,
-                        dim=dim,
+                        dim=dim[0],
                     ),
                 )
             )
