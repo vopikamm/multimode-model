@@ -36,6 +36,8 @@ from .kernel import (
     divergence_i,
     pressure_gradient_j,
     pressure_gradient_i,
+    horizontal_eddy_viscosity_i,
+    horizontal_eddy_viscosity_j,
 )
 
 from .coriolis import (

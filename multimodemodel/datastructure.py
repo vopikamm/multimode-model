@@ -60,9 +60,10 @@ class Parameters:
       parameter on those grids
     """
 
-    g: float = 9.81  # gravitational force m/s^2
+    g: float = 9.81  # gravitational force m / s^2
     H: float = 1000.0  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
+    nu: float = 2000.0  # horizontal mixing coefficient in m^2 / s
     coriolis_func: InitVar[Optional[CoriolisFunc]] = None
     on_grid: InitVar[Optional[StaggeredGrid]] = None
     _f: Dict[str, np.ndarray] = field(init=False)

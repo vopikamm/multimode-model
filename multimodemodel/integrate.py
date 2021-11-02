@@ -79,7 +79,7 @@ def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
     Used for the time integration. One previous state is necessary.
     The time stamp of the increment is the same as for the current state.
 
-    Paramters
+    Parameters
     ---------
     rhs : StateDeque
         Deque object containing the previous evaluations of the right-hand-side
@@ -108,7 +108,7 @@ def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
     Used for the time integration. Two previous states are required.
     If less are provided, the forward euler scheme is used instead.
 
-    Paramters
+    Parameters
     ---------
     rhs : StateDeque
         Deque object containing the previous evaluations of the right-hand-side
@@ -148,7 +148,7 @@ def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
     Used for the time integration. Three previous states are necessary.
     If less are provided, the scheme `adams_bashforth2` is used instead.
 
-    Paramters
+    Parameters
     ---------
     rhs : StateDeque
         Deque object containing the previous evaluations of the right-hand-side

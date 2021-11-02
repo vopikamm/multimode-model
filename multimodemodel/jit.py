@@ -14,6 +14,43 @@ def _expand_12_arguments_3D(func, i, j, k, ni, nj, nk, args):  # pragma: no cove
 
 
 @numba.njit(inline="always")  # type: ignore
+def _expand_13_arguments(func, i, j, ni, nj, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        ni,
+        nj,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_12_arguments(func, i, j, ni, nj, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        ni,
+        nj,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
 def _expand_11_arguments(func, i, j, ni, nj, args):  # pragma: no cover
     return func(
         i, j, ni, nj, args[0], args[1], args[2], args[3], args[4], args[5], args[6]
@@ -52,6 +89,8 @@ _arg_expand_map = {
     9: _expand_9_arguments,
     10: _expand_10_arguments,
     11: _expand_11_arguments,
+    12: _expand_12_arguments,
+    13: _expand_13_arguments,
 }
 
 _arg_expand_map_3D = {12: _expand_12_arguments_3D}

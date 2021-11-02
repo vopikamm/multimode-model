@@ -235,6 +235,51 @@ def _coriolis_i(
     )
 
 
+@_numba_2D_grid_iterator
+def _horizontal_eddy_viscosity(
+    i: int,
+    j: int,
+    ni: int,
+    nj: int,
+    vel: np.ndarray,
+    mask: np.ndarray,
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    dx_u: np.ndarray,
+    dy_u: np.ndarray,
+    dx_v: np.ndarray,
+    dy_v: np.ndarray,
+    nu: float,
+) -> float:  # pragma: no cover
+    """Compute the divergence of the flow along the second dimension.
+
+    This term depends on the mode number k.
+    """
+    ip1 = _cyclic_shift(i, ni, 1)
+    im1 = _cyclic_shift(i, ni, -1)
+    jp1 = _cyclic_shift(j, nj, 1)
+    jm1 = _cyclic_shift(j, nj, -1)
+    return (
+        nu
+        * (
+            dy_u[j, i]
+            * (mask[j, ip1] * vel[j, ip1] - mask[j, i] * vel[j, i])
+            / dx_u[j, i]
+            - dy_u[j, im1]
+            * (mask[j, i] * vel[j, i] - mask[j, im1] * vel[j, im1])
+            / dx_u[j, im1]
+            + dx_v[j, i]
+            * (mask[jp1, i] * vel[jp1, i] - mask[j, i] * vel[j, i])
+            / dy_v[j, i]
+            - dx_v[jm1, i]
+            * (mask[j, i] * vel[j, i] - mask[jm1, i] * vel[jm1, i])
+            / dy_v[jm1, i]
+        )
+        / dx_eta[j, i]
+        / dy_eta[j, i]
+    )
+
+
 """
 Non jit-able functions. First level funcions connecting the jit-able
 function output to dataclasses.
@@ -393,4 +438,54 @@ def coriolis_i(state: State, params: Parameters) -> State:
         u=Variable(
             _apply_2D_iterator(_coriolis_i, args, grid), grid, state.variables["u"].time
         ),
+    )
+
+
+def horizontal_eddy_viscosity_i(state: State, params: Parameters) -> State:
+    """Compute horizontal eddy viscosity along the first dimension."""
+    grid = state.variables["u"].grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.variables["u"].safe_data,
+        state.variables["u"].grid.mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        params.nu,
+    )
+    return State(
+        u=Variable(
+            _apply_2D_iterator(_horizontal_eddy_viscosity, args, grid),
+            grid,
+            state.variables["u"].time,
+        )
+    )
+
+
+def horizontal_eddy_viscosity_j(state: State, params: Parameters) -> State:
+    """Compute horizontal eddy viscosity along the second dimension."""
+    grid = state.variables["v"].grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        state.variables["v"].safe_data,
+        state.variables["v"].grid.mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        params.nu,
+    )
+    return State(
+        v=Variable(
+            _apply_2D_iterator(_horizontal_eddy_viscosity, args, grid),
+            grid,
+            state.variables["u"].time,
+        )
     )
