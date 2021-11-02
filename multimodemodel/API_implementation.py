@@ -318,7 +318,7 @@ class StateSplit(State, Splitable):
         )
 
     @classmethod
-    def from_state(cls, state):
+    def from_state(cls, state: State):
         """Create from state."""
         return cls(
             u=VariableSplit.from_variable(state.u),
@@ -364,7 +364,7 @@ class DomainState(State, Domain, Splitable):
         u: Variable,
         v: Variable,
         eta: Variable,
-        history: Optional[Deque] = None,
+        history: Optional[StateDequeSplit] = None,
         parameter: Optional[Parameters] = None,
         it: int = 0,
         id: int = 0,
@@ -394,7 +394,7 @@ class DomainState(State, Domain, Splitable):
             s.u,
             s.v,
             s.eta,
-            history,
+            StateDequeSplit.from_state_deque(history),
             parameter,
             it,
             id,
@@ -423,7 +423,7 @@ class DomainState(State, Domain, Splitable):
 
     def split(
         self, splitter: SplitVisitor
-    ):  # TODO: raise error if shape[dim[0]] // parts < 2
+    ) -> Tuple["DomainState", ...]:  # TODO: raise error if shape[dim[0]] // parts < 2
         """Implement the split method from API."""
         splitted = (
             self.u.split(splitter),
@@ -698,8 +698,8 @@ class GeneralSolver(Solver):
 
     def integration(self, domain: DomainState) -> DomainState:
         """Implement integration method from API."""
-        inc = self.slv(domain, domain.parameter)
-        history = domain.history.copy()
+        inc = StateSplit.from_state(self.slv(domain, domain.parameter))
+        history = deepcopy(domain.history)
         history.append(inc)
         new = self.sch(history, domain.parameter, self.step)
         return DomainState(
