@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
 
-from .jit import _numba_2D_grid_iterator_i8
+from .jit import _numba_3D_grid_iterator_i8
 
 
 @unique
@@ -46,8 +46,8 @@ class Grid:
       2D np.ndarray of x-coordinates on grid
     y: np.ndarray
       2D np.ndarray of y-coordinates on grid
-    z: Optional[np.ndarray] = None
-      1D np.ndarray of z coordinates.
+    z: np.ndarray = np.array([0])
+      1D np.ndarray of vertical normal modes.
     mask: Optional[np.ndarray] = None
       Ocean mask, 1 where ocean is, 0 where land is.
       Default is a closed basin
@@ -58,8 +58,6 @@ class Grid:
       Grid spacing in x.
     dy: np.ndarray
       Grid spacing in y.
-    dz: np.ndarray
-      Grid spacing in z.
 
     Properties
     ----------
@@ -77,15 +75,14 @@ class Grid:
 
     x: np.ndarray  # 2D np.ndarray of x-coordinates on grid
     y: np.ndarray  # 2D np.ndarray of y-coordinates on grid
-    z: Optional[np.ndarray] = None  # 1D np.ndarray of z coordinates.
+    z: np.ndarray = np.array([0])  # 1D np.ndarray of z coordinates.
     mask: Optional[np.ndarray] = None  # ocean mask, 1 where ocean is, 0 where land is
     dx: np.ndarray = field(init=False)  # grid spacing in x
     dy: np.ndarray = field(init=False)  # grid spacing in y
-    dz: Optional[np.ndarray] = field(init=False)
 
     def __post_init__(self) -> None:
         """Set derived attributes of the grid and validate."""
-        self.dx, self.dy, self.dz = self._compute_grid_spacing()
+        self.dx, self.dy = self._compute_grid_spacing()
 
         if self.mask is None:
             self.mask = self._get_default_mask(self.shape)
@@ -95,10 +92,7 @@ class Grid:
     @property
     def shape(self) -> npt._Shape:
         """Return shape tuple of grid."""
-        if self.z is None:
-            return self.x.shape
-        else:
-            return self.z.shape + self.x.shape
+        return self.z.shape + self.x.shape
 
     @property
     def ndim(self) -> int:
@@ -122,8 +116,7 @@ class Grid:
 
     def _compute_grid_spacing(self):
         dx, dy = self._compute_horizontal_grid_spacing()
-        dz = self._compute_vertical_grid_spacing()
-        return dx, dy, dz
+        return dx, dy
 
     def _compute_horizontal_grid_spacing(self):
         """Compute the spatial differences along x and y."""
@@ -135,20 +128,12 @@ class Grid:
         dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
         return dx, dy
 
-    def _compute_vertical_grid_spacing(self):
-        """Compute grid box size along z."""
-        if self.z is None:
-            return None
-        dz = np.diff(self.z, axis=0)
-        dz = np.append(dz, dz[0])
-        return dz
-
     @classmethod
     def cartesian(
         cls: Any,
         x: np.ndarray,  # x coordinate
         y: np.ndarray,  # y coordinate
-        z: Optional[np.ndarray] = None,  # z coordinate
+        z: np.ndarray = np.array([0]),  # z coordinate
         mask: Optional[
             np.ndarray
         ] = None,  # ocean mask, 1 where ocean is, 0 where land is
@@ -161,8 +146,8 @@ class Grid:
           1D Array of coordinates along x dimension.
         y: np.ndarray
           1D Array of coordinates along y dimension.
-        z: Optional[np.ndarray] = None,
-          1D Array of coordinates along z dimension.
+        z: np.ndarray = np.array([0]),
+          1D Array of vertical normal modes.
         mask: Optional[np.ndarray] = None
           Optional ocean mask. Default is a closed domain.
         """
@@ -187,7 +172,7 @@ class Grid:
         lat_end: float,
         nx: int,
         ny: int,
-        z: Optional[np.ndarray] = None,
+        z: np.ndarray = np.array([0]),
         mask: Optional[np.ndarray] = None,
         radius: float = 6_371_000.0,
     ):
@@ -207,7 +192,7 @@ class Grid:
           Number of grid points along x dimension.
         ny: int
           Number of grid points along y dimension.
-        z: Optional[np.ndarray] = None
+        z: np.ndarray = np.array([0])
           Optional 1D coordinate array along vertical dimension.
         mask: np.ndarray | None
           Optional ocean mask. Default is a closed domain.
@@ -240,8 +225,7 @@ class Grid:
             )
         assert self.x.ndim == 2
         assert self.y.ndim == 2
-        if self.z is not None:
-            assert self.z.ndim == 1
+        assert self.z.ndim == 1
 
     @staticmethod
     def _get_default_mask(shape: npt._Shape):
@@ -368,66 +352,62 @@ class StaggeredGrid:
     def _compute_mask(
         func: Callable[..., np.ndarray], from_grid: Grid, shift: GridShift
     ):
-        if from_grid.mask.ndim <= 2:  # type: ignore
-            return func(
-                from_grid.shape[from_grid.dim_x],
-                from_grid.shape[from_grid.dim_y],
-                from_grid.mask,
-                shift.value[0],
-                shift.value[1],
-            )
-        res = np.empty_like(from_grid.mask)  # type: ignore
-        for k in range(from_grid.shape[from_grid.dim_z]):
-            res[k] = func(
-                from_grid.shape[from_grid.dim_x],
-                from_grid.shape[from_grid.dim_y],
-                from_grid.mask[k],  # type: ignore
-                shift.value[0],
-                shift.value[1],
-            )
-        return res
+        return func(
+            from_grid.shape[from_grid.dim_x],
+            from_grid.shape[from_grid.dim_y],
+            from_grid.shape[from_grid.dim_z],
+            from_grid.mask,
+            shift.value[0],
+            shift.value[1],
+        )
 
     @staticmethod
-    @_numba_2D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8
     def _u_mask_from_eta(
         i: int,
         j: int,
+        k: int,
         ni: int,
         nj: int,
+        nk: int,
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover
         i_shift = (i + shift_x) % ni
-        if (eta_mask[j, i] + eta_mask[j, i_shift]) == 2:
+        if (eta_mask[k, j, i] + eta_mask[k, j, i_shift]) == 2:
             return 1
         else:
             return 0
 
     @staticmethod
-    @_numba_2D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8
     def _v_mask_from_eta(
         i: int,
         j: int,
+        k: int,
         ni: int,
         nj: int,
+        nk: int,
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover
         j_shift = (j + shift_y) % nj
-        if (eta_mask[j, i] + eta_mask[j_shift, i]) == 2:
+        if (eta_mask[k, j, i] + eta_mask[k, j_shift, i]) == 2:
             return 1
         else:
             return 0
 
     @staticmethod
-    @_numba_2D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8
     def _q_mask_from_eta(
         i: int,
         j: int,
+        k: int,
         ni: int,
         nj: int,
+        nk: int,
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
@@ -435,10 +415,10 @@ class StaggeredGrid:
         i_shift = (i + shift_x) % ni
         j_shift = (j + shift_y) % nj
         if (
-            eta_mask[j, i]
-            + eta_mask[j_shift, i]
-            + eta_mask[j, i_shift]
-            + eta_mask[j_shift, i_shift]
+            eta_mask[k, j, i]
+            + eta_mask[k, j_shift, i]
+            + eta_mask[k, j, i_shift]
+            + eta_mask[k, j_shift, i_shift]
         ) == 4:
             return 1
         else:

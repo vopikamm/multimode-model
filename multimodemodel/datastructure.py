@@ -61,7 +61,7 @@ class Parameters:
     """
 
     g: float = 9.81  # gravitational force m / s^2
-    H: float = 1000.0  # reference depth in m
+    H: np.ndarray = np.array([1000.0])  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
     nu: float = 2000.0  # horizontal mixing coefficient in m^2 / s
     coriolis_func: InitVar[Optional[CoriolisFunc]] = None
@@ -107,31 +107,6 @@ class Parameters:
 
 
 @dataclass
-class MultimodeParameters(Parameters):
-    """Subclass to Parameters.
-
-    Organises all parameters depending on the mode number.
-    """
-
-    H: np.ndarray = np.array([Parameters.H])
-
-    def parameters_by_modenumber(self, k: int = 0) -> Parameters:
-        """Return the parameters for one mode number as Parameters object.
-
-        Arguments
-        ---------
-        k: int
-          Respective mode number to be returned.
-        """
-        if k >= len(self.H):
-            raise ValueError(
-                "The requested mode number is higher then the available modes."
-            )
-        self.H = self.H[k]
-        return self
-
-
-@dataclass
 class Variable:
     """Variable class consisting of the data and a Grid instance."""
 
@@ -170,12 +145,9 @@ class Variable:
         coords = dict(
             x=(("j", "i"), self.grid.x),
             y=(("j", "i"), self.grid.y),
+            z=(("z",), self.grid.z),
         )
-        dims = ("j", "i")
-
-        if self.grid.ndim >= 3:
-            coords["z"] = (("z",), self.grid.z)  # type: ignore
-            dims = ("z",) + dims
+        dims = ("z", "j", "i")
 
         dims = ("time",) + dims
         coords["time"] = (("time",), [self.time])  # type: ignore

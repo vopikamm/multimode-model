@@ -6,7 +6,6 @@ water equation as python functions.
 
 from .datastructure import (
     Parameters,
-    MultimodeParameters,
     Variable,
     State,
 )
@@ -36,8 +35,8 @@ from .kernel import (
     divergence_i,
     pressure_gradient_j,
     pressure_gradient_i,
-    horizontal_eddy_viscosity_i,
-    horizontal_eddy_viscosity_j,
+    laplacian_diffusion_u,
+    laplacian_diffusion_v,
 )
 
 from .coriolis import (
