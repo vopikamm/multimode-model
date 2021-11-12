@@ -119,19 +119,32 @@ def _coriolis_j(
     u: np.ndarray,
     mask_u: np.ndarray,
     mask_v: np.ndarray,
+    dy_u: np.ndarray,
+    dy_v: np.ndarray,
     f: np.ndarray,
 ) -> float:  # pragma: no cover
-    """Compute the coriolis term along the second dimension."""
+    """Compute the coriolis term along the second dimension.
+
+    The scheme is chosen to conserve energy.
+    """
     ip1 = _cyclic_shift(i, ni, 1)
-    return mask_v[k, j, i] * (
-        -f[j, i]
-        * (
-            mask_u[k, j - 1, i] * u[k, j - 1, i]
-            + mask_u[k, j, i] * u[k, j, i]
-            + mask_u[k, j, ip1] * u[k, j, ip1]
-            + mask_u[k, j - 1, ip1] * u[k, j - 1, ip1]
+    return -mask_v[k, j, i] * (
+        (
+            f[j, i]
+            * (
+                mask_u[k, j - 1, i] * dy_u[j - 1, i] * u[k, j - 1, i]
+                + mask_u[k, j, i] * dy_u[j, i] * u[k, j, i]
+            )
+            / 2
+            + f[j, ip1]
+            * (
+                mask_u[k, j - 1, ip1] * dy_u[j - 1, ip1] * u[k, j - 1, ip1]
+                + mask_u[k, j, ip1] * dy_u[j, ip1] * u[k, j, ip1]
+            )
+            / 2
         )
-        / 4.0
+        / 2
+        / dy_v[j, i]
     )
 
 
@@ -146,56 +159,84 @@ def _coriolis_i(
     v: np.ndarray,
     mask_v: np.ndarray,
     mask_u: np.ndarray,
+    dx_u: np.ndarray,
+    dx_v: np.ndarray,
     f: np.ndarray,
 ) -> float:  # pragma: no cover
-    """Compute the coriolis term along the first dimension."""
+    """Compute the coriolis term along the first dimension.
+
+    The scheme is chosen to conserve energy.
+    """
     jp1 = _cyclic_shift(j, nj, 1)
     return mask_u[k, j, i] * (
-        f[j, i]
-        * (
-            mask_v[k, j, i - 1] * v[k, j, i - 1]
-            + mask_v[k, j, i] * v[k, j, i]
-            + mask_v[k, jp1, i] * v[k, jp1, i]
-            + mask_v[k, jp1, i - 1] * v[k, jp1, i - 1]
+        (
+            f[jp1, i]
+            * (
+                mask_v[k, jp1, i - 1] * dx_v[jp1, i - 1] * v[k, jp1, i - 1]
+                + mask_v[k, jp1, i] * dx_v[jp1, i] * v[k, jp1, i]
+            )
+            / 2
+            + f[j, i]
+            * (
+                mask_v[k, j, i] * dx_v[j, i] * v[k, j, i]
+                + mask_v[k, j, i - 1] * dx_v[j, i - 1] * v[k, j, i - 1]
+            )
+            / 2
         )
-        / 4.0
+        / 2
+        / dx_u[j, i]
     )
 
 
 @_numba_3D_grid_iterator
-def _laplacian_diffusion_u(
+def _laplacian_mixing_u(
     i: int,
     j: int,
     k: int,
     ni: int,
     nj: int,
-    nk,
-    int,
+    nk: int,
     u: np.ndarray,
     mask_u: np.ndarray,
+    mask_q: np.ndarray,
     dx_u: np.ndarray,
     dy_u: np.ndarray,
     dx_q: np.ndarray,
     dy_q: np.ndarray,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
-    nu: float,
+    lbc: int,
+    a_h: float,
 ) -> float:  # pragma: no cover
     """Compute laplacian diffusion of u."""
     ip1 = _cyclic_shift(i, ni, 1)
     im1 = _cyclic_shift(i, ni, -1)
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
+
+    if mask_q[k, j, i] == 0:
+        lbc_j = lbc
+    else:
+        lbc_j = 1
+
+    if mask_q[k, jp1, i] == 0:
+        lbc_jp1 = lbc
+    else:
+        lbc_jp1 = 1
+
     return (
-        nu
+        a_h
+        * mask_u[k, j, i]
         * (
             (dy_eta[j, i] / dx_eta[j, i])
             * (mask_u[k, j, ip1] * u[k, j, ip1] - mask_u[k, j, i] * u[k, j, i])
             - (dy_eta[j, im1] / dx_eta[j, im1])
             * (mask_u[k, j, i] * u[k, j, i] - mask_u[k, j, im1] * u[k, j, im1])
             + (dx_q[jp1, i] / dy_q[jp1, i])
+            * lbc_jp1
             * (mask_u[k, jp1, i] * u[k, jp1, i] - mask_u[k, j, i] * u[k, j, i])
             - (dx_q[j, i] / dx_q[j, i])
+            * lbc_j
             * (mask_u[k, j, i] * u[k, j, i] - mask_u[k, jm1, i] * u[k, jm1, i])
         )
         / dx_u[j, i]
@@ -204,35 +245,50 @@ def _laplacian_diffusion_u(
 
 
 @_numba_3D_grid_iterator
-def _laplacian_diffusion_v(
+def _laplacian_mixing_v(
     i: int,
     j: int,
     k: int,
     ni: int,
     nj: int,
-    nk,
-    int,
+    nk: int,
     v: np.ndarray,
     mask_v: np.ndarray,
+    mask_q: np.ndarray,
     dx_v: np.ndarray,
     dy_v: np.ndarray,
     dx_q: np.ndarray,
     dy_q: np.ndarray,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
-    nu: float,
+    lbc: int,
+    a_h: float,
 ) -> float:  # pragma: no cover
     """Compute laplacian diffusion of v."""
     ip1 = _cyclic_shift(i, ni, 1)
     im1 = _cyclic_shift(i, ni, -1)
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
+
+    if mask_q[k, j, i] == 0:
+        lbc_i = lbc
+    else:
+        lbc_i = 1
+
+    if mask_q[k, j, ip1] == 0:
+        lbc_ip1 = lbc
+    else:
+        lbc_ip1 = 1
+
     return (
-        nu
+        a_h
+        * mask_v[k, j, i]
         * (
             (dy_q[j, ip1] / dx_q[j, ip1])
+            * lbc_ip1
             * (mask_v[k, j, ip1] * v[k, j, ip1] - mask_v[k, j, i] * v[k, j, i])
             - (dy_q[j, i] / dx_q[j, i])
+            * lbc_i
             * (mask_v[k, j, i] * v[k, j, i] - mask_v[k, j, im1] * v[k, j, im1])
             + (dx_eta[j, i] / dy_eta[j, i])
             * (mask_v[k, jp1, i] * v[k, jp1, i] - mask_v[k, j, i] * v[k, j, i])
@@ -357,6 +413,8 @@ def coriolis_j(state: State, params: Parameters) -> State:
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
         state.variables["v"].grid.mask,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dy,
         params.f["v"],
     )
     return State(
@@ -377,6 +435,8 @@ def coriolis_i(state: State, params: Parameters) -> State:
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
         state.variables["u"].grid.mask,
+        state.variables["u"].grid.dx,
+        state.variables["v"].grid.dx,
         params.f["u"],
     )
     return State(
@@ -384,52 +444,58 @@ def coriolis_i(state: State, params: Parameters) -> State:
     )
 
 
-def laplacian_diffusion_u(state: State, params: Parameters) -> State:
+def laplacian_mixing_u(state: State, params: Parameters) -> State:
     """Compute laplacian diffusion of zonal velocities."""
     grid = state.variables["u"].grid
+    lbc = 2 * params.no_slip
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
         grid.shape[grid.dim_z],
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
+        state.variables["q"].grid.mask,
         state.variables["eta"].grid.dx,
         state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
         state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
         state.variables["v"].grid.dy,
-        params.nu,
+        lbc,
+        params.a_h,
     )
     return State(
         u=Variable(
-            _laplacian_diffusion_u(*args),
+            _laplacian_mixing_u(*args),
             grid,
             state.variables["u"].time,
         )
     )
 
 
-def laplacian_diffusion_v(state: State, params: Parameters) -> State:
+def laplacian_mixing_v(state: State, params: Parameters) -> State:
     """Compute laplacian diffusion of meridional velocities."""
     grid = state.variables["v"].grid
+    lbc = 2 * params.no_slip
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
         grid.shape[grid.dim_z],
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
+        state.variables["q"].grid.mask,
         state.variables["eta"].grid.dx,
         state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
         state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
         state.variables["v"].grid.dy,
-        params.nu,
+        lbc,
+        params.a_h,
     )
     return State(
         v=Variable(
-            _laplacian_diffusion_v(*args),
+            _laplacian_mixing_v(*args),
             grid,
             state.variables["u"].time,
         )

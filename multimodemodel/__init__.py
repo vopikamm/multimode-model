@@ -35,8 +35,8 @@ from .kernel import (
     divergence_i,
     pressure_gradient_j,
     pressure_gradient_i,
-    laplacian_diffusion_u,
-    laplacian_diffusion_v,
+    laplacian_mixing_u,
+    laplacian_mixing_v,
 )
 
 from .coriolis import (

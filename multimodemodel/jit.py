@@ -7,6 +7,29 @@ import numpy as np
 
 
 @numba.njit(inline="always")  # type: ignore
+def _expand_17_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+        args[10],
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
 def _expand_16_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
     return func(
         i,
@@ -125,6 +148,7 @@ _arg_expand_map = {
     14: _expand_14_arguments,
     15: _expand_15_arguments,
     16: _expand_16_arguments,
+    17: _expand_17_arguments,
 }
 
 

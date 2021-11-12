@@ -63,7 +63,9 @@ class Parameters:
     g: float = 9.81  # gravitational force m / s^2
     H: np.ndarray = np.array([1000.0])  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
-    nu: float = 2000.0  # horizontal mixing coefficient in m^2 / s
+    a_h: float = 2000.0  # horizontal mixing coefficient in m^2 / s
+    free_slip: bool = True  # lateral boundary conditions
+    no_slip: bool = False  # lateral boundary conditions
     coriolis_func: InitVar[Optional[CoriolisFunc]] = None
     on_grid: InitVar[Optional[StaggeredGrid]] = None
     _f: Dict[str, np.ndarray] = field(init=False)
@@ -73,6 +75,10 @@ class Parameters:
         coriolis_func: Optional[CoriolisFunc],
         on_grid: Optional[StaggeredGrid],
     ):
+        """Set lateral boundary conditions."""
+        if self.no_slip == self.free_slip:
+            self.no_slip = True
+            self.free_slip = False
         """Initialize derived fields."""
         self._f = self._compute_f(coriolis_func, on_grid)
 
