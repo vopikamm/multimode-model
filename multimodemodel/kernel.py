@@ -109,7 +109,7 @@ def _divergence_j(
 
 
 @_numba_3D_grid_iterator
-def _coriolis_j(
+def _coriolis_energy_conserving_j(
     i: int,
     j: int,
     k: int,
@@ -135,21 +135,19 @@ def _coriolis_j(
                 mask_u[k, j - 1, i] * dy_u[j - 1, i] * u[k, j - 1, i]
                 + mask_u[k, j, i] * dy_u[j, i] * u[k, j, i]
             )
-            / 2
             + f[j, ip1]
             * (
                 mask_u[k, j - 1, ip1] * dy_u[j - 1, ip1] * u[k, j - 1, ip1]
                 + mask_u[k, j, ip1] * dy_u[j, ip1] * u[k, j, ip1]
             )
-            / 2
         )
-        / 2
+        / 4
         / dy_v[j, i]
     )
 
 
 @_numba_3D_grid_iterator
-def _coriolis_i(
+def _coriolis_energy_conserving_i(
     i: int,
     j: int,
     k: int,
@@ -175,15 +173,79 @@ def _coriolis_i(
                 mask_v[k, jp1, i - 1] * dx_v[jp1, i - 1] * v[k, jp1, i - 1]
                 + mask_v[k, jp1, i] * dx_v[jp1, i] * v[k, jp1, i]
             )
-            / 2
             + f[j, i]
             * (
                 mask_v[k, j, i] * dx_v[j, i] * v[k, j, i]
                 + mask_v[k, j, i - 1] * dx_v[j, i - 1] * v[k, j, i - 1]
             )
-            / 2
         )
-        / 2
+        / 4
+        / dx_u[j, i]
+    )
+
+
+@_numba_3D_grid_iterator
+def _coriolis_enstrophy_conserving_j(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    u: np.ndarray,
+    mask_u: np.ndarray,
+    mask_v: np.ndarray,
+    dy_u: np.ndarray,
+    dy_v: np.ndarray,
+    f: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the coriolis term along the second dimension.
+
+    The scheme is chosen to conserve enstrophy.
+    """
+    ip1 = _cyclic_shift(i, ni, 1)
+    return -mask_v[k, j, i] * (
+        (f[j, i] + f[j, ip1])
+        * (
+            mask_u[k, j - 1, i] * dy_u[j - 1, i] * u[k, j - 1, i]
+            + mask_u[k, j, i] * dy_u[j, i] * u[k, j, i]
+            + mask_u[k, j - 1, ip1] * dy_u[j - 1, ip1] * u[k, j - 1, ip1]
+            + mask_u[k, j, ip1] * dy_u[j, ip1] * u[k, j, ip1]
+        )
+        / 8
+        / dy_v[j, i]
+    )
+
+
+@_numba_3D_grid_iterator
+def _coriolis_enstrophy_conserving_i(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    v: np.ndarray,
+    mask_v: np.ndarray,
+    mask_u: np.ndarray,
+    dx_u: np.ndarray,
+    dx_v: np.ndarray,
+    f: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the coriolis term along the first dimension.
+
+    The scheme is chosen to conserve enstrophy.
+    """
+    jp1 = _cyclic_shift(j, nj, 1)
+    return mask_u[k, j, i] * (
+        (f[jp1, i] + f[j, i])
+        * (
+            mask_v[k, jp1, i - 1] * dx_v[jp1, i - 1] * v[k, jp1, i - 1]
+            + mask_v[k, jp1, i] * dx_v[jp1, i] * v[k, jp1, i]
+            + mask_v[k, j, i] * dx_v[j, i] * v[k, j, i]
+            + mask_v[k, j, i - 1] * dx_v[j, i - 1] * v[k, j, i - 1]
+        )
+        / 8
         / dx_u[j, i]
     )
 
@@ -418,7 +480,9 @@ def coriolis_j(state: State, params: Parameters) -> State:
         params.f["v"],
     )
     return State(
-        v=Variable(_coriolis_j(*args), grid, state.variables["v"].time),
+        v=Variable(
+            _coriolis_enstrophy_conserving_j(*args), grid, state.variables["v"].time
+        ),
     )
 
 
@@ -440,7 +504,9 @@ def coriolis_i(state: State, params: Parameters) -> State:
         params.f["u"],
     )
     return State(
-        u=Variable(_coriolis_i(*args), grid, state.variables["u"].time),
+        u=Variable(
+            _coriolis_enstrophy_conserving_i(*args), grid, state.variables["u"].time
+        ),
     )
 
 
