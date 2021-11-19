@@ -37,6 +37,9 @@ from .kernel import (
     pressure_gradient_i,
     laplacian_mixing_u,
     laplacian_mixing_v,
+    linear_damping_u,
+    linear_damping_v,
+    linear_damping_eta,
 )
 
 from .coriolis import (

@@ -362,6 +362,22 @@ def _laplacian_mixing_v(
     )
 
 
+@_numba_3D_grid_iterator
+def _linear_damping(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    vel: np.ndarray,
+    mask: np.ndarray,
+    gamma: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute linear damping of horizontal velocities."""
+    return -gamma[k] * mask[k, j, i] * vel[k, j, i]
+
+
 """
 Non jit-able functions. First level funcions connecting the jit-able
 function output to dataclasses.
@@ -563,6 +579,66 @@ def laplacian_mixing_v(state: State, params: Parameters) -> State:
         v=Variable(
             _laplacian_mixing_v(*args),
             grid,
+            state.variables["v"].time,
+        )
+    )
+
+
+def linear_damping_u(state: State, params: Parameters) -> State:
+    """Compute linear damping of zonal velocities."""
+    grid = state.variables["u"].grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        grid.shape[grid.dim_z],
+        state.variables["u"].safe_data,
+        state.variables["u"].grid.mask,
+        params.gamma,
+    )
+    return State(
+        u=Variable(
+            _linear_damping(*args),
+            grid,
             state.variables["u"].time,
+        )
+    )
+
+
+def linear_damping_v(state: State, params: Parameters) -> State:
+    """Compute linear damping of meridional velocities."""
+    grid = state.variables["v"].grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        grid.shape[grid.dim_z],
+        state.variables["v"].safe_data,
+        state.variables["v"].grid.mask,
+        params.gamma,
+    )
+    return State(
+        v=Variable(
+            _linear_damping(*args),
+            grid,
+            state.variables["v"].time,
+        )
+    )
+
+
+def linear_damping_eta(state: State, params: Parameters) -> State:
+    """Compute linear damping of meridional velocities."""
+    grid = state.variables["eta"].grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        grid.shape[grid.dim_z],
+        state.variables["eta"].safe_data,
+        state.variables["eta"].grid.mask,
+        params.gamma,
+    )
+    return State(
+        eta=Variable(
+            _linear_damping(*args),
+            grid,
+            state.variables["eta"].time,
         )
     )
