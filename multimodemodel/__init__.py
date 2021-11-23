@@ -48,3 +48,9 @@ from .coriolis import (
     beta_plane,
     f_on_sphere,
 )
+
+from .jit import (
+    _numba_2D_grid_iterator,
+    _numba_3D_grid_iterator,
+    _cyclic_shift,
+)
