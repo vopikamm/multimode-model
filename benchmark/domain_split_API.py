@@ -90,6 +90,19 @@ def classic_API(initial_state, dt):
     return next_state
 
 
+def warm_up(initial_state, dt):
+    state = State(initial_state.u, initial_state.v, initial_state.eta)
+    for next_state in integrate(
+        state,
+        initial_state.parameter,
+        RHS=non_rotating_swe,
+        step=dt,
+        time=dt,
+        scheme=adams_bashforth3,
+    ):
+        pass
+
+
 def new_API_without_split(initial_state, dt):
     gs = GeneralSolver(solution=non_rotating_swe, schema=adams_bashforth3, step=dt)
     next = initial_state
@@ -156,6 +169,8 @@ if __name__ == "__main__":
     n_step = 500
     parameter = Parameters(H=1.0)
     grid = staggered_grid((nx, ny), (dx, dy))
+
+    warm_up(initial_condition(grid, parameter), get_dt(grid.u, parameter))
 
     if command == "classic":
         out = classic_API(initial_condition(grid, parameter), get_dt(grid.u, parameter))
