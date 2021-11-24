@@ -19,7 +19,7 @@ from struct import pack
 from collections import deque
 from typing import Callable, Optional, Sequence, Tuple, Dict
 from dataclasses import dataclass, fields
-from copy import deepcopy
+from copy import copy, deepcopy
 
 if sys.version_info < (3, 9):
     from typing import Deque
@@ -710,7 +710,8 @@ class GeneralSolver(Solver):
     def integration(self, domain: DomainState) -> DomainState:
         """Implement integration method from API."""
         inc = StateSplit.from_state(self.slv(domain, domain.parameter))
-        history = deepcopy(domain.history)
+        # shallow copy avoids side effects
+        history = copy(domain.history)
         history.append(inc)
         new = self.sch(history, domain.parameter, self.step)
         return DomainState(
