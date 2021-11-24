@@ -525,7 +525,7 @@ class BorderState(DomainState, Border):
         splitter = BorderSplitter(slice=border_slice, axis=dim)
         splitted_state = base.split(splitter)[0]
 
-        return cls.from_domain_state(splitted_state.copy(), width=width, dim=dim)
+        return cls.from_domain_state(splitted_state, width=width, dim=dim)
 
     @classmethod
     def from_domain_state(cls, domain_state: DomainState, width: int, dim: int):
