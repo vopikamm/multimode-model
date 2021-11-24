@@ -568,6 +568,7 @@ class BorderMerger(MergeVisitor):
         self._axis = axis
         self._slice_left = BorderDirection.LEFT(width)
         self._slice_right = BorderDirection.RIGHT(width)
+        self._slice_center = BorderDirection.CENTER(width, width)
 
     @classmethod
     def from_borders(
@@ -590,18 +591,11 @@ class BorderMerger(MergeVisitor):
         -------
         np.ndarray
         """
-        slices = arrays[1].ndim * [slice(None)]
-        slices_left = tuple(
-            s if i != self._axis else self._slice_left for i, s in enumerate(slices)
-        )
-        slices_right = tuple(
-            s if i != self._axis else self._slice_right for i, s in enumerate(slices)
-        )
+        slices_center = arrays[1].ndim * [slice(None)]
+        slices_center[self._axis] = self._slice_center
 
         left, base, right = arrays
-        out = base.copy()
-        out[slices_left] = left
-        out[slices_right] = right
+        out = np.concatenate((left, base[tuple(slices_center)], right), axis=self._axis)
         return out
 
 
