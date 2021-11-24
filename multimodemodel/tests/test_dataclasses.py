@@ -128,7 +128,7 @@ class TestParameters:
 class TestGrid:
     """Test Grid class."""
 
-    def test_post_init(self):
+    def test_post_init_with_computed_grid_spacing(self):
         """Test post_init."""
         nx, ny = 10, 5
         dx, dy = 1.0, 2.0
@@ -140,6 +140,19 @@ class TestGrid:
         assert np.all(g1.dy == dy * np.ones(y.shape))
         assert g1.len_x == nx
         assert g1.len_y == ny
+
+    def test_post_init_with_initialized_grid_spacing(self):
+        """Test post_init."""
+        nx, ny = 10, 5
+        dx, dy = 1.0, 2.0
+        x, y = get_x_y(nx, ny, dx, dy)
+        dx = np.ones_like(x) * 2.0
+        dy = np.ones_like(y) * 1.0
+        mask = get_test_mask(x.shape)
+
+        g1 = Grid(x=x, y=y, mask=mask, dx_init=dx, dy_init=dy)
+        assert (g1.dx == 2).all()
+        assert (g1.dy == 1).all()
 
     def test_grid_default_mask(self):
         """Test default grid setting."""

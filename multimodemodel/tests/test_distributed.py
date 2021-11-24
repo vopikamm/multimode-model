@@ -146,6 +146,11 @@ def dt(request):
     return request.param
 
 
+@pytest.fixture(params=(euler_forward, adams_bashforth3))
+def scheme(request):
+    return request.param
+
+
 def test_ParameterSplit_from_parameters(param):
     ps = ParameterSplit.from_parameters(param)
     assert ps.g == param.g
@@ -595,9 +600,9 @@ def test_GeneralSolver_integration_has_no_side_effects_on_domain(domain_state):
     assert next.history != domain_state.history
 
 
-def test_GeneralSolver_integration_with_euler_forward(domain_state, dt):
+def test_GeneralSolver_integration(domain_state, dt, scheme):
     inc = rhs(domain_state, None)
-    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
+    gs = GeneralSolver(solution=rhs, schema=scheme, step=dt)
     next = gs.integration(domain_state)
 
     assert all(
@@ -613,73 +618,17 @@ def test_GeneralSolver_integration_with_euler_forward(domain_state, dt):
     )
 
 
-def test_GeneralSolver_integration_with_adams_bashforth3(domain_state, dt):
-    gs = GeneralSolver(solution=rhs, schema=adams_bashforth3, step=dt)
-    next = gs.integration(domain_state)
-    next_2 = gs.integration(next)
-    next_3 = gs.integration(next_2)
-
-    inc_1, inc_2, inc_3 = 1, 2, 3
-    total_inc = dt * (
-        inc_1
-        + 3 / 2 * inc_2
-        - 1 / 2 * inc_1
-        + 23 / 12 * inc_3
-        - 16 / 12 * inc_2
-        + 5 / 12 * inc_1
-    )
-
-    assert all(
-        np.allclose(
-            getattr(domain_state, v).safe_data + total_inc, getattr(next_3, v).safe_data
-        )
-        for v in ("u", "v", "eta")
-    )
-
-
 def test_GeneralSolver_integration_get_border_width_returns_2():
     gs = GeneralSolver(solution=rhs, schema=euler_forward, step=1)
     assert gs.get_border_width() == 2
 
 
-def test_GeneralSolver_partial_integration_with_euler_forward(domain_state, dt):
-    dim = 1
-    splitter = RegularSplitMerger(2, (dim,))
-    tailor = Tail()
-    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
-
-    next = gs.integration(domain_state)
-    next_sub_domains = next.split(splitter)
-    next_borders = [tailor.make_borders(sub, 2, dim) for sub in next_sub_domains]
-
-    sub_domains = domain_state.split(splitter)
-    borders = [tailor.make_borders(sub, 2, dim) for sub in sub_domains]
-    integrate_borders = []
-    for i, s in enumerate(sub_domains):
-        new_left_border = gs.partial_integration(
-            domain=s, border=borders[i - 1][1], direction=False, dim=dim
-        )
-        new_right_border = gs.partial_integration(
-            domain=s,
-            border=borders[(i + 1) % (splitter.parts)][0],
-            direction=True,
-            dim=dim,
-        )
-        integrate_borders.append((new_left_border, new_right_border))
-
-    for (new_l, new_r), (next_l, next_r) in zip(integrate_borders, next_borders):
-        assert new_r == next_r
-        assert new_l == next_l
-
-
-def test_GeneralSolver_partial_integration_with_adams_bashforth3(
-    domain_state, dt, dim, parts
-):
+def test_GeneralSolver_partial_integration(domain_state, dt, dim, parts, scheme):
     border_width = 2
     splitter = RegularSplitMerger(parts, dim)
     border_merger = BorderMerger(border_width, dim[0])
     tailor = Tail()
-    gs = GeneralSolver(solution=rhs, schema=euler_forward, step=dt)
+    gs = GeneralSolver(solution=rhs, schema=scheme, step=dt)
 
     next = gs.integration(domain_state)
     next_2 = gs.integration(next)

@@ -179,8 +179,20 @@ class GridSplit(Grid, Splitable):
 
     def split(self, splitter: SplitVisitor):
         """Split grid."""
-        x, y, mask = (splitter.split_array(arr) for arr in (self.x, self.y, self.mask))
-        return tuple(self.__class__(*args) for args in zip(x, y, mask))
+        x, y, mask, dx, dy = (
+            splitter.split_array(arr)
+            for arr in (self.x, self.y, self.mask, self.dx, self.dy)
+        )
+        return tuple(
+            self.__class__(
+                *args[:3],
+                dx_init=args[3],
+                dy_init=args[4],
+                dim_x=self.dim_x,
+                dim_y=self.dim_y
+            )
+            for args in zip(x, y, mask, dx, dy)
+        )
 
     @classmethod
     def merge(cls, others, merger: MergeVisitor):
@@ -188,12 +200,22 @@ class GridSplit(Grid, Splitable):
         x = merger.merge_array(tuple(o.x for o in others))
         y = merger.merge_array(tuple(o.y for o in others))
         mask = merger.merge_array(tuple(o.mask for o in others))
-        return cls(x, y, mask)
+        dx = merger.merge_array(tuple(o.dx for o in others))
+        dy = merger.merge_array(tuple(o.dy for o in others))
+        return cls(
+            x,
+            y,
+            mask,
+            dim_x=others[0].dim_x,
+            dim_y=others[0].dim_y,
+            dx_init=dx,
+            dy_init=dy,
+        )
 
     @classmethod
     def from_grid(cls, grid):
         """Create from Grid object."""
-        return cls(x=grid.x, y=grid.y, mask=grid.mask)
+        return cls(x=grid.x, y=grid.y, mask=grid.mask, dx_init=grid.dx, dy_init=grid.dy)
 
 
 @dataclass
@@ -240,7 +262,7 @@ class VariableSplit(Variable, Splitable):
 
     def __post_init__(self):
         """Post initialization logic."""
-        if not isinstance(self.grid, Splitable):
+        if not isinstance(self.grid, GridSplit):
             self.grid: GridSplit = GridSplit.from_grid(self.grid)
 
     def split(self, splitter: SplitVisitor):
@@ -314,7 +336,14 @@ class StateDequeSplit(deque, Splitable):
 
     def split(self, splitter: SplitVisitor):
         """Split StateDeque."""
-        splitted_states = tuple(StateSplit.from_state(s).split(splitter) for s in self)
+        splitted_states = []
+        for s in self:
+            if isinstance(s, StateSplit):
+                split_state = s.split(splitter)
+            else:
+                split_state = StateSplit.from_state(s).split(splitter)
+            splitted_states.append(split_state)
+        splitted_states = tuple(splitted_states)
         if len(splitted_states) == 0:
             return splitter.parts * (self.__class__([], maxlen=self.maxlen),)
         return tuple(
