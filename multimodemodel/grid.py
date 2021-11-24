@@ -1,12 +1,17 @@
 """Logic related to creation of grids."""
 
-from dataclasses import dataclass, field, fields
-from typing import Any, Dict, Union
+from dataclasses import dataclass, field, fields, InitVar
+from typing import Any, Dict, Union, Optional
 import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
 
 from .jit import _numba_2D_grid_iterator_i8
+
+
+def _check_shape(arr1, arr2, msg=""):
+    if arr1.shape != arr2.shape:
+        raise ValueError(f"{msg}. Got {arr1.shape} and {arr2.shape}.")
 
 
 @unique
@@ -60,24 +65,20 @@ class Grid:
     ] = None  # ocean mask, 1 where ocean is, 0 where land is
     dim_x: int = 0  # x dimension in numpy array
     dim_y: int = 1  # y dimension in numpy array
+    dx_init: InitVar[Optional[np.ndarray]] = None  # initialization of dx
+    dy_init: InitVar[Optional[np.ndarray]] = None  # initialization of dx
     dx: np.ndarray = field(init=False)  # grid spacing in x
     dy: np.ndarray = field(init=False)  # grid spacing in y
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
 
-    def _compute_grid_spacing(self):
-        """Compute the spatial differences along x and y."""
-        dx = np.diff(self.x, axis=self.dim_x)
-        dy = np.diff(self.y, axis=self.dim_y)
-        if self.dim_x == 0:
-            dx_0 = dx[0, :]
-            dy_0 = dy[:, 0]
-        else:
-            dx_0 = dx[:, 0]
-            dy_0 = dy[0, :]
-        dx = np.append(dx, np.expand_dims(dx_0, axis=self.dim_x), axis=self.dim_x)
-        dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
-        return dx, dy
+    @staticmethod
+    def _compute_grid_spacing(coord, axis):
+        """Compute the spatial differences of a coordinate along a given axis."""
+        dx = np.diff(coord, axis=axis)
+        dx_0 = dx.take(indices=0, axis=axis)
+        dx = np.append(dx, np.expand_dims(dx_0, axis=axis), axis=axis)
+        return dx
 
     @classmethod
     def cartesian(
@@ -169,24 +170,26 @@ class Grid:
 
         return grid
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, dx_init, dy_init) -> None:
         """Set derived attributes of the grid and validate."""
-        self.dx, self.dy = self._compute_grid_spacing()
+        if dx_init is None:
+            self.dx = self._compute_grid_spacing(coord=self.x, axis=self.dim_x)
+        else:
+            self.dx = dx_init
+        if dy_init is None:
+            self.dy = self._compute_grid_spacing(coord=self.y, axis=self.dim_y)
+        else:
+            self.dy = dy_init
         self.len_x = self.x.shape[self.dim_x]
         self.len_y = self.x.shape[self.dim_y]
 
         if self.mask is None:
             self.mask = self._get_default_mask(self.x.shape)
 
-        self._validate()
-
-    def _validate(self) -> None:
-        """Validate Attributes of Grid class after init."""
-        if self.mask is not None and self.mask.shape != self.x.shape:
-            raise ValueError(
-                f"Mask shape not matching grid shape. "
-                f"Got {self.mask.shape} and {self.x.shape}."
-            )
+        # validate
+        _check_shape(self.mask, self.x, "Mask shape not matching grid shape")
+        _check_shape(self.dx, self.x, "dx shape not matching shape of x")
+        _check_shape(self.dy, self.y, "dy shape not matching shape of y")
 
     @staticmethod
     def _get_default_mask(shape: npt._Shape):
@@ -297,7 +300,8 @@ class StaggeredGrid:
         Returns StaggeredGrid object with all four grids
         """
         eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
-        dx, dy = eta_grid._compute_grid_spacing()
+        dx = eta_grid._compute_grid_spacing(eta_grid.x, eta_grid.dim_x)
+        dy = eta_grid._compute_grid_spacing(eta_grid.y, eta_grid.dim_y)
 
         u_x_start, u_x_end = (
             eta_grid.x.min() + shift.value[0] * dx.min() / 2,
