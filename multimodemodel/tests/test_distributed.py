@@ -171,8 +171,8 @@ def test_ParameterSplit_split(param_split, split_merger):
         (split_merger.merge_array(tuple(o.f[g] for o in out)) == param_split.f[g]).all()
         for g in ("u", "v", "eta", "q")
     )
-    assert all(
-        (~np.may_share_memory(o.f[g], param_split.f[g]) for g in ("u", "v", "eta", "q"))
+    tuple(
+        (_not_share_memory(o.f[g], param_split.f[g]) for g in ("u", "v", "eta", "q"))
         for o in out
     )
     param_split._f = {}
@@ -261,14 +261,11 @@ def test_DomainState_init(state_param):
     state, param = state_param
     ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
     assert (ds.u.safe_data == state.u.safe_data).all()
-    if ds.u.data is not None:
-        assert np.may_share_memory(ds.u.data, state.u.data)
+    _may_share_memory(ds.u.data, state.u.data)
     assert (ds.v.safe_data == state.v.safe_data).all()
-    if ds.v.data is not None:
-        assert np.may_share_memory(ds.v.data, state.v.data)
+    _may_share_memory(ds.v.data, state.v.data)
     assert (ds.eta.safe_data == state.eta.safe_data).all()
-    if ds.eta.data is not None:
-        assert np.may_share_memory(ds.eta.data, state.eta.data)
+    _may_share_memory(ds.eta.data, state.eta.data)
 
 
 def test_DomainState_init_None_history_to_empty_StateDequeSplit(state_param):
@@ -324,9 +321,9 @@ def test_DomainState_split(domain_state, split_merger):
         ).all()
         for v in ("u", "v", "eta")
     )
-    assert all(
+    tuple(
         (
-            not np.may_share_memory(getattr(o, v).data, getattr(domain_state, v).data)
+            _not_share_memory(getattr(o, v).data, getattr(domain_state, v).data)
             if getattr(domain_state, v).data is None
             else getattr(o, v).data is None
             for v in ("u", "v", "eta")
@@ -405,17 +402,17 @@ def test_DomainState_copy(domain_state):
         id(getattr(ds_copy, v)) is not id(getattr(domain_state, v))
         for v in ("u", "v", "eta")
     )
-    assert all(
-        ~np.may_share_memory(getattr(ds_copy, v).data, getattr(domain_state, v).data)
+    tuple(
+        _not_share_memory(getattr(ds_copy, v).data, getattr(domain_state, v).data)
         for v in ("u", "v", "eta")
     )
     assert all(
         id(getattr(ds_copy, v).grid) is not id(getattr(domain_state, v).grid)
         for v in ("u", "v", "eta")
     )
-    assert all(
+    tuple(
         (
-            ~np.may_share_memory(
+            _not_share_memory(
                 getattr(getattr(ds_copy, v).grid, c),
                 getattr(getattr(domain_state, v).grid, c),
             )
@@ -463,17 +460,17 @@ def test_BorderState_init(state_param):
         assert bs.u.data is None
     else:
         assert (bs.u.data == state.u.data).all()
-        assert np.may_share_memory(bs.u.data, state.u.data)
+        _may_share_memory(bs.u.data, state.u.data)
     if state.v.data is None:
         assert bs.v.data is None
     else:
         assert (bs.v.data == state.v.data).all()
-        assert np.may_share_memory(bs.v.data, state.v.data)
+        _may_share_memory(bs.v.data, state.v.data)
     if state.eta.data is None:
         assert bs.eta.data is None
     else:
         assert (bs.eta.data == state.eta.data).all()
-        assert np.may_share_memory(bs.eta.data, state.eta.data)
+        _may_share_memory(bs.eta.data, state.eta.data)
     assert bs.width == width
     assert bs.dim == dim
 
@@ -517,7 +514,19 @@ def test_BorderState_create_border(state_param, border_direction, dim):
         assert (bs.eta.data == state.eta.data[b_slices]).all()
 
 
-def test_BorderState_create_border_returns_copies(state_param, border_direction, dim):
+def _may_share_memory(a1, a2):
+    if a1 is not None and a2 is not None:
+        assert np.may_share_memory(a1, a2)
+
+
+def _not_share_memory(a1, a2):
+    if a1 is not None and a2 is not None:
+        assert not np.may_share_memory(a1, a2)
+
+
+def test_BorderState_create_border_returns_reference(
+    state_param, border_direction, dim
+):
     width = 2
     dim = dim[0]
     direction = border_direction
@@ -525,9 +534,10 @@ def test_BorderState_create_border_returns_copies(state_param, border_direction,
 
     ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
     bs = BorderState.create_border(ds, width=width, direction=direction, dim=dim)
-    assert not np.may_share_memory(bs.u.data, state.u.data)
-    assert not np.may_share_memory(bs.v.data, state.v.data)
-    assert not np.may_share_memory(bs.eta.data, state.eta.data)
+    _may_share_memory(bs.u.data, state.u.data)
+    _may_share_memory(bs.v.data, state.v.data)
+    _may_share_memory(bs.eta.data, state.eta.data)
+    _may_share_memory(bs.eta.grid.x, state.eta.grid.x)
 
 
 def test_Tail_split_domain_sets_ids_correctly(domain_state, split_merger):
@@ -559,13 +569,11 @@ def test_Tail_stitch_returns_copy(domain_state):
     t = Tail()
     borders = t.make_borders(domain_state, width, dim)
     stitched_domain = t.stitch(base=domain_state, borders=borders, dims=(dim,))
-    assert all(
-        (
-            not np.may_share_memory(
-                getattr(domain_state, v).data, getattr(stitched_domain, v).data
-            )
-            for v in ("u", "v", "eta")
+    tuple(
+        _not_share_memory(
+            getattr(domain_state, v).data, getattr(stitched_domain, v).data
         )
+        for v in ("u", "v", "eta")
     )
 
 

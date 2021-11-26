@@ -32,6 +32,18 @@ from multimodemodel.API_implementation import (
     BorderMerger,
     Tail,
 )
+from time import time
+
+
+def timer(func):
+    def wrapper(*args, **kwargs):
+        t_start = time()
+        res = func(*args, **kwargs)
+        t_end = time()
+        print(f"function: {func.__name__}; elapsed time: {t_end - t_start}")
+        return res
+
+    return wrapper
 
 
 def staggered_grid(shape, grid_spacing):
@@ -76,6 +88,7 @@ def get_dt(grid, parameter):
     return 0.15 * dx / c
 
 
+@timer
 def classic_API(initial_state, dt):
     state = State(initial_state.u, initial_state.v, initial_state.eta)
     for next_state in integrate(
@@ -90,6 +103,20 @@ def classic_API(initial_state, dt):
     return next_state
 
 
+def warm_up(initial_state, dt):
+    state = State(initial_state.u, initial_state.v, initial_state.eta)
+    for next_state in integrate(
+        state,
+        initial_state.parameter,
+        RHS=non_rotating_swe,
+        step=dt,
+        time=dt,
+        scheme=adams_bashforth3,
+    ):
+        pass
+
+
+@timer
 def new_API_without_split(initial_state, dt):
     gs = GeneralSolver(solution=non_rotating_swe, schema=adams_bashforth3, step=dt)
     next = initial_state
@@ -98,6 +125,7 @@ def new_API_without_split(initial_state, dt):
     return next
 
 
+@timer
 def new_API_with_split_no_dask(initial_state, dt, parts=4):
     border_width = 2
     dim = (1,)
@@ -156,6 +184,8 @@ if __name__ == "__main__":
     n_step = 500
     parameter = Parameters(H=1.0)
     grid = staggered_grid((nx, ny), (dx, dy))
+
+    warm_up(initial_condition(grid, parameter), get_dt(grid.u, parameter))
 
     if command == "classic":
         out = classic_API(initial_condition(grid, parameter), get_dt(grid.u, parameter))

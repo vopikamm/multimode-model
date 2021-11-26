@@ -19,7 +19,7 @@ from struct import pack
 from collections import deque
 from typing import Callable, Optional, Sequence, Tuple, Dict
 from dataclasses import dataclass, fields
-from copy import deepcopy
+from copy import copy, deepcopy
 
 if sys.version_info < (3, 9):
     from typing import Deque
@@ -525,7 +525,7 @@ class BorderState(DomainState, Border):
         splitter = BorderSplitter(slice=border_slice, axis=dim)
         splitted_state = base.split(splitter)[0]
 
-        return cls.from_domain_state(splitted_state.copy(), width=width, dim=dim)
+        return cls.from_domain_state(splitted_state, width=width, dim=dim)
 
     @classmethod
     def from_domain_state(cls, domain_state: DomainState, width: int, dim: int):
@@ -568,6 +568,7 @@ class BorderMerger(MergeVisitor):
         self._axis = axis
         self._slice_left = BorderDirection.LEFT(width)
         self._slice_right = BorderDirection.RIGHT(width)
+        self._slice_center = BorderDirection.CENTER(width, width)
 
     @classmethod
     def from_borders(
@@ -590,18 +591,11 @@ class BorderMerger(MergeVisitor):
         -------
         np.ndarray
         """
-        slices = arrays[1].ndim * [slice(None)]
-        slices_left = tuple(
-            s if i != self._axis else self._slice_left for i, s in enumerate(slices)
-        )
-        slices_right = tuple(
-            s if i != self._axis else self._slice_right for i, s in enumerate(slices)
-        )
+        slices_center = arrays[1].ndim * [slice(None)]
+        slices_center[self._axis] = self._slice_center
 
         left, base, right = arrays
-        out = base.copy()
-        out[slices_left] = left
-        out[slices_right] = right
+        out = np.concatenate((left, base[tuple(slices_center)], right), axis=self._axis)
         return out
 
 
@@ -710,7 +704,8 @@ class GeneralSolver(Solver):
     def integration(self, domain: DomainState) -> DomainState:
         """Implement integration method from API."""
         inc = StateSplit.from_state(self.slv(domain, domain.parameter))
-        history = deepcopy(domain.history)
+        # shallow copy avoids side effects
+        history = copy(domain.history)
         history.append(inc)
         new = self.sch(history, domain.parameter, self.step)
         return DomainState(
