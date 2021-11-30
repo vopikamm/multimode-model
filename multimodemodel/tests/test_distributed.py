@@ -588,11 +588,12 @@ def test_Tail_stitch_raise_ValueError_on_iteration_mismatch(domain_state):
 
 
 def rhs(state, _):
-    new = deepcopy(state)
-    new.u.data = (state.it + 1) * np.ones(new.u.grid.x.shape)
-    new.v.data = (state.it + 1) * np.ones(new.v.grid.x.shape)
-    new.eta.data = (state.it + 1) * np.ones(new.eta.grid.x.shape)
-    return new
+    it = 1
+    return State(
+        u=Variable((it + 1) * state.u.safe_data, state.u.grid),
+        v=Variable((it + 1) * state.v.safe_data, state.v.grid),
+        eta=Variable((it + 1) * state.eta.safe_data, state.eta.grid),
+    )
 
 
 def test_GeneralSolver_integration_appends_inc_to_history(domain_state):
@@ -636,11 +637,12 @@ def test_GeneralSolver_partial_integration(domain_state, dt, dim, parts, scheme)
     splitter = RegularSplitMerger(parts, dim)
     border_merger = BorderMerger(border_width, dim[0])
     tailor = Tail()
-    gs = GeneralSolver(solution=rhs, schema=scheme, step=dt)
+    gs1 = GeneralSolver(solution=rhs, schema=scheme, step=dt)
+    gs2 = GeneralSolver(solution=rhs, schema=scheme, step=dt)
 
-    next = gs.integration(domain_state)
-    next_2 = gs.integration(next)
-    next_3 = gs.integration(next_2)
+    next = gs1.integration(domain_state)
+    next_2 = gs1.integration(next)
+    next_3 = gs1.integration(next_2)
 
     domain_stack = deque([domain_state.split(splitter)], maxlen=2)
     border_stack = deque(
@@ -653,15 +655,17 @@ def test_GeneralSolver_partial_integration(domain_state, dt, dim, parts, scheme)
         for i, s in enumerate(domain_stack[-1]):
             new_borders.append(
                 (
-                    gs.partial_integration(
+                    gs2.partial_integration(
+                        border=border_stack[-1][i][0],
                         domain=s,
-                        border=border_stack[-1][i - 1][1],
+                        neighbor_border=border_stack[-1][i - 1][1],
                         direction=False,
                         dim=dim[0],
                     ),
-                    gs.partial_integration(
+                    gs2.partial_integration(
+                        border=border_stack[-1][i][1],
                         domain=s,
-                        border=border_stack[-1][(i + 1) % (splitter.parts)][0],
+                        neighbor_border=border_stack[-1][(i + 1) % (splitter.parts)][0],
                         direction=True,
                         dim=dim[0],
                     ),
@@ -670,7 +674,7 @@ def test_GeneralSolver_partial_integration(domain_state, dt, dim, parts, scheme)
         for s, borders in zip(domain_stack[-1], new_borders):
             new_subdomains.append(
                 DomainState.merge(
-                    (borders[0], gs.integration(s), borders[1]), border_merger
+                    (borders[0], gs2.integration(s), borders[1]), border_merger
                 )
             )
         domain_stack.append(new_subdomains)

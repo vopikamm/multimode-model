@@ -23,6 +23,7 @@ from multimodemodel import (
     pressure_gradient_j,
     divergence_i,
     divergence_j,
+    f_constant,
 )
 from multimodemodel.API_implementation import (
     DomainState,
@@ -134,7 +135,7 @@ def new_API_with_split_no_dask(initial_state, dt, parts=4):
     tailor = Tail()
     gs = GeneralSolver(solution=non_rotating_swe, schema=adams_bashforth3, step=dt)
 
-    domain_stack = deque([initial_state.split(splitter)], maxlen=2)
+    domain_stack = deque([tailor.split_domain(initial_state, splitter)], maxlen=2)
     border_stack = deque(
         [[tailor.make_borders(sub, border_width, dim[0]) for sub in domain_stack[-1]]],
         maxlen=2,
@@ -146,14 +147,16 @@ def new_API_with_split_no_dask(initial_state, dt, parts=4):
             new_borders.append(
                 (
                     gs.partial_integration(
+                        border=border_stack[-1][i][0],
                         domain=s,
-                        border=border_stack[-1][i - 1][1],
+                        neighbor_border=border_stack[-1][i - 1][1],
                         direction=False,
                         dim=dim[0],
                     ),
                     gs.partial_integration(
+                        border=border_stack[-1][i][1],
                         domain=s,
-                        border=border_stack[-1][(i + 1) % (splitter.parts)][0],
+                        neighbor_border=border_stack[-1][(i + 1) % (splitter.parts)][0],
                         direction=True,
                         dim=dim[0],
                     ),
@@ -182,8 +185,8 @@ if __name__ == "__main__":
     nx, ny = 100, 100
     dx, dy = 1.0, 1.0
     n_step = 500
-    parameter = Parameters(H=1.0)
     grid = staggered_grid((nx, ny), (dx, dy))
+    parameter = Parameters(H=1.0, coriolis_func=f_constant(f=0.0), on_grid=grid)
 
     warm_up(initial_condition(grid, parameter), get_dt(grid.u, parameter))
 
