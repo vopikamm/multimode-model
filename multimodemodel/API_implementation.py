@@ -75,7 +75,9 @@ class BorderDirection(Enum):
     """Enumerator of border possible directions."""
 
     LEFT = lambda w: slice(None, w)  # noqa: E731
+    LEFT_HALO = lambda w: slice(w, 2 * w)  # noqa: E731
     RIGHT = lambda w: slice(-w, None)  # noqa: E731
+    RIGHT_HALO = lambda w: slice(-2 * w, -w)  # noqa: E731
     CENTER = lambda w1, w2: slice(w1, -w2)  # noqa: E731
 
 
@@ -411,6 +413,11 @@ class DomainState(State, Domain, Splitable):
             id,
         )
 
+    @property
+    def as_state(self) -> StateSplit:
+        """Return state variables as StateSplit object."""
+        return StateSplit(u=self.u, v=self.v, eta=self.eta)
+
     def set_id(self, id):
         """Set id value."""
         self.id = id
@@ -703,8 +710,73 @@ class GeneralSolver(Solver):
 
     def integration(self, domain: DomainState) -> DomainState:
         """Implement integration method from API."""
-        inc = StateSplit.from_state(self.slv(domain, domain.parameter))
-        # shallow copy avoids side effects
+        inc = self._compute_increment(domain, domain.parameter)
+        new = self._integrate(domain, inc)
+        return new
+
+    def get_border_width(self) -> int:
+        """Retuns fixed border width."""
+        return 2
+
+    def partial_integration(
+        self,
+        border: BorderState,
+        domain: DomainState,
+        neighbor_border: BorderState,
+        direction: bool,
+        dim: int,
+    ) -> Border:
+        """Implement partial_integration from API."""
+        b_w = border.get_width()
+        dim = border.dim
+        assert domain.u.grid.x.shape[dim] >= 2 * b_w
+
+        if direction:
+            halo_slice = BorderDirection.RIGHT_HALO(b_w)
+        else:
+            halo_slice = BorderDirection.LEFT_HALO(b_w)
+
+        halo_splitter = BorderSplitter(slice=halo_slice, axis=dim)
+        dom = domain.as_state.split(halo_splitter)[0]
+        dom_param = domain.parameter.split(halo_splitter)[0]
+
+        state_list = [dom, border.as_state, neighbor_border.as_state]
+        param_list = [dom_param, border.parameter, neighbor_border.parameter]
+        if not direction:
+            state_list.reverse()
+            param_list.reverse()
+        list_merger = RegularSplitMerger(2, (dim,))
+        merged_state = StateSplit.merge(state_list, list_merger)  # TODO: refactor this
+        merged_parameters = ParameterSplit.merge(param_list, list_merger)
+        # tmp = self.integration(tmp)
+        inc = self._compute_increment(merged_state, merged_parameters)
+        area_of_interest_splitter = BorderSplitter(
+            slice=BorderDirection.CENTER(b_w, b_w), axis=dim
+        )
+        new = self._integrate(
+            border,
+            inc.split(area_of_interest_splitter)[0],
+        )
+
+        result = BorderState.from_domain_state(
+            new,
+            width=border.get_width(),
+            dim=dim,
+        )
+        result.id = domain.get_id()
+        return result
+
+    def window(self, domain: Future, client: Client) -> Future:
+        """Do nothing."""
+        # fire_and_forget(client.submit(_dump_to_redis, domain))
+        return domain
+
+    def _compute_increment(self, state: State, parameter: Parameters) -> StateSplit:
+        inc = StateSplit.from_state(self.slv(state, parameter))
+        return inc
+
+    def _integrate(self, domain: DomainState, inc: State) -> DomainState:
+        # shallow copy to avoid side effects
         history = copy(domain.history)
         history.append(inc)
         new = self.sch(history, domain.parameter, self.step)
@@ -717,41 +789,3 @@ class GeneralSolver(Solver):
             domain.increment_iteration(),
             domain.get_id(),
         )
-
-    def get_border_width(self) -> int:
-        """Retuns fixed border width."""
-        return 2
-
-    def partial_integration(
-        self,
-        domain: DomainState,
-        border: BorderState,
-        direction: bool,
-        dim: int,
-    ) -> Border:
-        """Implement partial_integration from API."""
-        b_w = border.get_width()
-        assert domain.u.grid.x.shape[dim] >= 2 * b_w
-        dom = BorderState.create_border(domain, 2 * b_w, direction, dim)
-        list = (
-            [dom, border] if direction else [border, dom]
-        )  # order inside list shows if it's left of right border
-        tmp = DomainState.merge(
-            list, RegularSplitMerger(2, (dim,))
-        )  # TODO: refactor this
-        tmp = self.integration(tmp)
-
-        result = BorderState.from_domain_state(
-            tmp.split(BorderSplitter(slice=BorderDirection.CENTER(b_w, b_w), axis=dim))[
-                0
-            ],
-            width=border.get_width(),
-            dim=dim,
-        )
-        result.id = domain.get_id()
-        return result
-
-    def window(self, domain: Future, client: Client) -> Future:
-        """Do nothing."""
-        # fire_and_forget(client.submit(_dump_to_redis, domain))
-        return domain
