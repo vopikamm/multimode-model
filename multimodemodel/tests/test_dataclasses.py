@@ -85,6 +85,39 @@ class TestParameters:
             ):
                 _ = p.f
 
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    def test_hash_of_identical_objects_is_same(self, f):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f, on_grid=staggered_grid)
+        p2 = p
+        assert hash(p) == hash(p2)
+
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    def test_hash_of_same_objects_is_false(self, f):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f, on_grid=staggered_grid)
+        p2 = Parameters(coriolis_func=f, on_grid=staggered_grid)
+        assert hash(p) != hash(p2)
+
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    def test_hash_of_different_objects_is_false(self, f):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x, y)
+
+        p = Parameters(coriolis_func=f, on_grid=staggered_grid)
+        p2 = Parameters(coriolis_func=f_constant(0.0), on_grid=staggered_grid)
+        assert hash(p) != hash(p2)
+
     def test_comparison_with_identical_returns_true(self):
         nx, ny = 20, 10
         dx, dy = 1.0, 0.25

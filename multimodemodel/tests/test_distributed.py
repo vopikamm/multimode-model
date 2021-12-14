@@ -175,7 +175,7 @@ def test_ParameterSplit_split(param_split, split_merger):
         (_not_share_memory(o.f[g], param_split.f[g]) for g in ("u", "v", "eta", "q"))
         for o in out
     )
-    param_split._f = {}
+    param_split = ParameterSplit.from_parameters_with_data(param_split, {})
     out = param_split.split(split_merger)
     assert all(o is param_split for o in out)
     assert len(out) == split_merger.parts
@@ -190,7 +190,7 @@ def test_ParameterSplit_merge(param_split, split_merger):
 
 
 def test_ParameterSplit_merge_no_coriolis(param_split, split_merger):
-    param_split._f = {}
+    param_split = ParameterSplit.from_parameters_with_data(param_split, {})
     others = param_split.split(split_merger)
     merged = ParameterSplit.merge(others, split_merger)
     assert merged.g == param_split.g

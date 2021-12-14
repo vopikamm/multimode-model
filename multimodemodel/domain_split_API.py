@@ -4,7 +4,6 @@ from typing import (
     Sequence,  # TODO: deprication handling
     # https://docs.python.org/3/library/typing.html#typing.Sequence
     Tuple,
-    Optional,
 )
 from dask.distributed import Future, Client
 from copy import deepcopy
@@ -19,7 +18,7 @@ class SplitVisitor(ABC):
     """
 
     @abstractmethod
-    def split_array(self, array: Optional[np.ndarray]) -> Tuple[np.ndarray, ...]:
+    def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
         """Split numpy array in various parts."""
         pass
 
@@ -56,7 +55,7 @@ class Splitable(ABC):
 
     @classmethod
     @abstractmethod
-    def merge(cls, others, merger: MergeVisitor):
+    def merge(cls, others: Sequence, merger: MergeVisitor):
         """Merge multiple Domains into one new domain."""
         pass
 
