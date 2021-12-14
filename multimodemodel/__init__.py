@@ -10,6 +10,7 @@ from .datastructure import (
     Parameters,
     Variable,
     State,
+    StateDeque,
 )
 
 from .grid import (
