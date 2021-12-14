@@ -26,6 +26,7 @@ from multimodemodel import (
     f_on_sphere,
     beta_plane,
     State,
+    StateDeque,
 )
 from multimodemodel.integrate import adams_bashforth3, euler_forward
 
@@ -113,7 +114,7 @@ def ident(request):
 def domain_state(state_param):
     state, param = state_param
     return DomainState.make_from_State(
-        state, history=deque(), parameter=param, it=0, id=0
+        state, history=StateDeque(), parameter=param, it=0, id=0
     )
 
 
@@ -259,7 +260,7 @@ def test_StateSplit_split_merge_roundtrip(state_param, split_merger):
 
 def test_DomainState_init(state_param):
     state, param = state_param
-    ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
+    ds = DomainState.make_from_State(state, history=StateDeque(), parameter=param, it=0)
     assert (ds.u.safe_data == state.u.safe_data).all()
     _may_share_memory(ds.u.data, state.u.data)
     assert (ds.v.safe_data == state.v.safe_data).all()
@@ -422,6 +423,13 @@ def test_DomainState_copy(domain_state):
     )
 
 
+def test_DomainState_strip_populate_roundtrip(domain_state):
+    objs = dict()
+    stripped = domain_state.strip(objs)
+    populated = stripped.populate(objs)
+    assert populated == domain_state
+
+
 def test_DomainState_comparison_with_identical_returns_true(domain_state):
     d2 = domain_state
     assert domain_state == d2
@@ -498,7 +506,7 @@ def test_BorderState_create_border(state_param, border_direction, dim):
     ]
     b_slices[dim] = b_slice
     b_slices = tuple(b_slices)
-    ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
+    ds = DomainState.make_from_State(state, history=StateDeque(), parameter=param, it=0)
     bs = BorderState.create_border(ds, width=width, direction=direction, dim=dim)
     if state.u.data is None:
         assert bs.u.data is None
@@ -532,12 +540,32 @@ def test_BorderState_create_border_returns_reference(
     direction = border_direction
     state, param = state_param
 
-    ds = DomainState.make_from_State(state, history=deque(), parameter=param, it=0)
+    ds = DomainState.make_from_State(state, history=StateDeque(), parameter=param, it=0)
     bs = BorderState.create_border(ds, width=width, direction=direction, dim=dim)
     _may_share_memory(bs.u.data, state.u.data)
     _may_share_memory(bs.v.data, state.v.data)
     _may_share_memory(bs.eta.data, state.eta.data)
     _may_share_memory(bs.eta.grid.x, state.eta.grid.x)
+
+
+def test_BorderState_strip_populate_roundtrip(state_param):
+    width, dim = 1, 0
+    state, param = state_param
+    bs = BorderState(
+        state.u,
+        state.v,
+        state.eta,
+        history=StateDequeSplit(),
+        parameter=param,
+        width=width,
+        dim=dim,
+        iteration=0,
+        id=1,
+    )
+    objs = dict()
+    stripped = bs.strip(objs)
+    populated = stripped.populate(objs)
+    assert bs == populated
 
 
 def test_Tail_split_domain_sets_ids_correctly(domain_state, split_merger):

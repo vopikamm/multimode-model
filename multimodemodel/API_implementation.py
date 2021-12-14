@@ -1,5 +1,4 @@
 """Implementation of domain split API."""
-import sys
 from enum import Enum
 from functools import wraps, lru_cache
 from .config import config
@@ -13,7 +12,14 @@ from .domain_split_API import (
     Tailor,
     Splitable,
 )
-from .datastructure import State, Variable, np, Parameters
+from .datastructure import (
+    State,
+    Variable,
+    Parameters,
+    StateDeque,
+    VariableStripped,
+    StateDequeStripped,
+)
 from .grid import Grid, StaggeredGrid
 from dask.distributed import Client, Future
 from redis import Redis
@@ -22,11 +28,7 @@ from collections import deque
 from typing import Callable, Optional, Sequence, Tuple, Dict
 from dataclasses import dataclass, fields
 from copy import copy, deepcopy
-
-if sys.version_info < (3, 9):
-    from typing import Deque
-else:
-    Deque = deque
+import numpy as np
 
 
 def _ensure_others_is_tuple(func):
@@ -373,19 +375,19 @@ class StateSplit(State, Splitable):
             )
 
 
-class StateDequeSplit(deque, Splitable):
+class StateDequeSplit(StateDeque, Splitable):
     """Implements splitting and merging on deque class."""
 
     def split(self, splitter: SplitVisitor):
         """Split StateDeque."""
-        splitted_states = []
+        splitted_states_list = []
         for s in self:
             if isinstance(s, StateSplit):
                 split_state = s.split(splitter)
             else:
                 split_state = StateSplit.from_state(s).split(splitter)
-            splitted_states.append(split_state)
-        splitted_states = tuple(splitted_states)
+            splitted_states_list.append(split_state)
+        splitted_states = tuple(splitted_states_list)
         if len(splitted_states) == 0:
             return splitter.parts * (self.__class__([], maxlen=self.maxlen),)
         return tuple(
@@ -430,7 +432,7 @@ class DomainState(State, Domain, Splitable):
         self.v: VariableSplit = VariableSplit.from_variable(v)
         self.eta: VariableSplit = VariableSplit.from_variable(eta)
         if history is None:
-            self.history = StateDequeSplit([], maxlen=3)
+            self.history: StateDequeSplit = StateDequeSplit([], maxlen=3)
         else:
             self.history = StateDequeSplit.from_state_deque(history)
         if parameter is None:
@@ -443,7 +445,7 @@ class DomainState(State, Domain, Splitable):
 
     @classmethod
     def make_from_State(
-        cls, s: State, history: Deque, parameter: Parameters, it: int, id: int = 0
+        cls, s: State, history: StateDeque, parameter: Parameters, it: int, id: int = 0
     ):
         """Make DomainState object from State objects, without copying Variables."""
         return cls(
@@ -541,6 +543,69 @@ class DomainState(State, Domain, Splitable):
                 return False
         return True
 
+    def strip(self, objs: dict) -> "DomainStateStripped":
+        """Return stripped DomainState.
+
+        The stripped domain state has its elements stripped and frozen elements
+        replaced by their id.
+        The objects are added to the dict objs having their id as key to keep a
+        reference to them. This method is not pure, since `objs` is changing.
+
+        Arguments
+        ---------
+        objs: dict
+            Dict to which the frozen objects are added.
+        """
+        if self.parameter._id not in objs:
+            objs[self.parameter._id] = self.parameter
+        return DomainStateStripped(
+            u=self.u.strip(objs),
+            v=self.v.strip(objs),
+            eta=self.eta.strip(objs),
+            id=self.id,
+            it=self.it,
+            history=self.history.strip(objs),
+            parameter=self.parameter._id,
+        )
+
+
+@dataclass
+class DomainStateStripped:
+    """Stripped DoaminState.
+
+    This class is used to remove (almost) immutable data from the instance
+    before it is subject to IO. Instances are not meant to be worked on.
+    """
+
+    u: VariableStripped
+    v: VariableStripped
+    eta: VariableStripped
+    history: StateDequeStripped
+    parameter: int
+    it: int
+    id: int
+
+    def populate(self, objs: dict) -> DomainState:
+        """Return domain state with references set to frozen attributes.
+
+        The frozen objects are obtained from objs using the key stored in
+        place of the objects.
+
+        Arguments
+        ---------
+        objs: dict
+          Dict of the frozen objects.
+        """
+        return DomainState(
+            u=self.u.populate(objs),
+            v=self.v.populate(objs),
+            eta=self.eta.populate(objs),
+            history=StateDequeSplit.from_state_deque(self.history.populate(objs)),
+            parameter=objs[self.parameter],
+            it=self.it,
+            id=self.id,
+        )
+
 
 class BorderState(DomainState, Border):
     """Implementation of Border class from API on State class."""
@@ -602,6 +667,75 @@ class BorderState(DomainState, Border):
     def get_dim(self) -> int:
         """Get border's dimension."""
         return self.dim
+
+    def strip(self, objs: dict) -> "BorderStateStripped":
+        """Return stripped BorderState.
+
+        The stripped border state has its elements stripped and frozen elements
+        replaced by their id.
+        The objects are added to the dict objs having their id as key to keep a
+        reference to them. This method is not pure, since `objs` is changing.
+
+        Arguments
+        ---------
+        objs: dict
+            Dict to which the frozen objects are added.
+        """
+        if self.parameter._id not in objs:
+            objs[self.parameter._id] = self.parameter
+        return BorderStateStripped(
+            u=self.u.strip(objs),
+            v=self.v.strip(objs),
+            eta=self.eta.strip(objs),
+            id=self.id,
+            it=self.it,
+            history=self.history.strip(objs),
+            parameter=self.parameter._id,
+            width=self.width,
+            dim=self.dim,
+        )
+
+
+@dataclass
+class BorderStateStripped:
+    """Stripped BorderState.
+
+    This class is used to remove (almost) immutable data from the instance
+    before it is subject to IO. Instances are not meant to be worked on.
+    """
+
+    u: VariableStripped
+    v: VariableStripped
+    eta: VariableStripped
+    history: StateDequeStripped
+    parameter: int
+    it: int
+    id: int
+    width: int
+    dim: int
+
+    def populate(self, objs: dict) -> BorderState:
+        """Return border state with references set to frozen attributes.
+
+        The frozen objects are obtained from objs using the key stored in
+        place of the objects.
+
+        Arguments
+        ---------
+        objs: dict
+          Dict of the frozen objects.
+        """
+        return BorderState(
+            u=self.u.populate(objs),
+            v=self.v.populate(objs),
+            eta=self.eta.populate(objs),
+            history=StateDequeSplit.from_state_deque(self.history.populate(objs)),
+            parameter=objs[self.parameter],
+            iteration=self.it,
+            id=self.id,
+            width=self.width,
+            dim=self.dim,
+        )
 
 
 class BorderMerger(MergeVisitor):
