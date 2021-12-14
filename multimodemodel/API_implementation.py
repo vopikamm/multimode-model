@@ -1,6 +1,8 @@
 """Implementation of domain split API."""
 import sys
 from enum import Enum
+from functools import wraps, lru_cache
+from .config import config
 from .integrate import TimeSteppingFunction
 from .domain_split_API import (
     Domain,
@@ -27,17 +29,29 @@ else:
     Deque = deque
 
 
+def _ensure_others_is_tuple(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if "others" in kwargs and type(kwargs["others"]) is not Tuple:
+            kwargs["others"] = tuple(kwargs["others"])
+        elif type(args[0]) is not Tuple:
+            args = tuple(a if i != 0 else tuple(a) for i, a in enumerate(args))
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
 class RegularSplitMerger(SplitVisitor, MergeVisitor):
     """Implements splitting and merging into regular grid."""
 
-    __slots__ = ["tuple", "_parts"]
+    __slots__ = ["dim", "_parts"]
 
     def __init__(self, parts: int, dim: Tuple[int]):
         """Initialize class instance."""
         self._parts = parts
         self.dim = dim
 
-    def split_array(self, array: np.ndarray) -> Tuple[np.ndarray, ...]:
+    def split_array(self, array: Optional[np.ndarray]) -> Tuple[np.ndarray, ...]:
         """Split array.
 
         Parameter
@@ -64,6 +78,14 @@ class RegularSplitMerger(SplitVisitor, MergeVisitor):
         np.ndarray
         """
         return np.concatenate(arrays, axis=self.dim[0])
+
+    def __hash__(self):
+        """Return hash based on number of parts and dimension."""
+        return hash((self.parts, self.dim))
+
+    def __eq__(self, other):
+        """Compare based on hashes."""
+        return hash(self) == hash(other)
 
     @property
     def parts(self) -> int:
@@ -112,10 +134,19 @@ class BorderSplitter(SplitVisitor):
         """Return number of parts created by split."""
         return 1
 
+    def __hash__(self):
+        """Return hash based on axis and slice object."""
+        return hash((self._axis, self._slice.start, self._slice.stop))
+
+    def __eq__(self, other):
+        """Compare based on hashes."""
+        return hash(self) == hash(other)
+
 
 class ParameterSplit(Parameters, Splitable):
     """Implements splitting and merging on Parameters class."""
 
+    @lru_cache(maxsize=config.lru_cache_maxsize)
     def split(self, splitter: SplitVisitor):
         """Split Parameter's spatially dependent data."""
         data = None
@@ -134,8 +165,10 @@ class ParameterSplit(Parameters, Splitable):
         return tuple(self.__class__.from_parameters_with_data(self, o) for o in out)
 
     @classmethod
+    @_ensure_others_is_tuple
+    @lru_cache(maxsize=config.lru_cache_maxsize)
     def merge(cls, others: Sequence[Parameters], merger: MergeVisitor):
-        """Merge Parameter's Coriolis data."""
+        """Merge Parameter's spatially varying data."""
         data = {}
         try:
             data = {
@@ -150,35 +183,28 @@ class ParameterSplit(Parameters, Splitable):
     @classmethod
     def from_parameters(cls, other: Parameters) -> "ParameterSplit":
         """Create from Parameters object."""
-        new = cls(
-            **{
-                f.name: getattr(other, f.name)
-                for f in fields(other)
-                if f.name not in ("_f")
-            }
-        )
-        new._f = other._f
-        return new
+        if isinstance(other, cls):
+            return other
+        return cls.from_parameters_with_data(other, other._f)
 
     @classmethod
     def from_parameters_with_data(
         cls, other: Parameters, data: Dict[str, np.ndarray]
     ) -> "ParameterSplit":
         """Create from Parameters object."""
-        new = cls(
-            **{
-                f.name: getattr(other, f.name)
-                for f in fields(other)
-                if f.name not in ("_f")
-            }
-        )
-        new._f = data
-        return new
+        kwargs = {
+            f.name: getattr(other, f.name)
+            for f in fields(other)
+            if f.name not in ("_f", "_id")
+        }
+        kwargs["f_init"] = data
+        return cls(**kwargs)
 
 
 class GridSplit(Grid, Splitable):
     """Implements splitting and merging on Grid class."""
 
+    @lru_cache(maxsize=config.lru_cache_maxsize)
     def split(self, splitter: SplitVisitor):
         """Split grid."""
         x, y, mask, dx, dy = (
@@ -191,13 +217,15 @@ class GridSplit(Grid, Splitable):
                 dx_init=args[3],
                 dy_init=args[4],
                 dim_x=self.dim_x,
-                dim_y=self.dim_y
+                dim_y=self.dim_y,
             )
             for args in zip(x, y, mask, dx, dy)
         )
 
     @classmethod
-    def merge(cls, others, merger: MergeVisitor):
+    @_ensure_others_is_tuple
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def merge(cls, others: Sequence[Grid], merger: MergeVisitor):
         """Merge grids."""
         x = merger.merge_array(tuple(o.x for o in others))
         y = merger.merge_array(tuple(o.y for o in others))
@@ -217,6 +245,8 @@ class GridSplit(Grid, Splitable):
     @classmethod
     def from_grid(cls, grid):
         """Create from Grid object."""
+        if isinstance(grid, cls):
+            return grid
         return cls(x=grid.x, y=grid.y, mask=grid.mask, dx_init=grid.dx, dy_init=grid.dy)
 
 
@@ -243,7 +273,7 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: MergeVisitor):
+    def merge(cls, others: Sequence[StaggeredGrid], merger: MergeVisitor):
         """Merge staggered grids."""
         return cls(
             **{
@@ -255,7 +285,12 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
     @classmethod
     def from_staggered_grid(cls, staggered_grid):
         """Create from StaggeredGrid object."""
-        return cls(**{k: getattr(staggered_grid, k) for k in ("u", "v", "eta", "q")})
+        if isinstance(staggered_grid, cls):
+            return staggered_grid
+        else:
+            return cls(
+                **{k: getattr(staggered_grid, k) for k in ("u", "v", "eta", "q")}
+            )
 
 
 @dataclass
@@ -269,18 +304,17 @@ class VariableSplit(Variable, Splitable):
 
     def split(self, splitter: SplitVisitor):
         """Split variable."""
-        data = self.safe_data
         splitted_grid = self.grid.split(splitter)
         if self.data is None:
             splitted_data = splitter.parts * (None,)
         else:
-            splitted_data = splitter.split_array(data)
+            splitted_data = splitter.split_array(self.safe_data)
         return tuple(
             self.__class__(data=d, grid=g) for d, g in zip(splitted_data, splitted_grid)
         )
 
     @classmethod
-    def merge(cls, others, merger: MergeVisitor):
+    def merge(cls, others: Sequence[Variable], merger: MergeVisitor):
         """Merge variable."""
         if all(o.data is None for o in others):
             data = None
@@ -288,13 +322,16 @@ class VariableSplit(Variable, Splitable):
             data = merger.merge_array([o.safe_data for o in others])
         return cls(
             data=data,
-            grid=GridSplit.merge([o.grid for o in others], merger),
+            grid=GridSplit.merge(tuple(o.grid for o in others), merger),
         )
 
     @classmethod
     def from_variable(cls, var):
         """Create from Variable object."""
-        return cls(data=var.data, grid=GridSplit.from_grid(var.grid))
+        if isinstance(var, cls):
+            return var
+        else:
+            return cls(data=var.data, grid=GridSplit.from_grid(var.grid))
 
     def __eq__(self, other):
         """Return true if other is identical or the same as self."""
@@ -315,7 +352,7 @@ class StateSplit(State, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: MergeVisitor):
+    def merge(cls, others: Sequence[State], merger: MergeVisitor):
         """Merge variables."""
         return cls(
             u=VariableSplit.merge([o.u for o in others], merger),
@@ -326,11 +363,14 @@ class StateSplit(State, Splitable):
     @classmethod
     def from_state(cls, state: State):
         """Create from state."""
-        return cls(
-            u=VariableSplit.from_variable(state.u),
-            v=VariableSplit.from_variable(state.v),
-            eta=VariableSplit.from_variable(state.eta),
-        )
+        if isinstance(state, cls):
+            return state
+        else:
+            return cls(
+                u=VariableSplit.from_variable(state.u),
+                v=VariableSplit.from_variable(state.v),
+                eta=VariableSplit.from_variable(state.eta),
+            )
 
 
 class StateDequeSplit(deque, Splitable):
@@ -354,7 +394,7 @@ class StateDequeSplit(deque, Splitable):
         )
 
     @classmethod
-    def merge(cls, others, merger: MergeVisitor):
+    def merge(cls, others: Sequence[deque], merger: MergeVisitor):
         """Merge StateDeques."""
         return cls(
             (StateSplit.merge(states, merger) for states in zip(*others)),
@@ -364,7 +404,10 @@ class StateDequeSplit(deque, Splitable):
     @classmethod
     def from_state_deque(cls, state_deque):
         """Create from StateDeque object."""
-        return cls(state_deque, maxlen=state_deque.maxlen)
+        if isinstance(state_deque, cls):
+            return state_deque
+        else:
+            return cls(state_deque, maxlen=state_deque.maxlen)
 
 
 class DomainState(State, Domain, Splitable):
@@ -467,7 +510,7 @@ class DomainState(State, Domain, Splitable):
         return out
 
     @classmethod
-    def merge(cls, others, merger: MergeVisitor):
+    def merge(cls, others: Sequence["DomainState"], merger: MergeVisitor):
         """Implement merge method from API."""
         if any(tuple(o.it != others[0].it for o in others)):
             raise ValueError(
@@ -478,7 +521,7 @@ class DomainState(State, Domain, Splitable):
             VariableSplit.merge([o.v for o in others], merger),
             VariableSplit.merge([o.eta for o in others], merger),
             StateDequeSplit.merge([o.history for o in others], merger),
-            ParameterSplit.merge([o.parameter for o in others], merger),
+            ParameterSplit.merge((o.parameter for o in others), merger),
             others[0].get_iteration(),
             others[0].get_id(),
         )
@@ -568,7 +611,7 @@ class BorderMerger(MergeVisitor):
     The order of arguments must be (left_border, domain, right_border).
     """
 
-    __slots__ = ["_axis", "_slice_left", "_slice_right"]
+    __slots__ = ["_axis", "_slice_left", "_slice_right", "_slice_center", "_width"]
 
     def __init__(self, width: int, axis: int):
         """Initialize class instance."""
@@ -576,6 +619,7 @@ class BorderMerger(MergeVisitor):
         self._slice_left = BorderDirection.LEFT(width)
         self._slice_right = BorderDirection.RIGHT(width)
         self._slice_center = BorderDirection.CENTER(width, width)
+        self._width = width
 
     @classmethod
     def from_borders(
@@ -604,6 +648,14 @@ class BorderMerger(MergeVisitor):
         left, base, right = arrays
         out = np.concatenate((left, base[tuple(slices_center)], right), axis=self._axis)
         return out
+
+    def __hash__(self):
+        """Return hash based on axis and slice objects."""
+        return hash((self._axis, self._width))
+
+    def __eq__(self, other):
+        """Compare based on hash values."""
+        return hash(self) == hash(other)
 
 
 # TODO: make this work for dim != 1
@@ -634,7 +686,9 @@ class Tail(Tailor):
         )
 
     @staticmethod
-    def stitch(base: DomainState, borders: tuple, dims: tuple) -> DomainState:
+    def stitch(
+        base: DomainState, borders: Tuple[BorderState, BorderState], dims: tuple
+    ) -> DomainState:
         """Implement stitch method from API.
 
         borders need to be ordered left_border, right_border
@@ -656,8 +710,28 @@ class Tail(Tailor):
                     base.get_iteration(),
                 )
             )
-
-        return DomainState.merge((left_border, base, right_border), border_merger)
+        # necessary for caching of split / merge operations since
+        # hashing of ParameterSplit and GridSplit is id based.
+        vars = {
+            v: VariableSplit(
+                data=border_merger.merge_array(
+                    tuple(
+                        getattr(o, v).safe_data
+                        for o in (left_border, base, right_border)
+                    )
+                ),
+                grid=base.__getattribute__(v).grid,
+            )
+            for v in ("u", "v", "eta")
+        }
+        merged_state = StateSplit(**vars)
+        return DomainState.make_from_State(
+            merged_state,
+            base.history,
+            base.parameter,
+            base.get_iteration(),
+            base.get_id(),
+        )
 
 
 def _dump_to_redis(domain: DomainState):
@@ -737,6 +811,11 @@ class GeneralSolver(Solver):
             halo_slice = BorderDirection.LEFT_HALO(b_w)
 
         halo_splitter = BorderSplitter(slice=halo_slice, axis=dim)
+        list_merger = RegularSplitMerger(2, (dim,))
+        area_of_interest_splitter = BorderSplitter(
+            slice=BorderDirection.CENTER(b_w, b_w), axis=dim
+        )
+
         dom = domain.as_state.split(halo_splitter)[0]
         dom_param = domain.parameter.split(halo_splitter)[0]
 
@@ -745,14 +824,10 @@ class GeneralSolver(Solver):
         if not direction:
             state_list.reverse()
             param_list.reverse()
-        list_merger = RegularSplitMerger(2, (dim,))
-        merged_state = StateSplit.merge(state_list, list_merger)  # TODO: refactor this
-        merged_parameters = ParameterSplit.merge(param_list, list_merger)
+        merged_state = StateSplit.merge(state_list, list_merger)
+        merged_parameters = ParameterSplit.merge(tuple(param_list), list_merger)
         # tmp = self.integration(tmp)
         inc = self._compute_increment(merged_state, merged_parameters)
-        area_of_interest_splitter = BorderSplitter(
-            slice=BorderDirection.CENTER(b_w, b_w), axis=dim
-        )
         new = self._integrate(
             border,
             inc.split(area_of_interest_splitter)[0],

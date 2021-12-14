@@ -12,7 +12,9 @@ which can be analyzed using, e.g., snakeviz.
 from collections import deque
 import sys
 import numpy as np
+from multimodemodel import diag
 from multimodemodel import (
+    Grid,
     StaggeredGrid,
     State,
     Variable,
@@ -26,11 +28,11 @@ from multimodemodel import (
     f_constant,
 )
 from multimodemodel.API_implementation import (
+    GridSplit,
     DomainState,
     GeneralSolver,
+    ParameterSplit,
     RegularSplitMerger,
-    BorderState,
-    BorderMerger,
     Tail,
 )
 from time import time
@@ -129,9 +131,8 @@ def new_API_without_split(initial_state, dt):
 @timer
 def new_API_with_split_no_dask(initial_state, dt, parts=4):
     border_width = 2
-    dim = (1,)
+    dim = (0,)
     splitter = RegularSplitMerger(parts, dim)
-    border_merger = BorderMerger(border_width, dim[0])
     tailor = Tail()
     gs = GeneralSolver(solution=non_rotating_swe, schema=adams_bashforth3, step=dt)
 
@@ -162,12 +163,9 @@ def new_API_with_split_no_dask(initial_state, dt, parts=4):
                     ),
                 )
             )
-        for s, borders in zip(domain_stack[-1], new_borders):
-            new_subdomains.append(
-                DomainState.merge(
-                    (borders[0], gs.integration(s), borders[1]), border_merger
-                )
-            )
+        for i, (s, borders) in enumerate(zip(domain_stack[-1], new_borders)):
+            integrated = gs.integration(s)
+            new_subdomains.append(tailor.stitch(integrated, borders, (0,)))
         domain_stack.append(new_subdomains)
         border_stack.append(new_borders)
 
@@ -197,11 +195,14 @@ if __name__ == "__main__":
             initial_condition(grid, parameter),
             get_dt(grid.u, parameter),
         )
+        diag.print_lru_cache_info()
     elif command == "split":
         out = new_API_with_split_no_dask(
             initial_condition(grid, parameter),
             get_dt(grid.u, parameter),
+            parts=4,
         )
+        diag.print_lru_cache_info()
     else:
         print('Command must be one of "classic", "no_split", "split"')
         sys.exit(1)

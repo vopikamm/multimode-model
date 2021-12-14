@@ -24,7 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover
         DataArray = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class Parameters:
     """Class to organise all parameters.
 
@@ -65,15 +65,26 @@ class Parameters:
     rho_0: float = 1024.0  # reference density in kg / m^3
     coriolis_func: InitVar[Optional[CoriolisFunc]] = None
     on_grid: InitVar[Optional[StaggeredGrid]] = None
+    f_init: InitVar[Optional[Dict[str, np.ndarray]]] = None
     _f: Dict[str, np.ndarray] = field(init=False)
+    _id: int = field(init=False)
 
     def __post_init__(
         self,
         coriolis_func: Optional[CoriolisFunc],
         on_grid: Optional[StaggeredGrid],
+        f_init: Optional[Dict[str, np.ndarray]],
     ):
         """Initialize derived fields."""
-        self._f = self._compute_f(coriolis_func, on_grid)
+        super().__setattr__("_id", id(self))
+        if f_init is None:
+            super().__setattr__("_f", self._compute_f(coriolis_func, on_grid))
+        else:
+            super().__setattr__("_f", f_init)
+
+    def __hash__(self):
+        """Return id of instance as hash."""
+        return self._id
 
     @property
     def f(self) -> Dict[str, np.ndarray]:
@@ -115,6 +126,7 @@ class Parameters:
             if f.name == "_f"
             else getattr(self, f.name) == getattr(other, f.name)
             for f in fields(self)
+            if f.name != "_id"
         )
 
 

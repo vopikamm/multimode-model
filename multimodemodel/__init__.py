@@ -4,6 +4,8 @@ This script is the initial attempt to formulate the linearised shallow
 water equation as python functions.
 """
 
+from .config import config
+
 from .datastructure import (
     Parameters,
     Variable,

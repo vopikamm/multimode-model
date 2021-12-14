@@ -5,7 +5,9 @@ from typing import Any, Dict, Union, Optional
 import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
+from functools import lru_cache
 
+from .config import config
 from .jit import _numba_2D_grid_iterator_i8
 
 
@@ -30,7 +32,7 @@ class GridShift(Enum):
     UL = (-1, 1)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Grid:
     """Grid information.
 
@@ -71,6 +73,7 @@ class Grid:
     dy: np.ndarray = field(init=False)  # grid spacing in y
     len_x: int = field(init=False)  # length of array in x dimension
     len_y: int = field(init=False)  # length of array in y dimension
+    _id: int = field(init=False)  # id of object used for caching
 
     @staticmethod
     def _compute_grid_spacing(coord, axis):
@@ -89,6 +92,7 @@ class Grid:
             np.ndarray, None
         ] = None,  # ocean mask, 1 where ocean is, 0 where land is
         dim_x: int = 0,  # x dimension in numpy array
+        **kwargs,
     ):
         """Generate a Cartesian grid.
 
@@ -113,6 +117,7 @@ class Grid:
             mask=mask,
             dim_x=dim_x,
             dim_y=dim_x - 1,
+            **kwargs,
         )
 
         return grid
@@ -164,27 +169,36 @@ class Grid:
             dim_x=dim_x,
         )
 
-        # reset to have a dimension of length
-        grid.dx = radius * np.cos(grid.y * to_rad) * grid.dx * to_rad
-        grid.dy = radius * grid.dy * to_rad
+        # compute grid spacing
+        dx = radius * np.cos(grid.y * to_rad) * grid.dx * to_rad
+        dy = radius * grid.dy * to_rad
+
+        grid = cls.cartesian(
+            x=lon,
+            y=lat,
+            mask=mask,
+            dim_x=dim_x,
+            dx_init=dx,
+            dy_init=dy,
+        )
 
         return grid
 
     def __post_init__(self, dx_init, dy_init) -> None:
         """Set derived attributes of the grid and validate."""
+        super().__setattr__("_id", id(self))
+
         if dx_init is None:
-            self.dx = self._compute_grid_spacing(coord=self.x, axis=self.dim_x)
-        else:
-            self.dx = dx_init
+            dx_init = self._compute_grid_spacing(coord=self.x, axis=self.dim_x)
         if dy_init is None:
-            self.dy = self._compute_grid_spacing(coord=self.y, axis=self.dim_y)
-        else:
-            self.dy = dy_init
-        self.len_x = self.x.shape[self.dim_x]
-        self.len_y = self.x.shape[self.dim_y]
+            dy_init = self._compute_grid_spacing(coord=self.y, axis=self.dim_y)
+        super().__setattr__("dx", dx_init)
+        super().__setattr__("dy", dy_init)
+        super().__setattr__("len_x", self.x.shape[self.dim_x])
+        super().__setattr__("len_y", self.x.shape[self.dim_y])
 
         if self.mask is None:
-            self.mask = self._get_default_mask(self.x.shape)
+            super().__setattr__("mask", self._get_default_mask(self.x.shape))
 
         # validate
         _check_shape(self.mask, self.x, "Mask shape not matching grid shape")
@@ -200,17 +214,27 @@ class Grid:
         mask[:, -1] = 0
         return mask
 
+    def __hash__(self):
+        """Return object id as hashing."""
+        return self._id
+
     def __eq__(self, other) -> bool:
         """Return true if other is identical or the same as self."""
         if not isinstance(other, Grid):
             return NotImplemented
-        if self is other:
+        if self.__hash__() == other.__hash__():
             return True
+        return self.__eq__grid__(other)
+
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def __eq__grid__(self, other) -> bool:
+        """Return True if all fields are equal, except _id."""
         return all(
             (getattr(self, f.name) == getattr(other, f.name)).all()
             if f.name in ("x", "y", "mask", "dx", "dy")
             else getattr(self, f.name) == getattr(other, f.name)
             for f in fields(self)
+            if f.name != "_id"
         )
 
 
@@ -300,6 +324,7 @@ class StaggeredGrid:
         Returns StaggeredGrid object with all four grids
         """
         eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
+        nx, ny = eta_grid.len_x, eta_grid.len_y
         dx = eta_grid._compute_grid_spacing(eta_grid.x, eta_grid.dim_x)
         dy = eta_grid._compute_grid_spacing(eta_grid.y, eta_grid.dim_y)
 
@@ -308,30 +333,40 @@ class StaggeredGrid:
             eta_grid.x.max() + shift.value[0] * dx.min() / 2,
         )
         u_kwargs = kwargs.copy()
-        u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
-        u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
-        u_grid.mask = cls._u_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        u_kwargs.update(
+            dict(
+                lon_start=u_x_start,
+                lon_end=u_x_end,
+                mask=cls._u_mask_from_eta(  # type: ignore
+                    nx,
+                    ny,
+                    eta_grid.mask,
+                    shift.value[0],
+                    shift.value[1],
+                ),
+            )
         )
+        u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
 
         v_y_start, v_y_end = (
             eta_grid.y.min() + shift.value[1] * dy.min() / 2,
             eta_grid.y.max() + shift.value[1] * dy.min() / 2,
         )
         v_kwargs = kwargs.copy()
-        v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
-        v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
-        v_grid.mask = cls._v_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
+        v_kwargs.update(
+            dict(
+                lat_start=v_y_start,
+                lat_end=v_y_end,
+                mask=cls._v_mask_from_eta(  # type: ignore
+                    nx,
+                    ny,
+                    eta_grid.mask,
+                    shift.value[0],
+                    shift.value[1],
+                ),
+            )
         )
+        v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
 
         q_kwargs = kwargs.copy()
         q_kwargs.update(
@@ -340,16 +375,16 @@ class StaggeredGrid:
                 lon_end=u_x_end,
                 lat_start=v_y_start,
                 lat_end=v_y_end,
+                mask=cls._q_mask_from_eta(  # type: ignore
+                    nx,
+                    ny,
+                    eta_grid.mask,
+                    shift.value[0],
+                    shift.value[1],
+                ),
             )
         )
         q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
-        q_grid.mask = cls._q_mask_from_eta(  # type: ignore
-            u_grid.len_x,
-            u_grid.len_y,
-            eta_grid.mask,
-            shift.value[0],
-            shift.value[1],
-        )
 
         return cls(eta_grid, u_grid, v_grid, q_grid)
 
