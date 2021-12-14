@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, asdict, InitVar, fields
 from .grid import Grid, StaggeredGrid
 from .coriolis import CoriolisFunc
 from typing import Dict, Optional
+from collections import deque
 
 try:
     import xarray
@@ -209,6 +210,47 @@ class Variable:
             for f in fields(self)
         )
 
+    def strip(self, objs: dict) -> "VariableStripped":
+        """Return stripped variable.
+
+        The stripped variable has its frozen attributes replaced by their ids.
+        The objects are added to the dict objs having their id as key to keep a
+        reference to them. This method is not pure since `objs` is changing.
+
+        Arguments
+        ---------
+        objs: dict
+          Dict to which the frozen objects are added.
+        """
+        if self.grid._id not in objs:
+            objs[self.grid._id] = self.grid
+        return VariableStripped(data=self.data, grid=self.grid._id)
+
+
+@dataclass
+class VariableStripped:
+    """Variable having its frozen attributes replaced by their ids.
+
+    This class is used to remove (almost) immutable data from the instance
+    before it is subject to IO. Instances are not meant to be worked on.
+    """
+
+    data: Optional[np.ndarray]
+    grid: int
+
+    def populate(self, objs: dict) -> Variable:
+        """Return variable with references set to frozen attributes.
+
+        The frozen objects are obtained from objs using the key stored in
+        place of the objects.
+
+        Arguments
+        ---------
+        objs: dict
+          Dict of the frozen objects.
+        """
+        return Variable(data=self.data, grid=objs[self.grid])
+
 
 @dataclass
 class State:
@@ -232,3 +274,88 @@ class State:
         except (AttributeError, TypeError):  # pragma: no cover
             return NotImplemented
         return self.__class__(u=u_new, v=v_new, eta=eta_new)
+
+    def strip(self, objs: dict) -> "StateStripped":
+        """Return stripped state.
+
+        The stripped state has its variables stripped.
+        The objects are added to the dict objs having their id as key to keep a
+        reference to them. This method is not pure, since `objs` is changing.
+
+        Arguments
+        ---------
+        objs: dict
+          Dict to which the frozen objects are added.
+        """
+        return StateStripped(
+            u=self.u.strip(objs), v=self.v.strip(objs), eta=self.eta.strip(objs)
+        )
+
+
+@dataclass
+class StateStripped:
+    """State having the frozen attributes of its attributed replaced by their ids.
+
+    This class is used to remove (almost) immutable data from the instance
+    before it is subject to IO. Instances are not meant to be worked on.
+    """
+
+    u: VariableStripped
+    v: VariableStripped
+    eta: VariableStripped
+
+    def populate(self, objs: dict) -> State:
+        """Return state with references set to frozen attributes.
+
+        The frozen objects are obtained from objs using the key stored in
+        place of the objects.
+
+        Arguments
+        ---------
+        objs: dict
+          Dict of the frozen objects.
+        """
+        return State(
+            u=self.u.populate(objs),
+            v=self.v.populate(objs),
+            eta=self.eta.populate(objs),
+        )
+
+
+class StateDeque(deque):
+    """Deque of State objects."""
+
+    def strip(self, objs: dict) -> "StateDequeStripped":
+        """Return stripped state deque.
+
+        The stripped state deque has its elements stripped.
+        The objects are added to the dict objs having their id as key to keep a
+        reference to them. This method is not pure, since `objs` is changing.
+
+        Arguments
+        ---------
+        objs: dict
+            Dict to which the frozen objects are added.
+        """
+        return StateDequeStripped(
+            (element.strip(objs) for element in self), maxlen=self.maxlen
+        )
+
+
+class StateDequeStripped(StateDeque):
+    """Deque of stripped state objects."""
+
+    def populate(self, objs) -> StateDeque:
+        """Return state deque with references set to frozen attributes.
+
+        The frozen objects are obtained from objs using the key stored in
+        place of the objects.
+
+        Arguments
+        ---------
+        objs: dict
+        Dict of the frozen objects.
+        """
+        return StateDeque(
+            (element.populate(objs) for element in self), maxlen=self.maxlen
+        )

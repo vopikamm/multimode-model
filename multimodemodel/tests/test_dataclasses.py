@@ -12,6 +12,7 @@ from multimodemodel import (
     GridShift,
     f_constant,
 )
+from multimodemodel.datastructure import StateDeque
 
 try:
     import xarray as xr
@@ -585,6 +586,31 @@ class TestVariable:
         v1 = Variable(np.zeros_like(g1.x) + 1.0, g1)
         assert v1 != 5
 
+    def test_stripping_populates_objs_correctly(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        v = Variable(None, g1)
+
+        g_id = g1._id
+        objs = {}
+        stripped_v = v.strip(objs)
+        assert g_id in objs
+        assert objs[g_id] is g1
+
+    def test_stripping_returns_stripped_variable(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        v = Variable(None, g1)
+
+        g_id = g1._id
+        objs = {}
+        stripped_v = v.strip(objs)
+        assert stripped_v.grid == g_id
+
 
 # @pytest.mark.xarray
 @pytest.mark.skipif(not has_xarray, reason="Xarray not available.")
@@ -637,6 +663,21 @@ class TestVariableAsDataArray:
         _ = v.as_dataarray
 
         assert np.all(v.data == data)
+
+
+class TestVariableStripped:
+    """Test VariableStripped class."""
+
+    def test_strip_populate_roundtripping(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        v = Variable(None, g1)
+        objs = {}
+        stripped_v = v.strip(objs)
+        populated_v = stripped_v.populate(objs)
+        assert populated_v.grid is g1
 
 
 class TestState:
@@ -722,3 +763,69 @@ class TestState:
             eta=Variable(d1, g1),
         )
         assert s1 != 5
+
+    def test_strip_populate_roundtripping(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1, g2, g3 = [Grid(x, y, mask) for _ in range(3)]
+        s1 = State(
+            u=Variable(None, g1),
+            v=Variable(None, g2),
+            eta=Variable(None, g3),
+        )
+        objs = {}
+        stripped_state = s1.strip(objs)
+        populated_state = stripped_state.populate(objs)
+        assert populated_state == s1
+
+
+class TestStateDeque:
+    """Test StateDeque class."""
+
+    def _create_state(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        return State(
+            u=Variable(d1, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+
+    def test_strip(self):
+        """Test state summation."""
+        sd = StateDeque((self._create_state() for _ in range(3)), maxlen=3)
+        objs = dict()
+        stripped_sd = sd.strip(objs)
+        assert all(
+            (isinstance(getattr(s, v).grid, int) for v in ("u", "v", "eta"))
+            for s in stripped_sd
+        )
+        assert sd.maxlen == stripped_sd.maxlen
+
+
+class TestStateDequeStripped:
+    """Test StateDequeStripped class."""
+
+    def _create_state(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        return State(
+            u=Variable(d1, g1),
+            v=Variable(d1, g1),
+            eta=Variable(d1, g1),
+        )
+
+    def test_strip_populate_roundtrip(self):
+        sd = StateDeque((self._create_state() for _ in range(3)), maxlen=3)
+        objs = dict()
+        stripped_sd = sd.strip(objs)
+        populated = stripped_sd.populate(objs)
+        assert all(s == ps for s, ps in zip(sd, populated))
+        assert sd.maxlen == populated.maxlen
