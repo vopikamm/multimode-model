@@ -151,15 +151,13 @@ class ParameterSplit(Parameters, Splitable):
     @lru_cache(maxsize=config.lru_cache_maxsize)
     def split(self, splitter: SplitVisitor):
         """Split Parameter's spatially dependent data."""
-        data = None
-        try:
-            data = self.f
-        except RuntimeError:
+        if self._f is None or len(self._f) == 0:
             return splitter.parts * (self,)
+        data = self._f
 
         # Split array for each key, creating a new dictionary with the same keys
         # but holding lists of arrays
-        new = {key: splitter.split_array(data[key]) for key in data}
+        new = {key: splitter.split_array(v) for key, v in data.items()}
 
         # Create list of dictionaries that hold just one part of splitted arrays
         out = [{key: new[key][i] for key in new} for i in range(splitter.parts)]
@@ -404,7 +402,7 @@ class StateDequeSplit(StateDeque, Splitable):
         )
 
     @classmethod
-    def from_state_deque(cls, state_deque):
+    def from_state_deque(cls, state_deque: StateDeque):
         """Create from StateDeque object."""
         if isinstance(state_deque, cls):
             return state_deque
@@ -966,6 +964,14 @@ class GeneralSolver(Solver):
             border,
             inc.split(area_of_interest_splitter)[0],
         )
+
+        # reset grid and parameter objects to maintain frozen object ids
+        for v in "u", "v", "eta":
+            grid = getattr(border, v).grid
+            getattr(new, v).grid = grid
+            for s in new.history:
+                getattr(s, v).grid = grid
+        new.parameter = border.parameter
 
         result = BorderState.from_domain_state(
             new,
