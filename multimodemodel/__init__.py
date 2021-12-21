@@ -8,6 +8,7 @@ from .datastructure import (
     Parameters,
     Variable,
     State,
+    MultimodeParameters,
 )
 
 from .grid import (

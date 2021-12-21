@@ -4,11 +4,13 @@ Dataclasses for building instances to hold parameters, dynamic variables
 and their associated grids.
 """
 
+# from os import initgroups
+# from numba.core.targetconfig import Option
 import numpy as np
 from dataclasses import dataclass, field, asdict, InitVar
 from .grid import Grid, StaggeredGrid
 from .coriolis import CoriolisFunc
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 try:
     import xarray
@@ -22,6 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover
         """Necessary for type hinting to work."""
 
         DataArray = None
+        Dataset = None
 
 
 @dataclass
@@ -37,11 +40,11 @@ class Parameters:
     (of the __init__ method)
 
     g: float = 9.81
-      Gravitational acceleration m/s^2
+      Gravitational acceleration in [m/s^2]
     H: float = 1000.0
-      Depth of the fluid or thickness of the undisturbed layer in m
+      Depth of the fluid or thickness of the undisturbed layer in [m]
     rho_0: float = 1024.0
-      Reference density of sea water in kg / m^3
+      Reference density of sea water in [kg / m^3]
     coriolis_func: Optional[CoriolisFunc] = None
       Function used to compute the coriolis parameter on each subgrid
       of a staggered grid. The signature of this function must match
@@ -111,6 +114,199 @@ class Parameters:
             return {}
         _f = {name: coriolis_func(grid["y"]) for name, grid in asdict(grids).items()}
         return _f
+
+
+@dataclass
+class MultimodeParameters(Parameters):
+    """Class to organise mode dependant parameters.
+
+    Arguments
+    ---------
+    (of the __init__ method)
+
+    rho: Optional[np.ndarray] = None
+      Background density profile in [kg/m^3]
+    Nsq: Optional[np.ndarray] = None
+      Brunt-Vaisala frequencies squared in [1/s^2]
+    z: Optional[np.ndarray] = None
+      Depth coordinate in [m]
+    nmodes: Optional[int] = None
+      Number of vertical normal modes.
+      Cannot be larger than len(z) - 2
+
+
+    Attributes
+    ----------
+    p_hat: Optional[np.ndarray] = field(init=False)
+      Vertical structure function of the pressure.
+      Matrix of dimension (number of modes x number of z levels)
+    w_hat: Optional[np.ndarray] = field(init=False)
+      Vertical structure functions of the vertical velocity.
+      Matrix of dimension (number of modes x number of z levels)
+    c: Optional[np.ndarray] = field(init=False)
+      Gravity wave speed in [m/s].
+    """
+
+    rho: Optional[np.ndarray] = None
+    z: Optional[np.ndarray] = None
+    nmodes: int = 1
+    Nsq: Optional[np.ndarray] = None
+    p_hat: Optional[np.ndarray] = field(init=False)
+    w_hat: Optional[np.ndarray] = field(init=False)
+    c: Optional[np.ndarray] = field(init=False)
+
+    def __post_init__(self, coriolis_func, on_grid):
+        """Derive mode-dependent parameters from stratification."""
+        super().__post_init__(coriolis_func, on_grid)
+        if self.z is None:
+            print("No vertical axis given. Fields cannot be initialized.")
+            self.p_hat, self.w_hat, self.c = (
+                None,
+                None,
+                None,
+            )
+        else:
+            if self.rho is None:
+                if self.Nsq is None:
+                    print(
+                        "No valid stratification given. Fields cannot be initialized."
+                    )
+                    self.p_hat, self.w_hat, self.c = (
+                        None,
+                        None,
+                        None,
+                    )
+                else:
+                    (self.w_hat, self.p_hat, self.c) = self.modal_decomposition(
+                        self.z, self.Nsq
+                    )
+                    self.H = self.c ** 2 / self.g
+            if self.Nsq is None:
+                if self.rho is None:
+                    print(
+                        "No valid stratification given. Fields cannot be initialized."
+                    )
+                    self.p_hat, self.w_hat, self.c = (
+                        None,
+                        None,
+                        None,
+                    )
+                else:
+                    Nsq_depth = np.zeros_like(self.z)
+                    Nsq_depth[1:] = (self.z[: self.z.size - 1] + self.z[1:]) / 2
+                    self.Nsq = self.N_squared(self.z, self.rho)
+                    (self.w_hat, self.p_hat, self.c) = self.modal_decomposition(
+                        Nsq_depth, self.Nsq
+                    )
+                    self.H = self.c ** 2 / self.g
+
+    @property
+    def as_dataset(self) -> xarray.Dataset:  # type: ignore
+        """Return the mode-dependent parameters as xarray.Dataset."""
+        if not has_xarray:
+            raise ModuleNotFoundError(  # pragma: no cover
+                "Cannot convert parameters to xarray.DataArray. Xarray is not available."
+            )
+        if self.z is None:
+            raise ValueError(
+                "Cannot convert parameters to xarray.DataSet. No vertical coordinate given."
+            )
+        attributes_dict = dict(
+            p_hat=(["nmode", "depth"], self.p_hat),
+            w_hat=(["nmode", "depth"], self.w_hat),
+            c=("nmode", self.c),
+            H=("nmode", self.H),
+            Nsq=("depth", self.Nsq),
+            rho=("depth", self.rho),
+        )
+        ds = xarray.Dataset(  # type: ignore
+            coords=dict(nmode=np.arange(self.nmodes), depth=self.z)
+        )
+        for key in attributes_dict:
+            param = attributes_dict[key][1]
+            if param is not None:
+                param_copy = param.copy()
+                ds[key] = (attributes_dict[key][0], param_copy)
+        return ds
+
+    def N_squared(self, z: np.ndarray, rho: np.ndarray) -> np.ndarray:
+        """Compute the Brunt-Vaisala frequencies squared."""
+        if z.shape != rho.shape:
+            raise ValueError("Shape of depth and density profile missmatch.")
+        Nsq = np.zeros_like(rho)
+        Nsq[1:] = np.diff(rho) * self.g / (np.diff(z) * self.rho_0)
+        Nsq[0] = Nsq[1]
+        Nsq[Nsq < 0] = 0
+        return Nsq
+
+    def d2dz2_matrix_p(self, z, Nsq) -> np.ndarray:
+        """2nd vertical derivative operator.
+
+        Build the matrix that discretizes the 2nd derivative
+        over the vertical coordinate, and applies the boundary conditions for
+        p-mode.
+        """
+        dz = np.diff(z)
+        z_mid = z[1:] - dz / 2.0
+        dz_mid = np.diff(z_mid)
+        dz_mid = np.r_[dz[0] / 2.0, dz_mid, dz[-1] / 2.0]
+
+        Ndz = Nsq * dz_mid
+
+        d0 = np.r_[
+            1.0 / Ndz[1] / dz[0],
+            (1.0 / Ndz[2:-1] + 1.0 / Ndz[1:-2]) / dz[1:-1],
+            1.0 / Ndz[-2] / dz[-1],
+        ]
+        d1 = -1.0 / Ndz[1:-1] / dz[:-1]
+        dm1 = -1.0 / Ndz[1:-1] / dz[1:]
+
+        d2dz2 = np.diag(d0) + np.diag(d1, k=1) + np.diag(dm1, k=-1)
+        return d2dz2
+
+    def modal_decomposition(self, z, Nsq) -> Tuple:
+        """Compute vertical structure functions and gravity wave speeds."""
+        d2dz2_p = self.d2dz2_matrix_p(z, Nsq)
+        eigenvalues_p, pmodes = np.linalg.eig(d2dz2_p)
+
+        # Filter out complex-values and small/negative eigenvalues
+        mask = np.logical_and(eigenvalues_p >= 1e-10, eigenvalues_p.imag == 0)
+        eigenvalues_p = eigenvalues_p[mask]
+        pmodes = pmodes[:, mask]
+
+        # Sort eigenvalues and modes and truncate to number of modes requests
+        index = np.argsort(eigenvalues_p)
+        eigenvalues_p = eigenvalues_p[index[: self.nmodes]]
+        pmodes = pmodes[:, index[: self.nmodes]].T
+
+        # Modal speeds
+        c = 1 / np.sqrt(eigenvalues_p)
+
+        # Normalze mode structures to satisfy \int_{-H}^0 \hat{p}^2 dz = H
+        dz = np.diff(z)
+        factor = np.sqrt(np.abs(dz.sum() / ((pmodes ** 2.0) * dz).sum(axis=1)))
+        pmodes *= factor[:, np.newaxis]
+
+        # Compute w_hat so that w_hat = - g / N^2 * dp_hat / dz
+        wmodes = -(self.g / Nsq[1:-1]) * np.diff(pmodes, axis=1) / dz[:-1]
+        # Boundary conditions w_hat = 0 at z = {0, -H}
+        wmodes = np.concatenate(
+            (np.zeros((self.nmodes, 1)), wmodes, np.zeros((self.nmodes, 1))), axis=1
+        )
+
+        # unify sign, that pressure modes are always positive at the surface
+        sig_p = np.sign(pmodes[:, 0])
+        sig_p[sig_p == 0.0] = 1.0
+        sig_w = np.sign(wmodes[:, 0] - wmodes[:, 1])
+        sig_w[sig_w == 0.0] = 1.0
+        pmodes = sig_p[:, np.newaxis] * pmodes
+        wmodes = sig_w[:, np.newaxis] * wmodes
+
+        # map p_hat on vertical grid of w_hat
+        pmodes = np.concatenate((pmodes[:, [0]], pmodes, pmodes[:, [-1]]), axis=1)
+        pmodes = pmodes[:, 1:] - np.diff(pmodes, axis=1) / 2
+
+        return (wmodes, pmodes, c)
 
 
 @dataclass
