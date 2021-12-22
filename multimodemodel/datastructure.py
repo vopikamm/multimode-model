@@ -8,6 +8,7 @@ and their associated grids.
 # from numba.core.targetconfig import Option
 import numpy as np
 from dataclasses import dataclass, field, asdict, InitVar
+
 from .grid import Grid, StaggeredGrid
 from .coriolis import CoriolisFunc
 from typing import Dict, Optional, Tuple
@@ -154,6 +155,10 @@ class MultimodeParameters(Parameters):
     p_hat: Optional[np.ndarray] = field(init=False)
     w_hat: Optional[np.ndarray] = field(init=False)
     c: Optional[np.ndarray] = field(init=False)
+    ppp: Optional[np.ndarray] = field(init=False)
+    ppw: Optional[np.ndarray] = field(init=False)
+    www: Optional[np.ndarray] = field(init=False)
+    wpw: Optional[np.ndarray] = field(init=False)
 
     def __post_init__(self, coriolis_func, on_grid):
         """Derive mode-dependent parameters from stratification."""
@@ -199,6 +204,10 @@ class MultimodeParameters(Parameters):
                         Nsq_depth, self.Nsq
                     )
                     self.H = self.c ** 2 / self.g
+        self.ppp = self.compute_ppp()
+        self.ppw = self.compute_ppw()
+        self.www = self.compute_www()
+        self.wpw = self.compute_wpw()
 
     @property
     def as_dataset(self) -> xarray.Dataset:  # type: ignore
@@ -307,6 +316,98 @@ class MultimodeParameters(Parameters):
         pmodes = pmodes[:, 1:] - np.diff(pmodes, axis=1) / 2
 
         return (wmodes, pmodes, c)
+
+    def compute_ppp(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor PPP for the nonlinear terms.
+
+        The array elements correspond to:
+            int_{-H}^{0} p_hat[k, :] * p_hat[k, :] * p_hat[k, :] dz.
+        """
+        if self.p_hat is None or self.z is None:
+            return None
+        ppp = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for k in range(self.nmodes):
+            for L in range(self.nmodes):
+                for m in range(self.nmodes):
+                    ppp[k, L, m] = np.trapz(
+                        self.p_hat[k, :] * self.p_hat[L, :] * self.p_hat[m, :],
+                        self.z,
+                    )
+        return ppp
+
+    def compute_ppw(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor PPw for the nonlinear terms.
+
+        The array elements correspond to:
+            int_{-H}^{0} p_hat[k, :] * (del p_hat[k, :] * p_hat[k, :]) / del z) dz.
+        """
+        if self.p_hat is None or self.w_hat is None or self.z is None:
+            return None
+        ppw = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for k in range(self.nmodes):
+            for L in range(self.nmodes):
+                for m in range(self.nmodes):
+                    ppw[k, L, m] = np.trapz(
+                        self.p_hat[k, :]
+                        * np.gradient(self.p_hat[L, :] * self.p_hat[m, :], self.z),
+                        self.z,
+                    )
+        return ppw
+
+    def compute_www(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor WWW for the nonlinear terms.
+
+        The array elements correspond to:
+            (H[k] / rho_0)
+            * int_{-H}^{0} dz
+                (d N^2 / dz) * w_hat[k, :] * del w_hat[l, :] * w_hat[m, :]
+                +  N^2 * w_hat[k, :] * (del (w_hat[l, :] * w_hat[m, :]) / del z).
+        """
+        if self.w_hat is None or self.z is None or self.Nsq is None:
+            return None
+        dNsq_dz = np.gradient(self.Nsq, self.z)
+        www = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for k in range(self.nmodes):
+            for L in range(self.nmodes):
+                for m in range(self.nmodes):
+                    term_1 = (
+                        dNsq_dz * self.w_hat[k, :] * self.w_hat[L, :] * self.w_hat[m, :]
+                    )
+                    term_2 = (
+                        self.Nsq
+                        * self.w_hat[k, :]
+                        * np.gradient(self.w_hat[L, :] * self.w_hat[m, :], self.z)
+                    )
+                    www[k, L, m] = (self.H[k] / self.g) * np.trapz(
+                        term_1 + term_2, self.z
+                    )
+        return www
+
+    def compute_wpw(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor wpw for the nonlinear terms.
+
+        The array elements correspond to:
+            (H[k] / rho_0) * int_{-H}^{0} N^2 * w_hat[k, :] * p_hat[l, :] * w_hat[m, :] dz.
+        """
+        if (
+            self.p_hat is None
+            or self.w_hat is None
+            or self.Nsq is None
+            or self.z is None
+        ):
+            return None
+        wpw = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for k in range(self.nmodes):
+            for L in range(self.nmodes):
+                for m in range(self.nmodes):
+                    wpw[k, L, m] = (self.H[k] / self.g) * np.trapz(
+                        self.Nsq
+                        * self.w_hat[k, :]
+                        * self.p_hat[L, :]
+                        * self.w_hat[m, :],
+                        self.z,
+                    )
+        return wpw
 
 
 @dataclass
