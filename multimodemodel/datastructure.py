@@ -333,7 +333,7 @@ class MultimodeParameters(Parameters):
                         self.p_hat[k, :] * self.p_hat[L, :] * self.p_hat[m, :],
                         self.z,
                     )
-        return ppp
+        return ppp / abs(self.z[-1] - self.z[0])
 
     def compute_ppw(self) -> Optional[np.ndarray]:
         """Compute the triple-mode-tensor PPw for the nonlinear terms.
@@ -352,7 +352,7 @@ class MultimodeParameters(Parameters):
                         * np.gradient(self.p_hat[L, :] * self.p_hat[m, :], self.z),
                         self.z,
                     )
-        return ppw
+        return ppw / abs(self.z[-1] - self.z[0])
 
     def compute_www(self) -> Optional[np.ndarray]:
         """Compute the triple-mode-tensor WWW for the nonlinear terms.
@@ -381,7 +381,7 @@ class MultimodeParameters(Parameters):
                     www[k, L, m] = (self.H[k] / self.g) * np.trapz(
                         term_1 + term_2, self.z
                     )
-        return www
+        return www / abs(self.z[-1] - self.z[0])
 
     def compute_wpw(self) -> Optional[np.ndarray]:
         """Compute the triple-mode-tensor wpw for the nonlinear terms.
@@ -407,7 +407,7 @@ class MultimodeParameters(Parameters):
                         * self.w_hat[m, :],
                         self.z,
                     )
-        return wpw
+        return wpw / abs(self.z[-1] - self.z[0])
 
 
 @dataclass
