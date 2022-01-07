@@ -204,6 +204,8 @@ class ParameterSplit(Parameters, Splitable):
 class GridSplit(Grid, Splitable):
     """Implements splitting and merging on Grid class."""
 
+    __slots__ = ['x', 'y', 'mask', 'dx', 'dy', 'len_x', 'len_y', 'dim_x', 'dim_y', '_id']
+
     @lru_cache(maxsize=config.lru_cache_maxsize)
     def split(self, splitter: SplitVisitor):
         """Split grid."""
@@ -296,6 +298,7 @@ class StaggeredGridSplit(StaggeredGrid, Splitable):
 @dataclass
 class VariableSplit(Variable, Splitable):
     """Implements splitting and merging on Variable class."""
+    __slots__ = ['data', 'grid']
 
     def __post_init__(self):
         """Post initialization logic."""
@@ -615,6 +618,7 @@ class BorderMerger(MergeVisitor):
 
     def __init__(self, width: int, axis: int):
         """Initialize class instance."""
+
         self._axis = axis
         self._slice_left = BorderDirection.LEFT(width)
         self._slice_right = BorderDirection.RIGHT(width)
