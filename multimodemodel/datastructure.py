@@ -326,11 +326,11 @@ class MultimodeParameters(Parameters):
         if self.p_hat is None or self.z is None:
             return None
         ppp = np.empty((self.nmodes, self.nmodes, self.nmodes))
-        for k in range(self.nmodes):
-            for L in range(self.nmodes):
-                for m in range(self.nmodes):
-                    ppp[k, L, m] = np.trapz(
-                        self.p_hat[k, :] * self.p_hat[L, :] * self.p_hat[m, :],
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
+                    ppp[n, m, k] = np.trapz(
+                        self.p_hat[n, :] * self.p_hat[m, :] * self.p_hat[k, :],
                         self.z,
                     )
         return ppp / abs(self.z[-1] - self.z[0])
@@ -344,12 +344,12 @@ class MultimodeParameters(Parameters):
         if self.p_hat is None or self.w_hat is None or self.z is None:
             return None
         ppw = np.empty((self.nmodes, self.nmodes, self.nmodes))
-        for k in range(self.nmodes):
-            for L in range(self.nmodes):
-                for m in range(self.nmodes):
-                    ppw[k, L, m] = np.trapz(
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
+                    ppw[n, m, k] = np.trapz(
                         self.p_hat[k, :]
-                        * np.gradient(self.p_hat[L, :] * self.p_hat[m, :], self.z),
+                        * np.gradient(self.p_hat[m, :] * self.p_hat[n, :], self.z),
                         self.z,
                     )
         return ppw / abs(self.z[-1] - self.z[0])
@@ -367,18 +367,18 @@ class MultimodeParameters(Parameters):
             return None
         dNsq_dz = np.gradient(self.Nsq, self.z)
         www = np.empty((self.nmodes, self.nmodes, self.nmodes))
-        for k in range(self.nmodes):
-            for L in range(self.nmodes):
-                for m in range(self.nmodes):
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
                     term_1 = (
-                        dNsq_dz * self.w_hat[k, :] * self.w_hat[L, :] * self.w_hat[m, :]
+                        dNsq_dz * self.w_hat[k, :] * self.w_hat[m, :] * self.w_hat[n, :]
                     )
                     term_2 = (
                         self.Nsq
                         * self.w_hat[k, :]
-                        * np.gradient(self.w_hat[L, :] * self.w_hat[m, :], self.z)
+                        * np.gradient(self.w_hat[m, :] * self.w_hat[n, :], self.z)
                     )
-                    www[k, L, m] = (self.H[k] / self.g) * np.trapz(
+                    www[n, m, k] = (self.H[k] / self.g) * np.trapz(
                         term_1 + term_2, self.z
                     )
         return www / abs(self.z[-1] - self.z[0])
@@ -397,14 +397,14 @@ class MultimodeParameters(Parameters):
         ):
             return None
         wpw = np.empty((self.nmodes, self.nmodes, self.nmodes))
-        for k in range(self.nmodes):
-            for L in range(self.nmodes):
-                for m in range(self.nmodes):
-                    wpw[k, L, m] = (self.H[k] / self.g) * np.trapz(
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
+                    wpw[n, m, k] = (self.H[k] / self.g) * np.trapz(
                         self.Nsq
                         * self.w_hat[k, :]
-                        * self.p_hat[L, :]
-                        * self.w_hat[m, :],
+                        * self.p_hat[m, :]
+                        * self.w_hat[n, :],
                         self.z,
                     )
         return wpw / abs(self.z[-1] - self.z[0])
@@ -562,3 +562,18 @@ class State:
             return self.__class__(**sum)
         except (AttributeError, TypeError):  # pragma: no cover
             return NotImplemented
+
+    def set_diagnostic_variable(self, **kwargs):
+        """Set variables for diagnostic purposes.
+
+        Diagnostic variables are given by keyword arguments.
+        Attributes are not considered by the add function.
+        """
+        self.diagnostic_variables = dict()
+
+        for k, v in kwargs.items():
+            if type(v) is not Variable:
+                raise ValueError("Keyword arguments must be of type Variable.")
+            else:
+                self.diagnostic_variables[k] = v
+                self.__setattr__(k, self.diagnostic_variables[k])

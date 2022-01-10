@@ -41,6 +41,9 @@ from .kernel import (
     linear_damping_u,
     linear_damping_v,
     linear_damping_eta,
+    advection_momentum_u,
+    advection_momentum_v,
+    advection_density,
 )
 
 from .coriolis import (

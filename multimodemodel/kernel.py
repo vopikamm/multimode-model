@@ -8,8 +8,8 @@ computationally costly operations.
 import numpy as np
 
 # from numpy.core.fromnumeric import shape
-from .jit import _numba_3D_grid_iterator, _cyclic_shift
-from .datastructure import State, Variable, Parameters
+from .jit import _numba_3D_grid_iterator, _numba_double_sum, _cyclic_shift
+from .datastructure import State, Variable, Parameters, MultimodeParameters
 
 
 @_numba_3D_grid_iterator
@@ -398,6 +398,196 @@ def _linear_damping(
     return -gamma[k] * mask[k, j, i] * vel[k, j, i]
 
 
+@_numba_double_sum
+def _advection_momentum_u(
+    i: int,
+    j: int,
+    k: int,
+    m: int,
+    n: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+    mask_u: np.ndarray,
+    mask_v: np.ndarray,
+    mask_q: np.ndarray,
+    dx_u: np.ndarray,
+    dy_u: np.ndarray,
+    dx_v: np.ndarray,
+    lbc: int,
+    ppp: np.ndarray,
+    ppw: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the advection of zonal momentum."""
+    ip1 = _cyclic_shift(i, ni, 1)
+    im1 = _cyclic_shift(i, ni, -1)
+    jp1 = _cyclic_shift(j, nj, 1)
+    jm1 = _cyclic_shift(j, nj, -1)
+
+    if mask_q[k, j, i] == 0:
+        lbc = lbc
+    else:
+        lbc = 1
+
+    return (
+        ppp[n, m, k]
+        * mask_u[k, j, i]
+        * (
+            (
+                dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
+                + dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
+            )
+            * (mask_u[m, j, ip1] * u[m, j, ip1] + mask_u[m, j, i] * u[m, j, i])
+            - (
+                dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
+                + dy_u[j, im1] * mask_u[n, j, im1] * u[n, j, im1]
+            )
+            * (mask_u[m, j, i] * u[m, j, i] + mask_u[m, j, im1] * u[m, j, im1])
+            + (
+                dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
+                + dx_v[jp1, im1] * mask_v[n, jp1, im1] * v[n, jp1, im1]
+            )
+            * (mask_u[m, jp1, i] * u[m, jp1, i] + mask_u[m, j, i] * u[m, j, i])
+            - (
+                dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+                + dx_v[j, im1] * mask_v[n, j, im1] * v[n, j, im1]
+            )
+            * (lbc * mask_u[m, j, i] * u[m, j, i] + mask_u[m, jm1, i] * u[m, jm1, i])
+        )
+        / dx_u[j, i]
+        / dy_u[j, i]
+        / 4
+        + ppw[n, m, k] * mask_u[m, j, i] * u[m, j, i] * (w[n, j, i] + w[n, j, im1]) / 2
+    )
+
+
+@_numba_double_sum
+def _advection_momentum_v(
+    i: int,
+    j: int,
+    k: int,
+    m: int,
+    n: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    u: np.ndarray,
+    v: np.ndarray,
+    w: np.ndarray,
+    mask_u: np.ndarray,
+    mask_v: np.ndarray,
+    mask_q: np.ndarray,
+    dx_v: np.ndarray,
+    dy_v: np.ndarray,
+    dy_u: np.ndarray,
+    lbc: int,
+    ppp: np.ndarray,
+    ppw: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the advection of meridional momentum."""
+    ip1 = _cyclic_shift(i, ni, 1)
+    im1 = _cyclic_shift(i, ni, -1)
+    jp1 = _cyclic_shift(j, nj, 1)
+    jm1 = _cyclic_shift(j, nj, -1)
+
+    if mask_q[k, j, i] == 0:
+        lbc = lbc
+    else:
+        lbc = 1
+
+    return (
+        ppp[n, m, k]
+        * mask_v[k, j, i]
+        * (
+            (
+                dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
+                + dy_u[jm1, ip1] * mask_u[n, jm1, ip1] * u[n, jm1, ip1]
+            )
+            * (mask_v[m, j, ip1] * v[m, j, ip1] + mask_v[m, j, i] * v[m, j, i])
+            - (
+                dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
+                + dy_u[jm1, i] * mask_u[n, jm1, i] * u[n, jm1, i]
+            )
+            * (mask_v[m, j, i] * v[m, j, i] + mask_v[m, j, im1] * v[m, j, im1])
+            + (
+                dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
+                + dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+            )
+            * (mask_v[m, jp1, i] * v[m, jp1, i] + mask_v[m, j, i] * v[m, j, i])
+            - (
+                dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+                + dx_v[jm1, i] * mask_v[n, jm1, i] * v[n, jm1, i]
+            )
+            * (lbc * mask_v[m, j, i] * v[m, j, i] + mask_v[m, jm1, i] * v[m, jm1, i])
+        )
+        / dx_v[j, i]
+        / dy_v[j, i]
+        / 4
+        + ppw[n, m, k] * mask_v[m, j, i] * v[m, j, i] * (w[n, j, i] + w[n, jm1, i]) / 2
+    )
+
+
+@_numba_double_sum
+def _advection_density(
+    i: int,
+    j: int,
+    k: int,
+    m: int,
+    n: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    u: np.ndarray,
+    v: np.ndarray,
+    eta: np.ndarray,
+    w: np.ndarray,
+    mask_u: np.ndarray,
+    mask_v: np.ndarray,
+    mask_eta: np.ndarray,
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    dy_u: np.ndarray,
+    dx_v: np.ndarray,
+    wpw: np.ndarray,
+    www: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the advection of density."""
+    ip1 = _cyclic_shift(i, ni, 1)
+    im1 = _cyclic_shift(i, ni, -1)
+    jp1 = _cyclic_shift(j, nj, 1)
+    jm1 = _cyclic_shift(j, nj, -1)
+
+    return (
+        wpw[n, m, k]
+        * mask_eta[k, j, i]
+        * (
+            dy_u[j, ip1]
+            * mask_u[n, j, ip1]
+            * u[n, j, ip1]
+            * (mask_eta[m, j, ip1] * eta[m, j, ip1] + mask_eta[m, j, i] * eta[m, j, i])
+            - dy_u[j, i]
+            * mask_u[n, j, i]
+            * u[n, j, i]
+            * (mask_eta[m, j, i] * eta[m, j, i] + mask_eta[m, j, im1] * eta[m, j, im1])
+            + dx_v[jp1, i]
+            * mask_v[n, jp1, i]
+            * v[n, jp1, i]
+            * (mask_eta[m, jp1, i] * eta[m, jp1, i] + mask_eta[m, j, i] * eta[m, j, i])
+            - dx_v[j, i]
+            * mask_v[n, j, i]
+            * v[n, j, i]
+            * (mask_eta[m, j, i] * eta[m, j, i] + mask_eta[m, jm1, i] * eta[m, jm1, i])
+        )
+        / dx_eta[j, i]
+        / dy_eta[j, i]
+        / 2
+        + www[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
+    )
+
+
 """
 Non jit-able functions. First level funcions connecting the jit-able
 function output to dataclasses.
@@ -654,6 +844,96 @@ def linear_damping_eta(state: State, params: Parameters) -> State:
     return State(
         eta=Variable(
             _linear_damping(*args),
+            grid,
+            state.variables["eta"].time,
+        )
+    )
+
+
+def advection_momentum_u(state: State, params: MultimodeParameters) -> State:
+    """Compute advection of zonal momentum."""
+    grid = state.variables["u"].grid
+    lbc = 2 * params.no_slip
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        grid.shape[grid.dim_z],
+        state.variables["u"].safe_data,
+        state.variables["v"].safe_data,
+        state.diagnostic_variables["w"].safe_data,
+        state.variables["u"].grid.mask,
+        state.variables["v"].grid.mask,
+        state.variables["q"].grid.mask,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        lbc,
+        params.ppp,
+        params.ppw,
+    )
+    return State(
+        u=Variable(
+            _advection_momentum_u(*args),
+            grid,
+            state.variables["u"].time,
+        )
+    )
+
+
+def advection_momentum_v(state: State, params: MultimodeParameters) -> State:
+    """Compute advection of meridional momentum."""
+    grid = state.variables["v"].grid
+    lbc = 2 * params.no_slip
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        grid.shape[grid.dim_z],
+        state.variables["u"].safe_data,
+        state.variables["v"].safe_data,
+        state.diagnostic_variables["w"].safe_data,
+        state.variables["u"].grid.mask,
+        state.variables["v"].grid.mask,
+        state.variables["q"].grid.mask,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        state.variables["u"].grid.dy,
+        lbc,
+        params.ppp,
+        params.ppw,
+    )
+    return State(
+        v=Variable(
+            _advection_momentum_v(*args),
+            grid,
+            state.variables["v"].time,
+        )
+    )
+
+
+def advection_density(state: State, params: MultimodeParameters) -> State:
+    """Compute advection of perturbation density."""
+    grid = state.variables["eta"].grid
+    args = (
+        grid.shape[grid.dim_x],
+        grid.shape[grid.dim_y],
+        grid.shape[grid.dim_z],
+        state.variables["u"].safe_data,
+        state.variables["v"].safe_data,
+        state.variables["eta"].safe_data,
+        state.diagnostic_variables["w"].safe_data,
+        state.variables["u"].grid.mask,
+        state.variables["v"].grid.mask,
+        state.variables["eta"].grid.mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        params.wpw,
+        params.www,
+    )
+    return State(
+        eta=Variable(
+            _advection_density(*args),
             grid,
             state.variables["eta"].time,
         )
