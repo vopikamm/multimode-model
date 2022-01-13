@@ -419,20 +419,18 @@ def _numba_double_sum_template(func: Callable[..., float], return_type: Type):
     def _double_sum_over_modes(
         ni: int, nj: int, nk: int, *args: Tuple[Any]
     ) -> np.ndarray:  # pragma: no cover
-        result = np.zeros((nk, nj, ni), dtype=return_type)
+        result = np.empty((nk * nk, nk, nj, ni), dtype=return_type)
         for ind in numba.prange(nk * nk):
             n, m = divmod(ind, nk)
             n = int(n)
             m = int(m)
-            pre_result = np.empty((nk, nj, ni), dtype=return_type)
             for k in range(nk):
                 for j in range(nj):
                     for i in range(ni):
-                        pre_result[k, j, i] = exp_args(
+                        result[ind, k, j, i] = exp_args(
                             jitted_func, i, j, k, m, n, ni, nj, nk, args
                         )
-            result += pre_result
-        return result
+        return result.sum(axis=0)
 
     return _double_sum_over_modes
 
