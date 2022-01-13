@@ -56,5 +56,6 @@ from .coriolis import (
 from .jit import (
     _numba_2D_grid_iterator,
     _numba_3D_grid_iterator,
+    _numba_double_sum,
     _cyclic_shift,
 )

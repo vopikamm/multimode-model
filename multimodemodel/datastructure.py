@@ -321,7 +321,7 @@ class MultimodeParameters(Parameters):
         """Compute the triple-mode-tensor PPP for the nonlinear terms.
 
         The array elements correspond to:
-            int_{-H}^{0} p_hat[k, :] * p_hat[k, :] * p_hat[k, :] dz.
+            (1 / H) * int_{-H}^{0} p_hat[k, :] * p_hat[k, :] * p_hat[k, :] dz.
         """
         if self.p_hat is None or self.z is None:
             return None
@@ -339,7 +339,7 @@ class MultimodeParameters(Parameters):
         """Compute the triple-mode-tensor PPw for the nonlinear terms.
 
         The array elements correspond to:
-            int_{-H}^{0} p_hat[k, :] * (del p_hat[k, :] * p_hat[k, :]) / del z) dz.
+            (1 / H) * int_{-H}^{0} p_hat[k, :] * (del p_hat[k, :] * p_hat[k, :]) / del z) dz.
         """
         if self.p_hat is None or self.w_hat is None or self.z is None:
             return None
@@ -358,7 +358,7 @@ class MultimodeParameters(Parameters):
         """Compute the triple-mode-tensor WWW for the nonlinear terms.
 
         The array elements correspond to:
-            (H[k] / rho_0)
+            (H[k] / rho_0 / H)
             * int_{-H}^{0} dz
                 (d N^2 / dz) * w_hat[k, :] * del w_hat[l, :] * w_hat[m, :]
                 +  N^2 * w_hat[k, :] * (del (w_hat[l, :] * w_hat[m, :]) / del z).
@@ -387,7 +387,7 @@ class MultimodeParameters(Parameters):
         """Compute the triple-mode-tensor wpw for the nonlinear terms.
 
         The array elements correspond to:
-            (H[k] / rho_0) * int_{-H}^{0} N^2 * w_hat[k, :] * p_hat[l, :] * w_hat[m, :] dz.
+            (H[k] / rho_0 / H) * int_{-H}^{0} N^2 * w_hat[k, :] * p_hat[l, :] * w_hat[m, :] dz.
         """
         if (
             self.p_hat is None
