@@ -138,10 +138,10 @@ class MultimodeParameters(Parameters):
 
     Attributes
     ----------
-    p_hat: Optional[np.ndarray] = field(init=False)
+    psi: Optional[np.ndarray] = field(init=False)
       Vertical structure function of the pressure.
       Matrix of dimension (number of modes x number of z levels)
-    w_hat: Optional[np.ndarray] = field(init=False)
+    dpsi_dz: Optional[np.ndarray] = field(init=False)
       Vertical structure functions of the vertical velocity.
       Matrix of dimension (number of modes x number of z levels)
     c: Optional[np.ndarray] = field(init=False)
@@ -152,20 +152,20 @@ class MultimodeParameters(Parameters):
     z: Optional[np.ndarray] = None
     nmodes: int = 1
     Nsq: Optional[np.ndarray] = None
-    p_hat: Optional[np.ndarray] = field(init=False)
-    w_hat: Optional[np.ndarray] = field(init=False)
+    psi: Optional[np.ndarray] = field(init=False)
+    dpsi_dz: Optional[np.ndarray] = field(init=False)
     c: Optional[np.ndarray] = field(init=False)
-    ppp: Optional[np.ndarray] = field(init=False)
-    ppw: Optional[np.ndarray] = field(init=False)
-    www: Optional[np.ndarray] = field(init=False)
-    wpw: Optional[np.ndarray] = field(init=False)
+    Q: Optional[np.ndarray] = field(init=False)
+    R: Optional[np.ndarray] = field(init=False)
+    S: Optional[np.ndarray] = field(init=False)
+    T: Optional[np.ndarray] = field(init=False)
 
     def __post_init__(self, coriolis_func, on_grid):
         """Derive mode-dependent parameters from stratification."""
         super().__post_init__(coriolis_func, on_grid)
         if self.z is None:
             print("No vertical axis given. Fields cannot be initialized.")
-            self.p_hat, self.w_hat, self.c = (
+            self.psi, self.dpsi_dz, self.c = (
                 None,
                 None,
                 None,
@@ -176,13 +176,13 @@ class MultimodeParameters(Parameters):
                     print(
                         "No valid stratification given. Fields cannot be initialized."
                     )
-                    self.p_hat, self.w_hat, self.c = (
+                    self.psi, self.dpsi_dz, self.c = (
                         None,
                         None,
                         None,
                     )
                 else:
-                    (self.w_hat, self.p_hat, self.c) = self.modal_decomposition(
+                    (self.psi, self.dpsi_dz, self.c) = self.modal_decomposition(
                         self.z, self.Nsq
                     )
                     self.H = self.c ** 2 / self.g
@@ -191,7 +191,7 @@ class MultimodeParameters(Parameters):
                     print(
                         "No valid stratification given. Fields cannot be initialized."
                     )
-                    self.p_hat, self.w_hat, self.c = (
+                    self.psi, self.dpsi_dz, self.c = (
                         None,
                         None,
                         None,
@@ -200,14 +200,14 @@ class MultimodeParameters(Parameters):
                     Nsq_depth = np.zeros_like(self.z)
                     Nsq_depth[1:] = (self.z[: self.z.size - 1] + self.z[1:]) / 2
                     self.Nsq = self.N_squared(self.z, self.rho)
-                    (self.w_hat, self.p_hat, self.c) = self.modal_decomposition(
+                    (self.psi, self.dpsi_dz, self.c) = self.modal_decomposition(
                         Nsq_depth, self.Nsq
                     )
                     self.H = self.c ** 2 / self.g
-        self.ppp = self.compute_ppp()
-        self.ppw = self.compute_ppw()
-        self.www = self.compute_www()
-        self.wpw = self.compute_wpw()
+        self.Q = self.compute_Q()
+        self.R = self.compute_R()
+        self.S = self.compute_S()
+        self.T = self.compute_T()
 
     @property
     def as_dataset(self) -> xarray.Dataset:  # type: ignore
@@ -221,8 +221,8 @@ class MultimodeParameters(Parameters):
                 "Cannot convert parameters to xarray.DataSet. No vertical coordinate given."
             )
         attributes_dict = dict(
-            p_hat=(["nmode", "depth"], self.p_hat),
-            w_hat=(["nmode", "depth"], self.w_hat),
+            psi=(["depth", "nmode"], self.psi),
+            dpsi_dz=(["depth", "nmode"], self.dpsi_dz),
             c=("nmode", self.c),
             H=("nmode", self.H),
             Nsq=("depth", self.Nsq),
@@ -286,128 +286,125 @@ class MultimodeParameters(Parameters):
         # Sort eigenvalues and modes and truncate to number of modes requests
         index = np.argsort(eigenvalues_p)
         eigenvalues_p = eigenvalues_p[index[: self.nmodes]]
-        pmodes = pmodes[:, index[: self.nmodes]].T
+        pmodes = pmodes[:, index[: self.nmodes]]
 
         # Modal speeds
         c = 1 / np.sqrt(eigenvalues_p)
 
         # Normalze mode structures to satisfy \int_{-H}^0 \hat{p}^2 dz = H
-        dz = np.diff(z)
-        factor = np.sqrt(np.abs(dz.sum() / ((pmodes ** 2.0) * dz).sum(axis=1)))
-        pmodes *= factor[:, np.newaxis]
+        dz = np.diff(z)[:, np.newaxis]
+        factor = np.sqrt(np.abs(dz.sum() / ((pmodes ** 2.0) * dz).sum(axis=0)))
+        pmodes *= factor[np.newaxis, :]
 
         # Compute w_hat so that w_hat = - g / N^2 * dp_hat / dz
-        wmodes = -(self.g / Nsq[1:-1]) * np.diff(pmodes, axis=1) / dz[:-1]
+        wmodes = np.diff(pmodes, axis=0) / dz[:-1]
         # Boundary conditions w_hat = 0 at z = {0, -H}
         wmodes = np.concatenate(
-            (np.zeros((self.nmodes, 1)), wmodes, np.zeros((self.nmodes, 1))), axis=1
+            (np.zeros((1, self.nmodes)), wmodes, np.zeros((1, self.nmodes))), axis=0
         )
 
         # unify sign, that pressure modes are always positive at the surface
-        sig_p = np.sign(pmodes[:, 0])
+        sig_p = np.sign(pmodes[0, :])
         sig_p[sig_p == 0.0] = 1.0
-        sig_w = np.sign(wmodes[:, 0] - wmodes[:, 1])
-        sig_w[sig_w == 0.0] = 1.0
-        pmodes = sig_p[:, np.newaxis] * pmodes
-        wmodes = sig_w[:, np.newaxis] * wmodes
+        pmodes = sig_p[np.newaxis, :] * pmodes
 
         # map p_hat on vertical grid of w_hat
-        pmodes = np.concatenate((pmodes[:, [0]], pmodes, pmodes[:, [-1]]), axis=1)
-        pmodes = pmodes[:, 1:] - np.diff(pmodes, axis=1) / 2
+        pmodes = np.concatenate((pmodes[[0], :], pmodes, pmodes[[-1], :]), axis=0)
+        pmodes = pmodes[1:, :] - np.diff(pmodes, axis=0) / 2
 
-        return (wmodes, pmodes, c)
+        return (pmodes, wmodes, c)
 
-    def compute_ppp(self) -> Optional[np.ndarray]:
+    def compute_Q(self) -> Optional[np.ndarray]:
         """Compute the triple-mode-tensor PPP for the nonlinear terms.
 
         The array elements correspond to:
-            (1 / H) * int_{-H}^{0} p_hat[k, :] * p_hat[k, :] * p_hat[k, :] dz.
+            (1 / H) * int_{-H}^{0} psi[k, :] * psi[m, :] * psi[n, :] dz.
         """
-        if self.p_hat is None or self.z is None:
+        if self.psi is None or self.z is None:
             return None
-        ppp = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    ppp[n, m, k] = np.trapz(
-                        self.p_hat[n, :] * self.p_hat[m, :] * self.p_hat[k, :],
+                    tensor[n, m, k] = np.trapz(
+                        self.psi[:, n] * self.psi[:, m] * self.psi[:, k],
                         self.z,
                     )
-        return ppp / abs(self.z[-1] - self.z[0])
+        return tensor / abs(self.z[-1] - self.z[0])
 
-    def compute_ppw(self) -> Optional[np.ndarray]:
-        """Compute the triple-mode-tensor PPw for the nonlinear terms.
+    def compute_R(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor dPdPP for the nonlinear terms.
 
         The array elements correspond to:
-            (1 / H) * int_{-H}^{0} p_hat[k, :] * (del p_hat[k, :] * p_hat[k, :]) / del z) dz.
+            (g / H) * int_{-H}^{0} psi[k, :] * dpsi_dz[m, :] * dpsi_dz[n, :] / Nsq dz.
         """
-        if self.p_hat is None or self.w_hat is None or self.z is None:
+        if (
+            self.Nsq is None
+            or self.dpsi_dz is None
+            or self.z is None
+            or self.psi is None
+        ):
             return None
-        ppw = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    ppw[n, m, k] = np.trapz(
-                        self.p_hat[k, :]
-                        * np.gradient(self.p_hat[m, :] * self.p_hat[n, :], self.z),
+                    tensor[n, m, k] = np.trapz(
+                        self.psi[:, k]
+                        * self.dpsi_dz[:, m]
+                        * self.dpsi_dz[:, n]
+                        / self.Nsq,
                         self.z,
                     )
-        return ppw / abs(self.z[-1] - self.z[0])
+        return tensor * self.g / abs(self.z[-1] - self.z[0])
 
-    def compute_www(self) -> Optional[np.ndarray]:
+    def compute_S(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor dPdPP for the nonlinear terms.
+
+        The array elements correspond to:
+            (1 / H) * int_{-H}^{0} dpsi_dz[k, :] * dpsi_dz[m, :] * psi[n, :] dz.
+        """
+        if (
+            self.Nsq is None
+            or self.dpsi_dz is None
+            or self.z is None
+            or self.psi is None
+        ):
+            return None
+        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
+                    tensor[n, m, k] = np.trapz(
+                        self.dpsi_dz[:, k] * self.dpsi_dz[:, m] * self.psi[:, n],
+                        self.z,
+                    )
+        return tensor / abs(self.z[-1] - self.z[0])
+
+    def compute_T(self) -> Optional[np.ndarray]:
         """Compute the triple-mode-tensor WWW for the nonlinear terms.
 
         The array elements correspond to:
-            (H[k] / rho_0 / H)
-            * int_{-H}^{0} dz
-                (d N^2 / dz) * w_hat[k, :] * del w_hat[l, :] * w_hat[m, :]
-                +  N^2 * w_hat[k, :] * (del (w_hat[l, :] * w_hat[m, :]) / del z).
-        """
-        if self.w_hat is None or self.z is None or self.Nsq is None:
-            return None
-        dNsq_dz = np.gradient(self.Nsq, self.z)
-        www = np.empty((self.nmodes, self.nmodes, self.nmodes))
-        for n in range(self.nmodes):
-            for m in range(self.nmodes):
-                for k in range(self.nmodes):
-                    term_1 = (
-                        dNsq_dz * self.w_hat[k, :] * self.w_hat[m, :] * self.w_hat[n, :]
-                    )
-                    term_2 = (
-                        self.Nsq
-                        * self.w_hat[k, :]
-                        * np.gradient(self.w_hat[m, :] * self.w_hat[n, :], self.z)
-                    )
-                    www[n, m, k] = (self.H[k] / self.g) * np.trapz(
-                        term_1 + term_2, self.z
-                    )
-        return www / abs(self.z[-1] - self.z[0])
-
-    def compute_wpw(self) -> Optional[np.ndarray]:
-        """Compute the triple-mode-tensor wpw for the nonlinear terms.
-
-        The array elements correspond to:
-            (H[k] / rho_0 / H) * int_{-H}^{0} N^2 * w_hat[k, :] * p_hat[l, :] * w_hat[m, :] dz.
+            (g / H) * int_{-H}^{0} dpsi_dz[k, :] * d2psi_dz[m, :] * dpsi_dz[n, :] / Nsq dz.
         """
         if (
-            self.p_hat is None
-            or self.w_hat is None
-            or self.Nsq is None
+            self.Nsq is None
+            or self.dpsi_dz is None
             or self.z is None
+            or self.psi is None
         ):
             return None
-        wpw = np.empty((self.nmodes, self.nmodes, self.nmodes))
+
+        d2psi_dz = np.gradient(self.dpsi_dz, self.z, axis=0)
+        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    wpw[n, m, k] = (self.H[k] / self.g) * np.trapz(
-                        self.Nsq
-                        * self.w_hat[k, :]
-                        * self.p_hat[m, :]
-                        * self.w_hat[n, :],
+                    tensor[n, m, k] = np.trapz(
+                        self.dpsi_dz[:, k] * d2psi_dz[:, m] * self.psi[:, n] / self.Nsq,
                         self.z,
                     )
-        return wpw / abs(self.z[-1] - self.z[0])
+        return tensor * self.g / abs(self.z[-1] - self.z[0])
 
 
 @dataclass

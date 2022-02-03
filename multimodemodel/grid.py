@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
 
-from .jit import _numba_3D_grid_iterator_i8
+from .jit import _numba_3D_grid_iterator
 
 
 @unique
@@ -229,11 +229,11 @@ class Grid:
 
     @staticmethod
     def _get_default_mask(shape: npt._Shape):
-        mask = np.ones(shape, dtype=np.int8)
-        mask[..., 0, :] = 0
-        mask[..., -1, :] = 0
-        mask[..., :, 0] = 0
-        mask[..., :, -1] = 0
+        mask = np.ones(shape, dtype=np.float64)
+        mask[..., 0, :] = 0.0
+        mask[..., -1, :] = 0.0
+        mask[..., :, 0] = 0.0
+        mask[..., :, -1] = 0.0
         return mask
 
 
@@ -362,7 +362,7 @@ class StaggeredGrid:
         )
 
     @staticmethod
-    @_numba_3D_grid_iterator_i8
+    @_numba_3D_grid_iterator
     def _u_mask_from_eta(
         i: int,
         j: int,
@@ -373,15 +373,15 @@ class StaggeredGrid:
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
-    ) -> int:  # pragma: no cover
+    ) -> float:  # pragma: no cover
         i_shift = (i + shift_x) % ni
         if (eta_mask[k, j, i] + eta_mask[k, j, i_shift]) == 2:
-            return 1
+            return 1.0
         else:
-            return 0
+            return 0.0
 
     @staticmethod
-    @_numba_3D_grid_iterator_i8
+    @_numba_3D_grid_iterator
     def _v_mask_from_eta(
         i: int,
         j: int,
@@ -392,15 +392,15 @@ class StaggeredGrid:
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
-    ) -> int:  # pragma: no cover
+    ) -> float:  # pragma: no cover
         j_shift = (j + shift_y) % nj
         if (eta_mask[k, j, i] + eta_mask[k, j_shift, i]) == 2:
-            return 1
+            return 1.0
         else:
-            return 0
+            return 0.0
 
     @staticmethod
-    @_numba_3D_grid_iterator_i8
+    @_numba_3D_grid_iterator
     def _q_mask_from_eta(
         i: int,
         j: int,
@@ -411,7 +411,7 @@ class StaggeredGrid:
         eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
-    ) -> int:  # pragma: no cover
+    ) -> float:  # pragma: no cover
         i_shift = (i + shift_x) % ni
         j_shift = (j + shift_y) % nj
         if (
@@ -420,6 +420,6 @@ class StaggeredGrid:
             + eta_mask[k, j, i_shift]
             + eta_mask[k, j_shift, i_shift]
         ) == 4:
-            return 1
+            return 1.0
         else:
-            return 0
+            return 0.0

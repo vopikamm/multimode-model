@@ -8,7 +8,11 @@ computationally costly operations.
 import numpy as np
 
 # from numpy.core.fromnumeric import shape
-from .jit import _numba_3D_grid_iterator, _numba_double_sum, _cyclic_shift
+from .jit import (
+    _numba_3D_grid_iterator,
+    _numba_3D_grid_iterator_parallel_over_kji,
+    _cyclic_shift,
+)
 from .datastructure import State, Variable, Parameters, MultimodeParameters
 
 
@@ -296,12 +300,12 @@ def _laplacian_mixing_u(
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    if mask_q[k, j, i] == 0:
+    if mask_q[k, j, i] == 0.0:
         lbc_j = lbc
     else:
         lbc_j = 1
 
-    if mask_q[k, jp1, i] == 0:
+    if mask_q[k, jp1, i] == 0.0:
         lbc_jp1 = lbc
     else:
         lbc_jp1 = 1
@@ -352,12 +356,12 @@ def _laplacian_mixing_v(
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    if mask_q[k, j, i] == 0:
+    if mask_q[k, j, i] == 0.0:
         lbc_i = lbc
     else:
         lbc_i = 1
 
-    if mask_q[k, j, ip1] == 0:
+    if mask_q[k, j, ip1] == 0.0:
         lbc_ip1 = lbc
     else:
         lbc_ip1 = 1
@@ -398,13 +402,11 @@ def _linear_damping(
     return -gamma[k] * mask[k, j, i] * vel[k, j, i]
 
 
-@_numba_double_sum
+@_numba_3D_grid_iterator_parallel_over_kji
 def _advection_momentum_u(
     i: int,
     j: int,
     k: int,
-    m: int,
-    n: int,
     ni: int,
     nj: int,
     nk: int,
@@ -418,59 +420,87 @@ def _advection_momentum_u(
     dy_u: np.ndarray,
     dx_v: np.ndarray,
     lbc: int,
-    ppp: np.ndarray,
-    ppw: np.ndarray,
+    Q: np.ndarray,
+    R: np.ndarray,
+    H: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the advection of zonal momentum."""
+    if mask_u[k, j, i] == 0.0:
+        return 0.0
+
     ip1 = _cyclic_shift(i, ni, 1)
     im1 = _cyclic_shift(i, ni, -1)
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    if mask_q[k, j, i] == 0:
+    if mask_q[k, j, i] == 0.0:
         lbc = lbc
     else:
         lbc = 1
 
-    return (
-        ppp[n, m, k]
-        * mask_u[k, j, i]
-        * (
-            (
-                dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
-                + dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
-            )
-            * (mask_u[m, j, ip1] * u[m, j, ip1] + mask_u[m, j, i] * u[m, j, i])
-            - (
-                dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
-                + dy_u[j, im1] * mask_u[n, j, im1] * u[n, j, im1]
-            )
-            * (mask_u[m, j, i] * u[m, j, i] + mask_u[m, j, im1] * u[m, j, im1])
-            + (
-                dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
-                + dx_v[jp1, im1] * mask_v[n, jp1, im1] * v[n, jp1, im1]
-            )
-            * (mask_u[m, jp1, i] * u[m, jp1, i] + mask_u[m, j, i] * u[m, j, i])
-            - (
-                dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
-                + dx_v[j, im1] * mask_v[n, j, im1] * v[n, j, im1]
-            )
-            * (lbc * mask_u[m, j, i] * u[m, j, i] + mask_u[m, jm1, i] * u[m, jm1, i])
+    mask_fac_Q = mask_u[k, j, i] / dx_u[j, i] / dy_u[j, i] / 4
+    mask_fac_R = 0.5 * mask_u[k, j, i]
+
+    result = 0.0
+
+    for n in range(nk):
+        u_eta_n_ij = (
+            dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
+            + dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
         )
-        / dx_u[j, i]
-        / dy_u[j, i]
-        / 4
-        + ppw[n, m, k] * mask_u[m, j, i] * u[m, j, i] * (w[n, j, i] + w[n, j, im1]) / 2
-    )
+        u_eta_n_im1j = (
+            dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
+            + dy_u[j, im1] * mask_u[n, j, im1] * u[n, j, im1]
+        )
+        v_q_n_ijp1 = (
+            dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
+            + dx_v[jp1, im1] * mask_v[n, jp1, im1] * v[n, jp1, im1]
+        )
+        v_q_n_ij = (
+            dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+            + dx_v[j, im1] * mask_v[n, j, im1] * v[n, j, im1]
+        )
+        w_u_n_ij = w[n, j, i] + w[n, j, im1]
+
+        for m in range(nk):
+            result += (
+                Q[n, m, k]
+                * (
+                    mask_fac_Q
+                    * (
+                        u_eta_n_ij
+                        * (
+                            mask_u[m, j, ip1] * u[m, j, ip1]
+                            + mask_u[m, j, i] * u[m, j, i]
+                        )
+                        - u_eta_n_im1j
+                        * (
+                            mask_u[m, j, i] * u[m, j, i]
+                            + mask_u[m, j, im1] * u[m, j, im1]
+                        )
+                        + v_q_n_ijp1
+                        * (
+                            mask_u[m, jp1, i] * u[m, jp1, i]
+                            + mask_u[m, j, i] * u[m, j, i]
+                        )
+                        - v_q_n_ij
+                        * (
+                            lbc * mask_u[m, j, i] * u[m, j, i]
+                            + mask_u[m, jm1, i] * u[m, jm1, i]
+                        )
+                    )
+                    - mask_fac_R * u[m, j, i] * w_u_n_ij / H[n]
+                )
+                + R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
+            )
+    return result
 
 
-@_numba_double_sum
+@_numba_3D_grid_iterator_parallel_over_kji
 def _advection_momentum_v(
     i: int,
     j: int,
     k: int,
-    m: int,
-    n: int,
     ni: int,
     nj: int,
     nk: int,
@@ -484,59 +514,88 @@ def _advection_momentum_v(
     dy_v: np.ndarray,
     dy_u: np.ndarray,
     lbc: int,
-    ppp: np.ndarray,
-    ppw: np.ndarray,
+    Q: np.ndarray,
+    R: np.ndarray,
+    H: np.ndarray,
 ) -> float:  # pragma: no cover
-    """Compute the advection of meridional momentum."""
+    """Compute the advection of zonal momentum."""
+    if mask_v[k, j, i] == 0.0:
+        return 0.0
+
     ip1 = _cyclic_shift(i, ni, 1)
     im1 = _cyclic_shift(i, ni, -1)
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    if mask_q[k, j, i] == 0:
+    if mask_q[k, j, i] == 0.0:
         lbc = lbc
     else:
         lbc = 1
 
-    return (
-        ppp[n, m, k]
-        * mask_v[k, j, i]
-        * (
-            (
-                dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
-                + dy_u[jm1, ip1] * mask_u[n, jm1, ip1] * u[n, jm1, ip1]
-            )
-            * (mask_v[m, j, ip1] * v[m, j, ip1] + mask_v[m, j, i] * v[m, j, i])
-            - (
-                dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
-                + dy_u[jm1, i] * mask_u[n, jm1, i] * u[n, jm1, i]
-            )
-            * (mask_v[m, j, i] * v[m, j, i] + mask_v[m, j, im1] * v[m, j, im1])
-            + (
-                dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
-                + dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
-            )
-            * (mask_v[m, jp1, i] * v[m, jp1, i] + mask_v[m, j, i] * v[m, j, i])
-            - (
-                dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
-                + dx_v[jm1, i] * mask_v[n, jm1, i] * v[n, jm1, i]
-            )
-            * (lbc * mask_v[m, j, i] * v[m, j, i] + mask_v[m, jm1, i] * v[m, jm1, i])
+    mask_fac_Q = mask_v[k, j, i] / dx_v[j, i] / dy_v[j, i] / 4
+    mask_fac_R = 0.5 * mask_v[k, j, i]
+
+    result = 0.0
+
+    for n in range(nk):
+        u_q_n_ij = (
+            dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
+            + dy_u[j, im1] * mask_u[n, j, im1] * u[n, j, im1]
         )
-        / dx_v[j, i]
-        / dy_v[j, i]
-        / 4
-        + ppw[n, m, k] * mask_v[m, j, i] * v[m, j, i] * (w[n, j, i] + w[n, jm1, i]) / 2
-    )
+        u_q_n_ip1j = (
+            dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
+            + dy_u[jm1, ip1] * mask_u[n, jm1, ip1] * u[n, jm1, ip1]
+        )
+        v_eta_n_ij = (
+            dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
+            + dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+        )
+        v_eta_n_ijm1 = (
+            dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+            + dx_v[jm1, i] * mask_v[n, jm1, i] * v[n, jm1, i]
+        )
+        w_v_n_ij = w[n, jm1, i] + w[n, j, i]
+
+        for m in range(nk):
+            result += (
+                Q[n, m, k]
+                * (
+                    mask_fac_Q
+                    * (
+                        u_q_n_ij
+                        * (
+                            mask_v[m, j, im1] * v[m, j, im1]
+                            + mask_v[m, j, i] * v[m, j, i]
+                        )
+                        - u_q_n_ip1j
+                        * (
+                            mask_v[m, j, i] * v[m, j, i]
+                            + mask_v[m, j, ip1] * v[m, j, ip1]
+                        )
+                        + v_eta_n_ij
+                        * (
+                            mask_v[m, j, i] * v[m, j, i]
+                            + mask_v[m, jp1, i] * v[m, jp1, i]
+                        )
+                        - v_eta_n_ijm1
+                        * (
+                            lbc * mask_v[m, j, i] * v[m, j, i]
+                            + mask_v[m, jm1, i] * v[m, jm1, i]
+                        )
+                        - 2 * mask_v[m, j, i] * v[m, j, i] * w_v_n_ij / H[n]
+                    )
+                    - mask_fac_R * v[m, j, i] * w_v_n_ij
+                )
+                + R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
+            )
+    return result
 
 
-@_numba_double_sum
+@_numba_3D_grid_iterator_parallel_over_kji
 def _advection_density(
     i: int,
     j: int,
     k: int,
-    m: int,
-    n: int,
     ni: int,
     nj: int,
     nk: int,
@@ -551,8 +610,9 @@ def _advection_density(
     dy_eta: np.ndarray,
     dy_u: np.ndarray,
     dx_v: np.ndarray,
-    wpw: np.ndarray,
-    www: np.ndarray,
+    S: np.ndarray,
+    T: np.ndarray,
+    H: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the advection of density."""
     ip1 = _cyclic_shift(i, ni, 1)
@@ -560,32 +620,47 @@ def _advection_density(
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    return (
-        wpw[n, m, k]
-        * mask_eta[k, j, i]
-        * (
-            dy_u[j, ip1]
-            * mask_u[n, j, ip1]
-            * u[n, j, ip1]
-            * (mask_eta[m, j, ip1] * eta[m, j, ip1] + mask_eta[m, j, i] * eta[m, j, i])
-            - dy_u[j, i]
-            * mask_u[n, j, i]
-            * u[n, j, i]
-            * (mask_eta[m, j, i] * eta[m, j, i] + mask_eta[m, j, im1] * eta[m, j, im1])
-            + dx_v[jp1, i]
-            * mask_v[n, jp1, i]
-            * v[n, jp1, i]
-            * (mask_eta[m, jp1, i] * eta[m, jp1, i] + mask_eta[m, j, i] * eta[m, j, i])
-            - dx_v[j, i]
-            * mask_v[n, j, i]
-            * v[n, j, i]
-            * (mask_eta[m, j, i] * eta[m, j, i] + mask_eta[m, jm1, i] * eta[m, jm1, i])
-        )
-        / dx_eta[j, i]
-        / dy_eta[j, i]
-        / 2
-        + www[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
-    )
+    mask_fac_S = mask_v[k, j, i] / dx_eta[j, i] / dy_eta[j, i] / 2
+
+    result = 0.0
+
+    for n in range(nk):
+        u_u_n_ij = dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
+        u_u_n_ip1j = dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
+        v_v_n_ij = dx_v[j, i] * mask_v[n, j, i] * v[n, j, i]
+        v_v_n_ijp1 = dx_v[jp1, i] * mask_v[n, jp1, i] * v[n, jp1, i]
+        for m in range(nk):
+            result += (
+                S[n, m, k]
+                * (
+                    mask_fac_S
+                    * (
+                        u_u_n_ip1j
+                        * (
+                            mask_eta[m, j, ip1] * eta[m, j, ip1]
+                            + mask_eta[m, j, i] * eta[m, j, i]
+                        )
+                        - u_u_n_ij
+                        * (
+                            mask_eta[m, j, i] * eta[m, j, i]
+                            + mask_eta[m, j, im1] * eta[m, j, im1]
+                        )
+                        + v_v_n_ijp1
+                        * (
+                            mask_eta[m, jp1, i] * eta[m, jp1, i]
+                            + mask_eta[m, j, i] * eta[m, j, i]
+                        )
+                        - v_v_n_ij
+                        * (
+                            mask_eta[m, j, i] * eta[m, j, i]
+                            + mask_eta[m, jm1, i] * eta[m, jm1, i]
+                        )
+                    )
+                    - mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i] / H[n]
+                )
+                + T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
+            )
+    return result
 
 
 """
@@ -868,8 +943,9 @@ def advection_momentum_u(state: State, params: MultimodeParameters) -> State:
         state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
         lbc,
-        params.ppp,
-        params.ppw,
+        params.Q,
+        params.R,
+        params.H,
     )
     return State(
         u=Variable(
@@ -898,8 +974,9 @@ def advection_momentum_v(state: State, params: MultimodeParameters) -> State:
         state.variables["v"].grid.dy,
         state.variables["u"].grid.dy,
         lbc,
-        params.ppp,
-        params.ppw,
+        params.Q,
+        params.R,
+        params.H,
     )
     return State(
         v=Variable(
@@ -928,8 +1005,9 @@ def advection_density(state: State, params: MultimodeParameters) -> State:
         state.variables["eta"].grid.dy,
         state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
-        params.wpw,
-        params.www,
+        params.S,
+        params.T,
+        params.H,
     )
     return State(
         eta=Variable(
