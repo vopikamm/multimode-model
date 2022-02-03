@@ -59,7 +59,8 @@ multimode_params = MultimodeParameters(
 
 ds = multimode_params.as_dataset
 
-A = 1.33e-7
+H = abs(depth[0] - depth[-1])
+A = 1.33e-7 / H
 gamma = A / ds.c.values ** 2
 multimode_params.gamma = gamma
 
@@ -80,6 +81,7 @@ def tau(x, y):
 tau_x = np.empty(c_grid.u.shape)
 for k in range(nmodes):
     tau_x[k, :, :] = tau(c_grid.u.x, c_grid.u.y) * ds.p_hat.values[k, 0]
+tau_x *= 1000
 
 
 def zonal_wind(state, params):
@@ -152,21 +154,21 @@ def run(params, step, time):
     for i, next_state in enumerate(model_run):
         if i % (Nt // 5) == 0:
             output.append(save_as_Dataset(next_state, params))
+        elif i >= (Nt - 4):
+            output.append(save_as_Dataset(next_state, params))
 
     return xr.combine_by_coords(output)
-
-
-warmup = run(multimode_params, step=1500.0, time=6000.0)
 
 
 out = run(multimode_params, step=step, time=time)
 
 out = out.rename({"z": "nmode"})
 
-out["u"] = xr.dot(ds.p_hat, out.u_tilde)
-out["v"] = xr.dot(ds.p_hat, out.v_tilde)
-out["h"] = xr.dot(ds.w_hat, out.h_tilde)
+out["u"] = xr.dot(ds.psi, out.u_tilde)
+out["v"] = xr.dot(ds.psi, out.v_tilde)
+out["h"] = xr.dot(ds.psi, out.h_tilde)
 
 np.save("u.npy", out.u.values)
 np.save("v.npy", out.v.values)
 np.save("h.npy", out.h.values)
+np.save("t.py", out.time.values)
