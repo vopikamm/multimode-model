@@ -434,9 +434,14 @@ def _advection_momentum_u(
     jm1 = _cyclic_shift(j, nj, -1)
 
     if mask_q[k, j, i] == 0.0:
-        lbc = lbc
+        lbc_j = lbc
     else:
-        lbc = 1
+        lbc_j = 1
+
+    if mask_q[k, jp1, i] == 0.0:
+        lbc_jp1 = lbc
+    else:
+        lbc_jp1 = 1
 
     mask_fac_Q = mask_u[k, j, i] / dx_u[j, i] / dy_u[j, i] / 4
     mask_fac_R = 0.5 * mask_u[k, j, i]
@@ -480,12 +485,12 @@ def _advection_momentum_u(
                         )
                         + v_q_n_ijp1
                         * (
-                            mask_u[m, jp1, i] * u[m, jp1, i]
+                            lbc_jp1 * mask_u[m, jp1, i] * u[m, jp1, i]
                             + mask_u[m, j, i] * u[m, j, i]
                         )
                         - v_q_n_ij
                         * (
-                            lbc * mask_u[m, j, i] * u[m, j, i]
+                            lbc_j * mask_u[m, j, i] * u[m, j, i]
                             + mask_u[m, jm1, i] * u[m, jm1, i]
                         )
                     )
@@ -528,9 +533,14 @@ def _advection_momentum_v(
     jm1 = _cyclic_shift(j, nj, -1)
 
     if mask_q[k, j, i] == 0.0:
-        lbc = lbc
+        lbc_i = lbc
     else:
-        lbc = 1
+        lbc_i = 1
+
+    if mask_q[k, j, ip1] == 0.0:
+        lbc_ip1 = lbc
+    else:
+        lbc_ip1 = 1
 
     mask_fac_Q = mask_v[k, j, i] / dx_v[j, i] / dy_v[j, i] / 4
     mask_fac_R = 0.5 * mask_v[k, j, i]
@@ -565,12 +575,12 @@ def _advection_momentum_v(
                         u_q_n_ij
                         * (
                             mask_v[m, j, im1] * v[m, j, im1]
-                            + lbc * mask_v[m, j, i] * v[m, j, i]
+                            + lbc_i * mask_v[m, j, i] * v[m, j, i]
                         )
                         - u_q_n_ip1j
                         * (
                             mask_v[m, j, i] * v[m, j, i]
-                            + mask_v[m, j, ip1] * v[m, j, ip1]
+                            + lbc_ip1 * mask_v[m, j, ip1] * v[m, j, ip1]
                         )
                         + v_eta_n_ij
                         * (
