@@ -485,8 +485,8 @@ def _advection_momentum_u(
                         )
                         + v_q_n_ijp1
                         * (
-                            lbc_jp1 * mask_u[m, jp1, i] * u[m, jp1, i]
-                            + mask_u[m, j, i] * u[m, j, i]
+                            mask_u[m, jp1, i] * u[m, jp1, i]
+                            + lbc_jp1 * mask_u[m, j, i] * u[m, j, i]
                         )
                         - v_q_n_ij
                         * (
@@ -579,8 +579,8 @@ def _advection_momentum_v(
                         )
                         - u_q_n_ip1j
                         * (
-                            mask_v[m, j, i] * v[m, j, i]
-                            + lbc_ip1 * mask_v[m, j, ip1] * v[m, j, ip1]
+                            lbc_ip1 * mask_v[m, j, i] * v[m, j, i]
+                            + mask_v[m, j, ip1] * v[m, j, ip1]
                         )
                         + v_eta_n_ij
                         * (
@@ -788,7 +788,7 @@ def coriolis_j(state: State, params: Parameters) -> State:
         state.variables["v"].grid.mask,
         state.variables["u"].grid.dy,
         state.variables["v"].grid.dy,
-        params.f["v"],
+        params.f["q"],
     )
     return State(
         v=Variable(_coriolis_j(*args), grid, state.variables["v"].time),
@@ -810,7 +810,7 @@ def coriolis_i(state: State, params: Parameters) -> State:
         state.variables["u"].grid.mask,
         state.variables["u"].grid.dx,
         state.variables["v"].grid.dx,
-        params.f["u"],
+        params.f["q"],
     )
     return State(
         u=Variable(_coriolis_i(*args), grid, state.variables["u"].time),
@@ -938,7 +938,7 @@ def linear_damping_eta(state: State, params: Parameters) -> State:
 def advection_momentum_u(state: State, params: MultimodeParameters) -> State:
     """Compute advection of zonal momentum."""
     grid = state.variables["u"].grid
-    lbc = 2 * params.no_slip
+    lbc = 2 * params.free_slip
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
@@ -969,7 +969,7 @@ def advection_momentum_u(state: State, params: MultimodeParameters) -> State:
 def advection_momentum_v(state: State, params: MultimodeParameters) -> State:
     """Compute advection of meridional momentum."""
     grid = state.variables["v"].grid
-    lbc = 2 * params.no_slip
+    lbc = 2 * params.free_slip
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],

@@ -80,13 +80,13 @@ def tau(x, y):
 
 tau_x = np.empty(c_grid.u.shape)
 for k in range(nmodes):
-    tau_x[k, :, :] = tau(c_grid.u.x, c_grid.u.y) * ds.p_hat.values[k, 0]
+    tau_x[k, :, :] = tau(c_grid.u.x, c_grid.u.y) * ds.psi.values[:, k]
 tau_x *= 1000
 
 
 def zonal_wind(state, params):
     """Zonal wind."""
-    return State(u=Variable(tau_x / params.rho_0, c_grid.u, np.datetime64("NaT")))
+    return State(u=Variable(tau_x / params.rho_0 / H, c_grid.u, np.datetime64("NaT")))
 
 
 terms = [
@@ -126,7 +126,7 @@ def save_as_Dataset(state: State, params: MultimodeParameters):
     return ds
 
 
-time = 365 * 24 * 3600.0  # 1 year
+time = 3 * 365 * 24 * 3600.0  # 1 year
 step = c_grid.u.dx.min() / ds.c.values[1:].max() / 10.0
 t0 = np.datetime64("2000-01-01")
 
@@ -150,12 +150,17 @@ def run(params, step, time):
     Nt = time // step
 
     output = []
-
+    tol = 0
     for i, next_state in enumerate(model_run):
         if i % (Nt // 5) == 0:
             output.append(save_as_Dataset(next_state, params))
         elif i >= (Nt - 4):
             output.append(save_as_Dataset(next_state, params))
+        if np.nanmax(abs(next_state.variables["u"].safe_data)) > 100:
+            tol += 1
+            output.append(save_as_Dataset(next_state, params))
+        if tol > 5:
+            return xr.combine_by_coords(output)
 
     return xr.combine_by_coords(output)
 
@@ -168,7 +173,7 @@ out["u"] = xr.dot(ds.psi, out.u_tilde)
 out["v"] = xr.dot(ds.psi, out.v_tilde)
 out["h"] = xr.dot(ds.psi, out.h_tilde)
 
-np.save("u.npy", out.u.values)
-np.save("v.npy", out.v.values)
-np.save("h.npy", out.h.values)
-np.save("t.py", out.time.values)
+np.save("u_3year.npy", out.u.values)
+np.save("v_3year.npy", out.v.values)
+np.save("h_3year.npy", out.h.values)
+np.save("t_3year.npy", out.time.values)
