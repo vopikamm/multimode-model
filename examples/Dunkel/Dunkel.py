@@ -52,7 +52,7 @@ c_grid = StaggeredGrid.regular_lat_lon_c_grid(
 multimode_params = MultimodeParameters(
     z=depth,
     Nsq=Nsq,
-    nmodes=25,
+    nmodes=nmodes,
     coriolis_func=f_on_sphere(omega=7.272205e-05),
     on_grid=c_grid,
 )
@@ -65,23 +65,10 @@ gamma = A / ds.c.values ** 2
 multimode_params.gamma = gamma
 
 
-def tau(x, y):
-    """Wind field according to Mccreary (1980)."""
-    delta_x = abs(x[0, 0] - x[0, -1]) / 2
-    delta_y = abs(y[0, 0] - y[-1, 0]) / 2
-
-    wind_x = np.cos(np.pi * x / delta_x)
-    wind_x[abs(x) > delta_x / 2] = 0
-
-    wind_y = (1 + y ** 2 / delta_y ** 2) * np.exp(-(y ** 2) / delta_y ** 2)
-
-    return -5e-6 * wind_x * wind_y
-
-
 tau_x = np.empty(c_grid.u.shape)
 for k in range(nmodes):
-    tau_x[k, :, :] = tau(c_grid.u.x, c_grid.u.y) * ds.psi.values[:, k]
-tau_x *= 1000
+    tau_x[k, :, :] = -0.05 * ds.psi.values[:, k]
+tau_x *= c_grid.u.mask
 
 
 def zonal_wind(state, params):
@@ -127,7 +114,7 @@ def save_as_Dataset(state: State, params: MultimodeParameters):
 
 
 time = 3 * 365 * 24 * 3600.0  # 1 year
-step = c_grid.u.dx.min() / ds.c.values[1:].max() / 10.0
+step = c_grid.u.dx.min() / ds.c.values.max() / 10.0
 t0 = np.datetime64("2000-01-01")
 
 
@@ -173,7 +160,7 @@ out["u"] = xr.dot(ds.psi, out.u_tilde)
 out["v"] = xr.dot(ds.psi, out.v_tilde)
 out["h"] = xr.dot(ds.psi, out.h_tilde)
 
-np.save("u_3year.npy", out.u.values)
-np.save("v_3year.npy", out.v.values)
-np.save("h_3year.npy", out.h.values)
-np.save("t_3year.npy", out.time.values)
+np.save("u_3year_run.npy", out.u.values)
+np.save("v_3year_run.npy", out.v.values)
+np.save("h_3year_run.npy", out.h.values)
+np.save("t_3year_run.npy", out.time.values)
