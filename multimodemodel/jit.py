@@ -295,3 +295,7 @@ _numba_3D_grid_iterator = partial(
 _numba_3D_grid_iterator_parallel_over_kji = partial(
     _numba_3D_grid_iterator_template, return_type=np.float64, parallel_kji=True
 )
+
+_numba_3D_grid_iterator_i8 = partial(
+    _numba_3D_grid_iterator_template, return_type=np.int8, parallel_kji=False
+)

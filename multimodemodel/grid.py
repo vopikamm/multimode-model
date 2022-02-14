@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from enum import Enum, unique
 
-from .jit import _numba_3D_grid_iterator
+from .jit import _numba_3D_grid_iterator_i8
 
 
 @unique
@@ -229,11 +229,11 @@ class Grid:
 
     @staticmethod
     def _get_default_mask(shape: npt._Shape):
-        mask = np.ones(shape, dtype=np.float64)
-        mask[..., 0, :] = 0.0
-        mask[..., -1, :] = 0.0
-        mask[..., :, 0] = 0.0
-        mask[..., :, -1] = 0.0
+        mask = np.ones(shape, dtype=np.int8)
+        mask[..., 0, :] = 0
+        mask[..., -1, :] = 0
+        mask[..., :, 0] = 0
+        mask[..., :, -1] = 0
         return mask
 
 
@@ -362,7 +362,7 @@ class StaggeredGrid:
         )
 
     @staticmethod
-    @_numba_3D_grid_iterator
+    @_numba_3D_grid_iterator_i8
     def _u_mask_from_q(
         i: int,
         j: int,
@@ -376,12 +376,12 @@ class StaggeredGrid:
     ) -> float:  # pragma: no cover
         j_shift = (j + shift_y) % nj
         if (q_mask[k, j, i] + q_mask[k, j_shift, i]) == 0:
-            return 0.0
+            return 0
         else:
-            return 1.0
+            return 1
 
     @staticmethod
-    @_numba_3D_grid_iterator
+    @_numba_3D_grid_iterator_i8
     def _v_mask_from_q(
         i: int,
         j: int,
@@ -395,12 +395,12 @@ class StaggeredGrid:
     ) -> float:  # pragma: no cover
         i_shift = (i + shift_x) % ni
         if (q_mask[k, j, i] + q_mask[k, j, i_shift]) == 0:
-            return 0.0
+            return 0
         else:
-            return 1.0
+            return 1
 
     @staticmethod
-    @_numba_3D_grid_iterator
+    @_numba_3D_grid_iterator_i8
     def _eta_mask_from_q(
         i: int,
         j: int,
@@ -420,6 +420,6 @@ class StaggeredGrid:
             + q_mask[k, j, i_shift]
             + q_mask[k, j_shift, i_shift]
         ) == 0:
-            return 0.0
+            return 0
         else:
-            return 1.0
+            return 1
