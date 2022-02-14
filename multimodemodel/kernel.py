@@ -498,7 +498,7 @@ def _advection_momentum_u(
                 )
                 + R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
             )
-    return -result
+    return result
 
 
 @_numba_3D_grid_iterator_parallel_over_kji
@@ -597,7 +597,7 @@ def _advection_momentum_v(
                 )
                 + R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
             )
-    return -result
+    return result
 
 
 @_numba_3D_grid_iterator_parallel_over_kji
@@ -669,7 +669,7 @@ def _advection_density(
                 )
                 + T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
             )
-    return -result
+    return result
 
 
 """

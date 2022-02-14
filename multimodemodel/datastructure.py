@@ -296,17 +296,17 @@ class MultimodeParameters(Parameters):
         factor = np.sqrt(np.abs(dz.sum() / ((pmodes ** 2.0) * dz).sum(axis=0)))
         pmodes *= factor[np.newaxis, :]
 
+        # unify sign, that pressure modes are always positive at the surface
+        sig_p = np.sign(pmodes[0, :])
+        sig_p[sig_p == 0.0] = 1.0
+        pmodes = sig_p[np.newaxis, :] * pmodes
+
         # Compute w_hat so that w_hat = - g / N^2 * dp_hat / dz
         wmodes = np.diff(pmodes, axis=0) / dz[:-1]
         # Boundary conditions w_hat = 0 at z = {0, -H}
         wmodes = np.concatenate(
             (np.zeros((1, self.nmodes)), wmodes, np.zeros((1, self.nmodes))), axis=0
         )
-
-        # unify sign, that pressure modes are always positive at the surface
-        sig_p = np.sign(pmodes[0, :])
-        sig_p[sig_p == 0.0] = 1.0
-        pmodes = sig_p[np.newaxis, :] * pmodes
 
         # map p_hat on vertical grid of w_hat
         pmodes = np.concatenate((pmodes[[0], :], pmodes, pmodes[[-1], :]), axis=0)
@@ -401,7 +401,10 @@ class MultimodeParameters(Parameters):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
                     tensor[n, m, k] = np.trapz(
-                        self.dpsi_dz[:, k] * d2psi_dz[:, m] * self.psi[:, n] / self.Nsq,
+                        self.dpsi_dz[:, k]
+                        * d2psi_dz[:, m]
+                        * self.dpsi_dz[:, n]
+                        / self.Nsq,
                         self.z,
                     )
         return tensor * self.g / abs(self.z[-1] - self.z[0])
