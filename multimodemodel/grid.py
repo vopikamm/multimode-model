@@ -14,7 +14,7 @@ class GridShift(Enum):
     """Direction of shift of staggered grids with respect to the eta-grid.
 
     E.g., `GridShift.LR` indicates that the grid points of the other grids which share
-    the same index are located on the lower and/or left face of the q Grid. The
+    the same index are located on the lower and/or left face of the eta Grid. The
     value of the enumerator is a tuple giving the direction of shift in
     y- and x-direction.
     """
@@ -252,97 +252,97 @@ class StaggeredGrid:
     @classmethod
     def cartesian_c_grid(
         cls: Any,
-        shift: GridShift = GridShift.UR,
+        shift: GridShift = GridShift.LL,
         **grid_kwargs: Dict[str, Any],
     ):
         """Generate a Cartesian Arakawa C-Grid.
 
         Arguments
         ---------
-        shift: GridShift = GridShift.RR
-          Direction of shift of staggered grids with respect to the q-grid.
+        shift: GridShift = GridShift.LL
+          Direction of shift of staggered grids with respect to the eta-grid.
           See `GridShift` for more details.
         **grid_kwargs: Dict[str, Any]:
           keyword arguments are passed to Grid.cartesian().
         """
-        q_grid = Grid.cartesian(**grid_kwargs)  # type: ignore
+        eta_grid = Grid.cartesian(**grid_kwargs)  # type: ignore
 
-        u_x, u_y = (q_grid.x, q_grid.y + shift.value[1] * q_grid.dy / 2)
-        v_x, v_y = (q_grid.x + shift.value[0] * q_grid.dx / 2, q_grid.y)
-        eta_x, eta_y = (v_x, u_y)
-        z = q_grid.z
+        u_x, u_y = (eta_grid.x + shift.value[0] * eta_grid.dx / 2, eta_grid.y)
+        v_x, v_y = (eta_grid.x, eta_grid.y + shift.value[1] * eta_grid.dy / 2)
+        q_x, q_y = (u_x, v_y)
+        z = eta_grid.z
         u_grid = Grid(
             x=u_x,
             y=u_y,
             z=z,
-            mask=cls._compute_mask(cls._u_mask_from_q, q_grid, shift),
+            mask=cls._compute_mask(cls._u_mask_from_eta, eta_grid, shift),
         )
         v_grid = Grid(
             x=v_x,
             y=v_y,
             z=z,
-            mask=cls._compute_mask(cls._v_mask_from_q, q_grid, shift),
+            mask=cls._compute_mask(cls._v_mask_from_eta, eta_grid, shift),
         )
-        eta_grid = Grid(
-            x=eta_x,
-            y=eta_y,
+        q_grid = Grid(
+            x=q_x,
+            y=q_y,
             z=z,
-            mask=cls._compute_mask(cls._eta_mask_from_q, q_grid, shift),
+            mask=cls._compute_mask(cls._q_mask_from_eta, eta_grid, shift),
         )
         return StaggeredGrid(eta_grid, u_grid, v_grid, q_grid)
 
     @classmethod
     def regular_lat_lon_c_grid(
         cls,
-        shift: GridShift = GridShift.UR,
+        shift: GridShift = GridShift.LL,
         **kwargs: Dict[str, Any],
     ):
         """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
         Returns StaggeredGrid object with all four grids
         """
-        q_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
-        dx, dy = q_grid._compute_horizontal_grid_spacing()
+        eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
+        dx, dy = eta_grid._compute_horizontal_grid_spacing()
 
-        u_y_start, u_y_end = (
-            q_grid.y.min() + shift.value[1] * dy.min() / 2,
-            q_grid.y.max() + shift.value[1] * dy.min() / 2,
+        u_x_start, u_x_end = (
+            eta_grid.x.min() + shift.value[0] * dx.min() / 2,
+            eta_grid.x.max() + shift.value[0] * dx.min() / 2,
         )
         u_kwargs = kwargs.copy()
-        u_kwargs.update(dict(lat_start=u_y_start, lat_end=u_y_end))
+        u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
         u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
         u_grid.mask = cls._compute_mask(
-            cls._u_mask_from_q,  # type: ignore
-            q_grid,
+            cls._u_mask_from_eta,  # type: ignore
+            eta_grid,
             shift,
         )
 
-        v_x_start, v_x_end = (
-            q_grid.x.min() + shift.value[0] * dx.min() / 2,
-            q_grid.x.max() + shift.value[0] * dx.min() / 2,
+        v_y_start, v_y_end = (
+            eta_grid.y.min() + shift.value[1] * dy.min() / 2,
+            eta_grid.y.max() + shift.value[1] * dy.min() / 2,
         )
         v_kwargs = kwargs.copy()
-        v_kwargs.update(dict(lon_start=v_x_start, lon_end=v_x_end))
+        v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
         v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
         v_grid.mask = cls._compute_mask(
-            cls._v_mask_from_q,  # type: ignore
-            q_grid,
+            cls._v_mask_from_eta,  # type: ignore
+            eta_grid,
             shift,
         )
 
-        eta_kwargs = kwargs.copy()
-        eta_kwargs.update(
+        q_kwargs = kwargs.copy()
+        q_kwargs.update(
             dict(
-                lon_start=v_x_start,
-                lon_end=v_x_end,
-                lat_start=u_y_start,
-                lat_end=u_y_end,
+                lon_start=u_x_start,
+                lon_end=u_x_end,
+                lat_start=v_y_start,
+                lat_end=v_y_end,
             )
         )
-        eta_grid = Grid.regular_lat_lon(**eta_kwargs)  # type: ignore
-        eta_grid.mask = cls._compute_mask(
-            cls._eta_mask_from_q,  # type: ignore
-            q_grid,
+        q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
+        q_grid.mask = cls._compute_mask(
+            cls._q_mask_from_eta,  # type: ignore
+            eta_grid,
             shift,
         )
 
@@ -363,63 +363,63 @@ class StaggeredGrid:
 
     @staticmethod
     @_numba_3D_grid_iterator_i8
-    def _u_mask_from_q(
+    def _u_mask_from_eta(
         i: int,
         j: int,
         k: int,
         ni: int,
         nj: int,
         nk: int,
-        q_mask: np.ndarray,
-        shift_x: int,
-        shift_y: int,
-    ) -> float:  # pragma: no cover
-        j_shift = (j + shift_y) % nj
-        if (q_mask[k, j, i] + q_mask[k, j_shift, i]) == 0:
-            return 0
-        else:
-            return 1
-
-    @staticmethod
-    @_numba_3D_grid_iterator_i8
-    def _v_mask_from_q(
-        i: int,
-        j: int,
-        k: int,
-        ni: int,
-        nj: int,
-        nk: int,
-        q_mask: np.ndarray,
+        eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
     ) -> float:  # pragma: no cover
         i_shift = (i + shift_x) % ni
-        if (q_mask[k, j, i] + q_mask[k, j, i_shift]) == 0:
-            return 0
-        else:
+        if (eta_mask[k, j, i] + eta_mask[k, j, i_shift]) == 2:
             return 1
+        else:
+            return 0
 
     @staticmethod
     @_numba_3D_grid_iterator_i8
-    def _eta_mask_from_q(
+    def _v_mask_from_eta(
         i: int,
         j: int,
         k: int,
         ni: int,
         nj: int,
         nk: int,
-        q_mask: np.ndarray,
+        eta_mask: np.ndarray,
+        shift_x: int,
+        shift_y: int,
+    ) -> float:  # pragma: no cover
+        j_shift = (j + shift_y) % nj
+        if (eta_mask[k, j, i] + eta_mask[k, j_shift, i]) == 2:
+            return 1
+        else:
+            return 0
+
+    @staticmethod
+    @_numba_3D_grid_iterator_i8
+    def _q_mask_from_eta(
+        i: int,
+        j: int,
+        k: int,
+        ni: int,
+        nj: int,
+        nk: int,
+        eta_mask: np.ndarray,
         shift_x: int,
         shift_y: int,
     ) -> float:  # pragma: no cover
         i_shift = (i + shift_x) % ni
         j_shift = (j + shift_y) % nj
         if (
-            q_mask[k, j, i]
-            + q_mask[k, j_shift, i]
-            + q_mask[k, j, i_shift]
-            + q_mask[k, j_shift, i_shift]
-        ) == 0:
-            return 0
-        else:
+            eta_mask[k, j, i]
+            + eta_mask[k, j_shift, i]
+            + eta_mask[k, j, i_shift]
+            + eta_mask[k, j_shift, i_shift]
+        ) == 4:
             return 1
+        else:
+            return 0

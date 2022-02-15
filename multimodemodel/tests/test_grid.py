@@ -18,10 +18,10 @@ except ModuleNotFoundError:
 
 
 grid_order = {
-    GridShift.LL: "euqv",
-    GridShift.LR: "uevq",
-    GridShift.UL: "vque",
-    GridShift.UR: "qveu",
+    GridShift.LL: "qveu",
+    GridShift.LR: "vque",
+    GridShift.UL: "uevq",
+    GridShift.UR: "euqv",
 }
 
 
@@ -225,11 +225,11 @@ class TestStaggeredGrid:
             np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy), (nz, dz))
         )
         grids = self.get_cartesian_staggered_grids(x, y, z, dx, dy)
-        u_grid, v_grid, eta_grid, q_grid = [
-            grids[grid_order[shift].index(i)] for i in "uveq"
+        q_grid, u_grid, v_grid, eta_grid = [
+            grids[grid_order[shift].index(i)] for i in "quve"
         ]
         staggered_grid = StaggeredGrid.cartesian_c_grid(
-            x=q_grid.x[0, :], y=q_grid.y[:, 0], z=z, shift=shift
+            x=eta_grid.x[0, :], y=eta_grid.y[:, 0], z=z, shift=shift
         )
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
@@ -264,12 +264,12 @@ class TestStaggeredGrid:
 
         staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
             shift=shift,
-            lon_start=q_grid.x.min(),
-            lon_end=q_grid.x.max(),
-            lat_start=q_grid.y.min(),
-            lat_end=q_grid.y.max(),
-            nx=q_grid.shape[q_grid.dim_x],
-            ny=q_grid.shape[q_grid.dim_y],
+            lon_start=eta_grid.x.min(),
+            lon_end=eta_grid.x.max(),
+            lat_start=eta_grid.y.min(),
+            lat_end=eta_grid.y.max(),
+            nx=eta_grid.shape[eta_grid.dim_x],
+            ny=eta_grid.shape[eta_grid.dim_y],
             z=z,
         )
 
@@ -299,49 +299,43 @@ class TestStaggeredGrid:
         """Test derivation of land/ocean mask."""
         z = np.array([0])
         grids = self.get_regular_staggered_grids(z=z)
-        q_grid, _, _, _ = [grids[grid_order[shift].index(i)] for i in "quve"]
-        mask = get_test_mask(q_grid.shape)
+        eta_grid, _, _, _ = [grids[grid_order[shift].index(i)] for i in "equv"]
+        mask = get_test_mask(eta_grid.shape)
 
-        u_mask = np.invert(
-            (
-                (mask == 0)
-                & (np.roll(mask, axis=q_grid.dim_y, shift=-1 * shift.value[1]) == 0)
-            )
+        u_mask = (
+            (mask == 1)
+            & (np.roll(mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
         ).astype(int)
-        v_mask = np.invert(
-            (
-                (mask == 0)
-                & (np.roll(mask, axis=q_grid.dim_x, shift=-1 * shift.value[0]) == 0)
-            )
+        v_mask = (
+            (mask == 1)
+            & (np.roll(mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
         ).astype(int)
-        eta_mask = np.invert(
-            (
-                (mask == 0)
-                & (np.roll(mask, axis=q_grid.dim_x, shift=-1 * shift.value[0]) == 0)
-                & (np.roll(mask, axis=q_grid.dim_y, shift=-1 * shift.value[1]) == 0)
-                & (
-                    np.roll(
-                        np.roll(mask, axis=q_grid.dim_y, shift=-1 * shift.value[1]),
-                        axis=q_grid.dim_x,
-                        shift=-1 * shift.value[0],
-                    )
-                    == 0
+        q_mask = (
+            (mask == 1)
+            & (np.roll(mask, axis=eta_grid.dim_x, shift=-1 * shift.value[0]) == 1)
+            & (np.roll(mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]) == 1)
+            & (
+                np.roll(
+                    np.roll(mask, axis=eta_grid.dim_y, shift=-1 * shift.value[1]),
+                    axis=eta_grid.dim_x,
+                    shift=-1 * shift.value[0],
                 )
+                == 1
             )
         ).astype(int)
 
         staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
             shift=shift,
-            lon_start=q_grid.x.min(),
-            lon_end=q_grid.x.max(),
-            lat_start=q_grid.y.min(),
-            lat_end=q_grid.y.max(),
-            nx=q_grid.shape[q_grid.dim_x],
-            ny=q_grid.shape[q_grid.dim_y],
+            lon_start=eta_grid.x.min(),
+            lon_end=eta_grid.x.max(),
+            lat_start=eta_grid.y.min(),
+            lat_end=eta_grid.y.max(),
+            nx=eta_grid.shape[eta_grid.dim_x],
+            ny=eta_grid.shape[eta_grid.dim_y],
             mask=mask,  # type: ignore
         )
 
         assert np.all(staggered_grid.u.mask == u_mask)
         assert np.all(staggered_grid.v.mask == v_mask)
-        assert np.all(staggered_grid.eta.mask == eta_mask)
-        assert np.all(staggered_grid.q.mask == mask)
+        assert np.all(staggered_grid.q.mask == q_mask)
+        assert np.all(staggered_grid.eta.mask == mask)
