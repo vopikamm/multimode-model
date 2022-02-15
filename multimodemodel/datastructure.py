@@ -68,7 +68,8 @@ class Parameters:
     H: np.ndarray = np.array([1000.0])  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
     a_h: float = 2000.0  # horizontal mixing coefficient in m^2 / s
-    gamma: np.ndarray = np.array([0.0])  # linear damping coefficient in 1 / s
+    gamma_h: np.ndarray = np.array([0.0])  # horizontal damping coefficient in 1 / s
+    gamma_v: np.ndarray = np.array([0.0])  # vertical damping coefficient in 1 / s
     free_slip: bool = True  # lateral boundary conditions
     no_slip: bool = False  # lateral boundary conditions
     coriolis_func: InitVar[Optional[CoriolisFunc]] = None

@@ -883,7 +883,7 @@ def linear_damping_u(state: State, params: Parameters) -> State:
         grid.shape[grid.dim_z],
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
-        params.gamma,
+        params.gamma_h,
     )
     return State(
         u=Variable(
@@ -903,7 +903,7 @@ def linear_damping_v(state: State, params: Parameters) -> State:
         grid.shape[grid.dim_z],
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
-        params.gamma,
+        params.gamma_h,
     )
     return State(
         v=Variable(
@@ -923,7 +923,7 @@ def linear_damping_eta(state: State, params: Parameters) -> State:
         grid.shape[grid.dim_z],
         state.variables["eta"].safe_data,
         state.variables["eta"].grid.mask,
-        params.gamma,
+        params.gamma_v,
     )
     return State(
         eta=Variable(
