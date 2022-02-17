@@ -31,10 +31,10 @@ nmodes = 25
 c_grid = StaggeredGrid.regular_lat_lon_c_grid(
     lon_start=-50.0,
     lon_end=0.0,
-    lat_start=-10.0,
-    lat_end=10.0,
+    lat_start=-10.125,
+    lat_end=10.125,
     nx=50 * 4 + 1,
-    ny=20 * 4 + 1,
+    ny=20 * 4 + 2,
     z=np.arange(nmodes),
 )
 
@@ -52,9 +52,9 @@ multimode_params = MultimodeParameters(
 )
 ds = multimode_params.as_dataset
 
-A = 1.33e-7
+A = 5.5e-5 * np.max(Nsq)
 H = abs(depth[0] - depth[-1])
-multimode_params.gamma_h = (A / ds.c ** 2 / H).values
+multimode_params.gamma_h = (A / ds.c ** 2).values
 multimode_params.gamma_v = (A / ds.c ** 2).values
 
 tau_x = np.empty(c_grid.u.shape)
@@ -107,18 +107,36 @@ def nonlinear_model(state, params):
     )
 
 
-def save_as_Dataset(state: State, params: MultimodeParameters):
-    """Save a state as xarray.DataSet."""
-    ds = state.variables["u"].as_dataarray.to_dataset(name="u_tilde")
-    ds["v_tilde"] = state.variables["v"].as_dataarray
-    ds["h_tilde"] = state.variables["eta"].as_dataarray
-    x = (["j", "i"], state.q.grid.x)
-    y = (["j", "i"], state.q.grid.y)
-    ds.assign_coords({"x": x, "y": y})
-    return ds
+def save_as_Dataset(state: State):
+    """Save State object as xarray.Dataset."""
+    return xr.Dataset(
+        data_vars=dict(
+            u_tilde=(
+                ["k", "j", "i", "time"],
+                np.expand_dims(state.variables["u"].safe_data, axis=-1),
+            ),
+            v_tilde=(
+                ["k", "j", "i", "time"],
+                np.expand_dims(state.variables["v"].safe_data, axis=-1),
+            ),
+            eta_tilde=(
+                ["k", "j", "i", "time"],
+                np.expand_dims(state.variables["eta"].safe_data, axis=-1),
+            ),
+        ),
+        coords=dict(
+            x_u=(["j", "i"], state.variables["u"].grid.x),
+            y_u=(["j", "i"], state.variables["u"].grid.y),
+            x_v=(["j", "i"], state.variables["v"].grid.x),
+            y_v=(["j", "i"], state.variables["v"].grid.y),
+            nmode=(("k",), state.variables["eta"].grid.z),
+            time=(("time",), [state.variables["u"].time]),
+        ),
+        attrs=dict(description="Saves dynamic variables with grid information."),
+    )
 
 
-time = 365 * 24 * 3600.0  # 1 year
+time = 2 * 365 * 24 * 3600.0  # 2 years
 step = c_grid.u.dx.min() / ds.c.values.max() / 10.0  # satisfying the CFL criterion
 t0 = np.datetime64("2000-01-01")  # starting date
 output_steps = 5
@@ -147,9 +165,9 @@ def run(rhs, params, step, time):
     tolerance = 10.0
     for i, next_state in enumerate(model_run):
         if i % (Nt // output_steps) == 0:
-            output.append(save_as_Dataset(next_state, params))
+            output.append(save_as_Dataset(next_state))
         if np.nanmax(abs(next_state.variables["u"].safe_data)) > tolerance:
-            output.append(save_as_Dataset(next_state, params))
+            output.append(save_as_Dataset(next_state))
             tolerance += 1.0
         if tolerance > 20.0:
             return xr.combine_by_coords(output)
@@ -158,18 +176,7 @@ def run(rhs, params, step, time):
 
 
 out_linear = run(linear_model, multimode_params, step, time)
-out_nonlinear = run(nonlinear_model, multimode_params, step, time)
+# out_nonlinear = run(nonlinear_model, multimode_params, step, time)
 
-out_linear = out_linear.rename({"z": "nmode"})
-out_nonlinear = out_nonlinear.rename({"z": "nmode"})
-
-out_linear["u"] = xr.dot(ds.psi, out_linear.u_tilde)
-out_linear["v"] = xr.dot(ds.psi, out_linear.v_tilde)
-out_linear["h"] = xr.dot(ds.psi, out_linear.h_tilde)
-
-out_nonlinear["u"] = xr.dot(ds.psi, out_nonlinear.u_tilde)
-out_nonlinear["v"] = xr.dot(ds.psi, out_nonlinear.v_tilde)
-out_nonlinear["h"] = xr.dot(ds.psi, out_nonlinear.h_tilde)
-
-np.save("linear.npy", out_linear.to_dict())
-np.save("nonlinear.npy", out_nonlinear.to_dict())
+ds.to_netcdf("linear.nc")
+# np.save("nonlinear.npy", out_nonlinear.to_dict())

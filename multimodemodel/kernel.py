@@ -494,9 +494,9 @@ def _advection_momentum_u(
                             + mask_u[m, jm1, i] * u[m, jm1, i]
                         )
                     )
-                    - mask_fac_R * u[m, j, i] * w_u_n_ij / H[n]
+                    + mask_fac_R * u[m, j, i] * w_u_n_ij / H[n]
                 )
-                + R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
+                - R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
             )
     return result
 
@@ -593,9 +593,9 @@ def _advection_momentum_v(
                             + mask_v[m, jm1, i] * v[m, jm1, i]
                         )
                     )
-                    - mask_fac_R * v[m, j, i] * w_v_n_ij / H[n]
+                    + mask_fac_R * v[m, j, i] * w_v_n_ij / H[n]
                 )
-                + R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
+                - R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
             )
     return result
 
@@ -665,9 +665,9 @@ def _advection_density(
                             + mask_eta[m, jm1, i] * eta[m, jm1, i]
                         )
                     )
-                    - mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i] / H[n]
+                    + mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i] / H[n]
                 )
-                + T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
+                - T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
             )
     return result
 
