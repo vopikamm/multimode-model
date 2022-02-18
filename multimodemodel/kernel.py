@@ -550,7 +550,7 @@ def _advection_momentum_v(
     for n in range(nk):
         u_q_n_ij = (
             dy_u[j, i] * mask_u[n, j, i] * u[n, j, i]
-            + dy_u[j, im1] * mask_u[n, j, im1] * u[n, j, im1]
+            + dy_u[jm1, i] * mask_u[n, jm1, i] * u[n, jm1, i]
         )
         u_q_n_ip1j = (
             dy_u[j, ip1] * mask_u[n, j, ip1] * u[n, j, ip1]
