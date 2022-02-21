@@ -139,7 +139,7 @@ def save_as_Dataset(state: State):
 time = 2 * 365 * 24 * 3600.0  # 2 years
 step = c_grid.u.dx.min() / ds.c.values.max() / 10.0  # satisfying the CFL criterion
 t0 = np.datetime64("2000-01-01")  # starting date
-output_steps = 5
+output_freq = 5 * 24 * 3600.0  # 5 day mean
 
 
 def run(rhs, params, step, time):
@@ -160,23 +160,40 @@ def run(rhs, params, step, time):
 
     Nt = time // step
 
+    u = np.zeros((1,) + c_grid.u.shape)
+    v = np.zeros((1,) + c_grid.v.shape)
+    eta = np.zeros((1,) + c_grid.eta.shape)
+    t = t0
+    n = 1
     output = []
-
-    tolerance = 10.0
+    tolerance = 100
     for i, next_state in enumerate(model_run):
-        if i % (Nt // output_steps) == 0:
-            output.append(save_as_Dataset(next_state))
-        if np.nanmax(abs(next_state.variables["u"].safe_data)) > tolerance:
-            output.append(save_as_Dataset(next_state))
-            tolerance += 1.0
-        if tolerance > 20.0:
+        u += next_state.variables["u"].safe_data
+        v += next_state.variables["v"].safe_data
+        eta += next_state.variables["eta"].safe_data
+        n += 1
+        if i % (Nt // (time // output_freq)) == 0:
+            t_mean = t + (next_state.u.time - t) / 2
+            output.append(
+                save_as_Dataset(
+                    State(
+                        u=Variable(np.squeeze(u / n), c_grid.u, t_mean),
+                        v=Variable(np.squeeze(v / n), c_grid.v, t_mean),
+                        eta=Variable(np.squeeze(eta / n), c_grid.eta, t_mean),
+                        q=Variable(None, c_grid.q, t_mean),
+                    )
+                )
+            )
+            t = t_mean
+            n = 0
+        if np.max(abs(next_state.variables["u"].safe_data)) >= tolerance:
             return xr.combine_by_coords(output)
 
     return xr.combine_by_coords(output)
 
 
 out_linear = run(linear_model, multimode_params, step, time)
-# out_nonlinear = run(nonlinear_model, multimode_params, step, time)
+out_linear.to_netcdf("linear_5d.nc")
 
-ds.to_netcdf("linear.nc")
-# np.save("nonlinear.npy", out_nonlinear.to_dict())
+out_nonlinear = run(nonlinear_model, multimode_params, step, time)
+out_nonlinear.to_netcdf("nonlinear_5d.nc")
