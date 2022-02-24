@@ -1,3 +1,4 @@
+# flake8: noqa
 """Test the behavior of the grid classes."""
 import numpy as np
 import pytest
@@ -87,6 +88,32 @@ class TestGrid:
         assert g1.shape[g1.dim_z] == nz
         assert g1.ndim == 3
 
+    def test_post_init_with_computed_grid_spacing(self):
+        """Test post_init."""
+        nx, ny, nz = 10, 5, 7
+        dx, dy, dz = 1.0, 2.0, 23.0
+        x, y = get_x_y(nx, ny, dx, dy)
+        z = np.arange(nz) * dz
+        mask = get_test_mask((nz, ny, nx))
+
+        g1 = Grid(x=x, y=y, z=z, mask=mask)
+        assert np.all(g1.dx == dx * np.ones(x.shape))
+        assert np.all(g1.dy == dy * np.ones(y.shape))
+        assert g1.shape == (nz, ny, nx)
+
+    def test_post_init_with_initialized_grid_spacing(self):
+        """Test post_init."""
+        nx, ny = 10, 5
+        dx, dy = 1.0, 2.0
+        x, y = get_x_y(nx, ny, dx, dy)
+        dx = np.ones_like(x) * 2.0
+        dy = np.ones_like(y) * 1.0
+        mask = get_test_mask(x.shape)
+
+        g1 = Grid(x=x, y=y, mask=mask, dx=dx, dy=dy)
+        assert (g1.dx == 2).all()
+        assert (g1.dy == 1).all()
+
     def test_grid_default_mask(self):
         """Test default grid setting."""
         nx, ny, nz = 10, 5, 5
@@ -121,6 +148,52 @@ class TestGrid:
         assert g2.y.shape == (ny, nx)
         assert g2.dx.shape == (ny, nx)
         assert g2.dy.shape == (ny, nx)
+
+    def test_comparison_of_identical_returns_true(self):
+        """Test comparison of references."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x, y)
+        g2 = g
+        assert g2 == g
+
+    def test_comparison_of_same_returns_true(self):
+        """Test comparison of references."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x=x, y=y)
+        g2 = Grid.cartesian(x=x, y=y)
+        assert g2 == g
+
+    def test_comparison_of_different_returns_false(self):
+        """Test comparison of references."""
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x=x, y=y)
+        g2 = Grid.cartesian(x=x, y=y + 1)
+        assert g2 != g
+
+    def test_comparison_with_other_returns_false(self):
+        nx, ny = 10, 20
+        dx, dy = 1.0, 0.5
+
+        x = np.arange(0, nx * dx, dx)
+        y = np.arange(0, ny * dy, dy)
+
+        g = Grid.cartesian(x=x, y=y)
+        assert g != 5
 
     def test_cartesian_grid(self):
         """Test construction of cartesian grid."""
@@ -206,12 +279,36 @@ class TestStaggeredGrid:
         """Set up spherical test grids."""
         dx = (xe - xs) / (nx - 1)
         dy = (ye - ys) / (ny - 1)
-        ll_grid = Grid.regular_lat_lon(xs, xe, ys, ye, nx, ny, z=z)
-        lr_grid = Grid.regular_lat_lon(xs + dx / 2, xe + dx / 2, ys, ye, nx, ny, z=z)
-        ur_grid = Grid.regular_lat_lon(
-            xs + dx / 2, xe + dx / 2, ys + dy / 2, ye + dy / 2, nx, ny, z=z
+        ll_grid = Grid.regular_lat_lon(
+            lon_start=xs, lon_end=xe, lat_start=ys, lat_end=ye, nx=nx, ny=ny, z=z
         )
-        ul_grid = Grid.regular_lat_lon(xs, xe, ys + dy / 2, ye + dy / 2, nx, ny, z=z)
+        lr_grid = Grid.regular_lat_lon(
+            lon_start=xs + dx / 2,
+            lon_end=xe + dx / 2,
+            lat_start=ys,
+            lat_end=ye,
+            nx=nx,
+            ny=ny,
+            z=z,
+        )
+        ur_grid = Grid.regular_lat_lon(
+            lon_start=xs + dx / 2,
+            lon_end=xe + dx / 2,
+            lat_start=ys + dy / 2,
+            lat_end=ye + dy / 2,
+            nx=nx,
+            ny=ny,
+            z=z,
+        )
+        ul_grid = Grid.regular_lat_lon(
+            lon_start=xs,
+            lon_end=xe,
+            lat_start=ys + dy / 2,
+            lat_end=ye + dy / 2,
+            nx=nx,
+            ny=ny,
+            z=z,
+        )
         return ll_grid, lr_grid, ur_grid, ul_grid
 
     def get_cartesian_staggered_grids(self, x, y, z, dx, dy):
@@ -221,6 +318,10 @@ class TestStaggeredGrid:
         ul_grid = Grid.cartesian(x, y + dy / 2, z)
         ur_grid = Grid.cartesian(x + dx / 2, y + dy / 2, z)
         return ll_grid, lr_grid, ur_grid, ul_grid
+
+    def test__grid_type_is_Grid(self):
+        """Test value of _stype attribute."""
+        assert StaggeredGrid._grid_type() is Grid
 
     @pytest.mark.parametrize(
         "shift",
@@ -240,9 +341,8 @@ class TestStaggeredGrid:
         q_grid, u_grid, v_grid, eta_grid = [
             grids[grid_order[shift].index(i)] for i in "quve"
         ]
-        staggered_grid = StaggeredGrid.cartesian_c_grid(
-            x=eta_grid.x[0, :], y=eta_grid.y[:, 0], shift=shift
-        )
+        kwargs = dict(x=eta_grid.x[0], y=eta_grid.y[:, 0])
+        staggered_grid = StaggeredGrid.cartesian_c_grid(shift=shift, **kwargs)
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
         assert np.all(staggered_grid.u.x == u_grid.x)
@@ -272,9 +372,8 @@ class TestStaggeredGrid:
         q_grid, u_grid, v_grid, eta_grid = [
             grids[grid_order[shift].index(i)] for i in "quve"
         ]
-        staggered_grid = StaggeredGrid.cartesian_c_grid(
-            x=eta_grid.x[0, :], y=eta_grid.y[:, 0], z=z, shift=shift
-        )
+        kwargs = dict(x=eta_grid.x[0, :], y=eta_grid.y[:, 0], z=z)
+        staggered_grid = StaggeredGrid.cartesian_c_grid(shift=shift, **kwargs)
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
         assert np.all(staggered_grid.q.z == q_grid.z)
@@ -304,15 +403,16 @@ class TestStaggeredGrid:
             grids[grid_order[shift].index(i)] for i in "quve"
         ]
 
-        staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
-            shift=shift,
+        args = dict(
             lon_start=eta_grid.x.min(),
             lon_end=eta_grid.x.max(),
             lat_start=eta_grid.y.min(),
             lat_end=eta_grid.y.max(),
-            nx=eta_grid.shape[eta_grid.dim_x],  # type: ignore
-            ny=eta_grid.shape[eta_grid.dim_y],  # type: ignore
+            nx=eta_grid.shape[eta_grid.dim_x],
+            ny=eta_grid.shape[eta_grid.dim_y],
         )
+
+        staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(shift=shift, **args)
 
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
@@ -341,16 +441,17 @@ class TestStaggeredGrid:
             grids[grid_order[shift].index(i)] for i in "quve"
         ]
 
-        staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(
-            shift=shift,
+        args = dict(
             lon_start=eta_grid.x.min(),
             lon_end=eta_grid.x.max(),
             lat_start=eta_grid.y.min(),
             lat_end=eta_grid.y.max(),
-            nx=eta_grid.shape[eta_grid.dim_x],  # type: ignore
-            ny=eta_grid.shape[eta_grid.dim_y],  # type: ignore
             z=z,
+            nx=eta_grid.shape[eta_grid.dim_x],
+            ny=eta_grid.shape[eta_grid.dim_y],
         )
+
+        staggered_grid = StaggeredGrid.regular_lat_lon_c_grid(shift=shift, **args)
 
         assert np.all(staggered_grid.q.x == q_grid.x)
         assert np.all(staggered_grid.q.y == q_grid.y)
@@ -417,3 +518,22 @@ class TestStaggeredGrid:
         assert np.all(staggered_grid.v.mask == v_mask)
         assert np.all(staggered_grid.q.mask == q_mask)
         assert np.all(staggered_grid.eta.mask == mask)
+
+    def test_comparison_of_identical_returns_true(self):
+        grids = self.get_regular_staggered_grids()
+        grids2 = grids
+        assert grids == grids2
+
+    def test_comparison_of_same_returns_true(self):
+        grids = self.get_regular_staggered_grids()
+        grids2 = self.get_regular_staggered_grids()
+        assert grids == grids2
+
+    def test_comparison_of_different_returns_false(self):
+        grids = self.get_regular_staggered_grids(ys=1)
+        grids2 = self.get_regular_staggered_grids(ys=2)
+        assert grids != grids2
+
+    def test_comparison_of_wrong_type_returns_false(self):
+        grids = self.get_regular_staggered_grids()
+        assert grids != 5

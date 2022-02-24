@@ -5,28 +5,50 @@ and their associated grids.
 """
 
 import numpy as np
-from dataclasses import dataclass, field, asdict, InitVar
+from dataclasses import dataclass, field, fields
+from functools import lru_cache
+from typing import Union, Type, Optional, Mapping, Hashable, Any
+from types import ModuleType
+
+from .config import config
+from multimodemodel.api import (
+    DomainBase,
+    ParameterBase,
+    StateBase,
+    StateDequeBase,
+    VariableBase,
+    Array,
+    MergeVisitorBase,
+    SplitVisitorBase,
+)
+from .jit import sum_arr
 from .grid import Grid, StaggeredGrid
-from .typing import Array
 from .coriolis import CoriolisFunc
-from typing import Dict, Optional, Mapping, Hashable, Any
+
+xarray: Union[ModuleType, Type["xr_mockup"]]
 
 try:
-    import xarray
+    import xarray as xr
 
     has_xarray = True
+    xarray = xr
+
 except ModuleNotFoundError:  # pragma: no cover
     has_xarray = False
 
-    # for type hinting
-    class xarray:  # type: ignore
+    class xr_mockup:
         """Necessary for type hinting to work."""
 
-        DataArray = None
+        class DataArray:
+            """Necessary for type hinting to work."""
+
+            ...
+
+    xarray = xr_mockup
 
 
-@dataclass
-class Parameters:
+@dataclass(frozen=True)
+class Parameter(ParameterBase):
     """Class to organise all parameters.
 
     The parameters may be constant in space and/or time.
@@ -49,35 +71,44 @@ class Parameters:
       parameter depends on space, such as the Coriolis parameter. Only
       required if such a parameter is part of the system to solve.
 
-
     Attributes
     ----------
-    f: Dict[str, numpy.ndarray]
+    f: dict[str, numpy.ndarray]
       Mapping of the subgrid names (e.g. "u", "v", "eta") to the coriolis
       parameter on those grids
     """
 
-    g: float = 9.81  #: gravitational acceleration
-    H: float = 1000.0  #: reference depth
-    rho_0: float = 1024.0  #: reference density
-    coriolis_func: InitVar[
-        Optional[CoriolisFunc]
-    ] = None  #: function used to compute the coriolis parameter
-    on_grid: InitVar[
-        Optional[StaggeredGrid]
-    ] = None  #: StaggeredGrid object providing the necessary grid information if a parameter depends on space
-    _f: Dict[str, Array] = field(init=False)
+    g: float = 9.81  # gravitational force m/s^2
+    H: float = 1000.0  # reference depth in m
+    rho_0: float = 1024.0  # reference density in kg / m^3
+    _f: dict[str, Array] = field(init=False)
+    _id: int = field(init=False)
 
-    def __post_init__(
+    def __init__(
         self,
-        coriolis_func: Optional[CoriolisFunc],
-        on_grid: Optional[StaggeredGrid],
+        g: float = 9.80665,
+        H: float = 1_000.0,
+        rho_0: float = 1024.0,
+        coriolis_func: Optional[CoriolisFunc] = None,
+        on_grid: Optional[StaggeredGrid] = None,
+        f: Optional[dict[str, Array]] = None,
     ):
-        """Initialize derived fields."""
-        self._f = self._compute_f(coriolis_func, on_grid)
+        """Initialize Parameter object."""
+        super().__setattr__("_id", id(self))
+        super().__setattr__("g", g)
+        super().__setattr__("H", H)
+        super().__setattr__("rho_0", rho_0)
+        if f is None:
+            super().__setattr__("_f", self._compute_f(coriolis_func, on_grid))
+        else:
+            super().__setattr__("_f", f)
+
+    def __hash__(self):
+        """Return id of instance as hash."""
+        return self._id
 
     @property
-    def f(self) -> Dict[str, Array]:
+    def f(self) -> dict[str, Array]:
         """Getter of the dictionary holding the Coriolis parameter.
 
         Raises
@@ -93,9 +124,65 @@ class Parameters:
             )
         return self._f
 
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def split(self, splitter: SplitVisitorBase[np.ndarray]):
+        """Split Parameter's spatially dependent data."""
+        data = None
+        try:
+            data = self.f
+        except RuntimeError:
+            return splitter.parts * (self,)
+
+        # Split array for each key, creating a new dictionary with the same keys
+        # but holding lists of arrays
+        new = {key: splitter.split_array(data[key]) for key in data}
+
+        # Create list of dictionaries each holding just one part of splitted arrays
+        out = [{key: new[key][i] for key in new} for i in range(splitter.parts)]
+
+        return tuple(self._new_with_data(self, o) for o in out)
+
+    @classmethod
+    def _new_with_data(cls, template, data: dict[str, Array]):
+        """Create instance of this class.
+
+        Scalar parameters are copied from template.
+        Dictionary of spatially varying parameters is set by data.
+
+        Arguments
+        ---------
+        template: Parameter
+            Some parameter object to copy scalar parameters from.
+        data: dict[str, Array]
+            Spatially varying parameters
+        """
+        # collect constant parameters
+        kwargs = {
+            f.name: getattr(template, f.name)
+            for f in fields(template)
+            if f.name not in ("_f", "_id")
+        }
+        kwargs["f"] = data
+        return cls(**kwargs)
+
+    @classmethod
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def merge(cls, others: tuple["Parameter"], merger: MergeVisitorBase):
+        """Merge Parameter's spatially varying data."""
+        data = {}
+        try:
+            data = {
+                key: merger.merge_array(tuple(o.f[key] for o in others))
+                for key in others[0].f
+            }
+        except RuntimeError:
+            pass
+
+        return cls._new_with_data(others[0], data)
+
     def _compute_f(
         self, coriolis_func: Optional[CoriolisFunc], grids: Optional[StaggeredGrid]
-    ) -> Dict[str, Array]:
+    ) -> dict[str, Array]:
         """Compute the coriolis parameter for all subgrids.
 
         This method needs to be called before a rotating system
@@ -113,12 +200,25 @@ class Parameters:
         """
         if coriolis_func is None or grids is None:
             return {}
-        _f = {name: coriolis_func(grid.y) for name, grid in asdict(grids).items()}
+        _f = {name: coriolis_func(grid.y) for name, grid in grids.items()}
         return _f
 
+    def __eq__(self, other: Any) -> bool:
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, Parameter):
+            return NotImplemented
+        if self is other:
+            return True
+        return all(
+            all((self._f[v] == other._f[v]).all() for v in self._f)
+            if f.name == "_f"
+            else getattr(self, f.name) == getattr(other, f.name)
+            for f in fields(self)
+            if f.name != "_id"
+        )
 
-@dataclass
-class Variable:
+
+class Variable(VariableBase[np.ndarray, Grid]):
     """Variable class consisting of the data, a Grid instance and a time stamp.
 
     A Variable object contains the data for a single time slice of a variable as a Array,
@@ -145,18 +245,7 @@ class Variable:
       Raised if `data.shape` does not match `grid.shape`.
     """
 
-    data: Optional[Array]
-    grid: Grid
-    time: np.datetime64
-
-    def __post_init__(self):
-        """Validate."""
-        if self.data is not None:
-            if self.data.shape != self.grid.shape:
-                raise ValueError(
-                    "Shape of data and grid missmatch. "
-                    f"Got {self.data.shape} and {self.grid.shape}"
-                )
+    _gtype = Grid
 
     @property
     def as_dataarray(self) -> xarray.DataArray:  # type: ignore
@@ -220,38 +309,47 @@ class Variable:
             data = self.data.copy()
         return self.__class__(data, self.grid, self.time.copy())
 
-    def __add__(self, other):
-        """Add two variables.
+    def _add_data(self, other_data: Optional[Array]) -> Optional[Array]:
+        if self.data is None and other_data is None:
+            new_data = None
+        elif self.data is None:
+            new_data = other_data.copy()  # type: ignore
+        elif other_data is None:
+            new_data = self.data.copy()
+        else:
+            new_data = sum_arr((self.data, other_data))
+        return new_data
 
-        The timestamp of the sum of two variables is set to their mean.
-        `None` is treated as an array of zeros of correct shape.
-        """
-        if (
-            # one is subclass of the other
-            (isinstance(self, type(other)) or isinstance(other, type(self)))
-            and self.grid is not other.grid
-        ):
-            raise ValueError("Try to add variables defined on different grids.")
-
-        try:
-            if self.data is None and other.data is None:
-                new_data = None
-            elif self.data is None:
-                new_data = other.data.copy()  # type: ignore
-            elif other.data is None:
-                new_data = self.data.copy()
-            else:
-                new_data = self.data + other.data
-        except (AttributeError, TypeError):
+    def __eq__(self, other):
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, Variable):
             return NotImplemented
+        if self is other:
+            return True
+        if (
+            self.data is other.data and self.grid == other.grid
+        ):  # captures both data attributes are None
+            return True
+        return all(
+            (self.safe_data == other.safe_data).all()
+            if f == "data"
+            else getattr(self, f) == getattr(other, f)
+            for f in self.__slots__
+        )
 
-        new_time = self.time + (other.time - self.time) / 2
+    def _validate_init(self):
+        """Validate after initialization."""
+        if self.data is not None:
+            if self.data.shape != self.grid.shape:
+                raise ValueError(
+                    f"Shape of data and grid missmatch. Got {self.data.shape} and {self.grid.shape}"
+                )
 
-        return self.__class__(data=new_data, grid=self.grid, time=new_time)
 
+class State(StateBase[Variable]):
+    """State class.
 
-class State:
-    """Combines the prognostic variables into a single object.
+    Combines the prognostic variables into a single object.
 
     The variables are passed as keyword arguments to :py:meth:`__init__`
     and stored in the dict :py:attr:`variables`.
@@ -273,41 +371,23 @@ class State:
       Raised if a argument is not of type :py:class:`.Variable`.
     """
 
-    def __init__(self, **kwargs):
-        """Create State object."""
-        self.variables = dict()
+    _vtype = Variable
 
-        for k, v in kwargs.items():
-            if type(v) is not Variable:
-                raise ValueError("Keyword arguments must be of type Variable.")
-            else:
-                self.variables[k] = v
-                self.__setattr__(k, self.variables[k])
 
-    def __add__(self, other):
-        """Add all variables of two states.
+class StateDeque(StateDequeBase[State]):
+    """Deque of State objects."""
 
-        If one of the state object is missing a variable, this variable is copied
-        from the other state object. This implies, that the time stamp of
-        this particular variable will remain unchanged.
+    _stype = State
 
-        Returns
-        -------
-        State
-          Sum of two states.
-        """
-        if not isinstance(other, type(self)) or not isinstance(self, type(other)):
-            return NotImplemented  # pragma: no cover
-        try:
-            sum = dict()
-            for k in self.variables:
-                if k in other.variables:
-                    sum[k] = self.variables[k] + other.variables[k]
-                else:
-                    sum[k] = self.variables[k].copy()
-            for k in other.variables:
-                if k not in self.variables:
-                    sum[k] = other.variables[k].copy()
-            return self.__class__(**sum)
-        except (AttributeError, TypeError):  # pragma: no cover
-            return NotImplemented
+
+class Domain(DomainBase[State, Parameter]):
+    """Domain classes.
+
+    Domain objects keep references to the state of the domain, the
+    history of the state (i.e. the previous evaluations of the rhs function),
+    and the parameters necessary to compute the rhs function.
+    """
+
+    _stype = State
+    _htype = StateDeque
+    _ptype = Parameter

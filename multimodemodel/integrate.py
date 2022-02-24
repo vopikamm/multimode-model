@@ -2,15 +2,18 @@
 
 To be used optional in integrate function.
 """
+from typing import Callable, Iterator
+from copy import copy
 
-import sys
-from collections import deque
-import numpy as np
-from dataclasses import dataclass, field
-from .datastructure import Variable, Parameters, State
-from typing import Callable, Generator
-from itertools import starmap
-from operator import mul
+from .api import (
+    TimeSteppingFunctionBase,
+    RHSFunction,
+    SolverBase,
+    BorderDirection,
+)
+from .border import Border, BorderSplitter, RegularSplitMerger
+from .util import add_time
+from .datastructure import Domain, StateDeque, Parameter, State
 from .kernel import (
     pressure_gradient_i,
     pressure_gradient_j,
@@ -18,76 +21,19 @@ from .kernel import (
     coriolis_i,
     divergence_i,
     divergence_j,
+    linear_combination,
+    sum_states,
 )
-
-if sys.version_info < (3, 9):  # pragma: no cover
-    # See https://docs.python.org/3/library/typing.html#typing.Deque
-    from typing import Deque
-
-    StateDeque = Deque[State]
-else:
-    StateDeque = deque[State]
 
 
 StateIncrement = State
-
-TimeSteppingFunction = Callable[[StateDeque, float], StateIncrement]
-
-
-@dataclass
-class TimeSteppingScheme:
-    """Class to wrap time stepping functions.
-
-    This class adds `n_rhs` and `n_states` attributes to a time stepping function.
-    It also implements the `__call__` method, which passes the args to the time
-    stepping function.
-
-    Parameters
-    ----------
-    _func: TimeSteppingFunction
-      Time stepping function to wrap
-    n_rhs: int
-      Number of previous rhs evaluations required by the scheme
-    n_state: int
-      Number of previous states required by the scheme
-    """
-
-    _func: TimeSteppingFunction
-    n_rhs: int
-    n_state: int
-    __name__: str = field(init=False)
-
-    def __post_init__(self):
-        """Set derived attributes."""
-        self.__name__ = self._func.__name__
-        self.__doc__ = self._func.__doc__
-
-    def __call__(self, rhs: StateDeque, step: float) -> StateIncrement:
-        """Pass arguments to wrapped time stepping function and return result."""
-        return self._func(rhs, step)
-
-
-def seconds_to_timedelta64(dt: float) -> np.timedelta64:
-    """Convert timestep in seconds to a numpy timedelta64 object.
-
-    `dt` will be rounded to an integer at nanosecond precision.
-
-    Parameters
-    ----------
-    dt : float
-        Time span in seconds.
-
-    Returns
-    -------
-    numpy.timedelta64
-        Timedelta object with nanosecond precision.
-    """
-    return np.timedelta64(round(1e9 * dt), "ns")
+CallableTSFunc = Callable[[StateDeque, float], StateIncrement]
+TimeSteppingFunction = TimeSteppingFunctionBase[State, StateDeque]
 
 
 def time_stepping_function(
     n_rhs: int, n_state: int
-) -> Callable[[TimeSteppingFunction], TimeSteppingScheme]:
+) -> Callable[[CallableTSFunc], TimeSteppingFunction]:
     """Decorate function by adding `n_rhs` and `n_state` attributes.
 
     Turns a :py:class:`TimeSteppingFunction` into a instance of :py:class:`TimeSteppingScheme`.
@@ -95,8 +41,10 @@ def time_stepping_function(
     if n_state < 1 or n_rhs < 1:
         raise ValueError("n_rhs and n_state both needs to be larger than 0.")
 
-    def decorator(func: TimeSteppingFunction) -> TimeSteppingScheme:
-        return TimeSteppingScheme(func, n_rhs, n_state)
+    def decorator(func: CallableTSFunc) -> TimeSteppingFunction:
+        ts_func_obj = TimeSteppingFunction(func, n_state, n_rhs)
+
+        return ts_func_obj
 
     return decorator
 
@@ -129,11 +77,11 @@ def euler_forward(rhs: StateDeque, step: float) -> StateIncrement:
         The increment of the state from one time step to the next, i.e. next_state - current_state.
     """
     inc = {
-        k: Variable(step * v.safe_data, v.grid, v.time)
+        k: v.__class__(linear_combination((step,), (v.safe_data,)), v.grid, v.time)
         for k, v in rhs[-1].variables.items()
     }
 
-    return StateIncrement(**inc)
+    return rhs[-1].__class__(**inc)
 
 
 @time_stepping_function(n_rhs=2, n_state=1)
@@ -166,20 +114,21 @@ def adams_bashforth2(rhs: StateDeque, step: float) -> StateIncrement:
     if len(rhs) < 2:
         return euler_forward(rhs, step)
 
-    dt = seconds_to_timedelta64(step)
+    fac = tuple((step / 2) * n for n in (3.0, -1.0))
 
-    coef = (1.5, -0.5)
     inc = {
-        k: Variable(
-            step
-            * sum(starmap(mul, zip(coef, (r.variables[k].safe_data for r in reversed(rhs))))),  # type: ignore
+        k: v.__class__(
+            linear_combination(
+                fac,
+                (rhs[-1].variables[k].safe_data, rhs[-2].variables[k].safe_data),
+            ),
             rhs[-1].variables[k].grid,
-            rhs[-1].variables[k].time + dt / 2,
+            add_time(rhs[-1].variables[k].time, step / 2),
         )
-        for k in rhs[-1].variables.keys()
+        for k, v in rhs[-1].variables.items()
     }
 
-    return StateIncrement(**inc)
+    return rhs[-1].__class__(**inc)
 
 
 @time_stepping_function(n_rhs=3, n_state=1)
@@ -212,20 +161,25 @@ def adams_bashforth3(rhs: StateDeque, step: float) -> StateIncrement:
     if len(rhs) < 3:
         return adams_bashforth2(rhs, step)
 
-    dt = seconds_to_timedelta64(step)
+    fac = tuple((step / 12) * n for n in (23.0, -16.0, 5.0))
 
-    coef = (23.0 / 12.0, -16.0 / 12.0, 5.0 / 12.0)
     inc = {
-        k: Variable(
-            step
-            * sum(starmap(mul, zip(coef, (r.variables[k].safe_data for r in reversed(rhs))))),  # type: ignore
+        k: v.__class__(
+            linear_combination(
+                fac,
+                (
+                    rhs[-1].variables[k].safe_data,
+                    rhs[-2].variables[k].safe_data,
+                    rhs[-3].variables[k].safe_data,
+                ),
+            ),
             rhs[-1].variables[k].grid,
-            rhs[-1].variables[k].time + dt / 2,
+            add_time(rhs[-1].variables[k].time, step / 2),
         )
-        for k in rhs[-1].variables.keys()
+        for k, v in rhs[-1].variables.items()
     }
 
-    return StateIncrement(**inc)
+    return rhs[-1].__class__(**inc)
 
 
 """
@@ -233,7 +187,7 @@ Outmost functions defining the problem and what output should be computed.
 """
 
 
-def linearised_SWE(state: State, params: Parameters) -> State:
+def linearised_SWE(state: State, params: Parameter) -> State:
     """Compute RHS of the linearised shallow water equations.
 
     The equations are evaluated on a C-grid. Output is a state object
@@ -267,14 +221,29 @@ def linearised_SWE(state: State, params: Parameters) -> State:
     return RHS_state
 
 
+def non_rotating_swe(state, params):
+    """Compute RHS of the linearised shallow water equations without rotation.
+
+    The equations are evaluated on a C-grid. Output is a state type variable
+    forming the right-hand-side needed for any time stepping scheme.
+    """
+    rhs = (
+        pressure_gradient_i(state, params)
+        + pressure_gradient_j(state, params)
+        + divergence_i(state, params)
+        + divergence_j(state, params)
+    )
+    return rhs
+
+
 def integrate(
     initial_state: State,
-    params: Parameters,
-    RHS: Callable[[State, Parameters], State],
-    scheme: TimeSteppingScheme = adams_bashforth3,
+    params: Parameter,
+    RHS: RHSFunction[State, Parameter],
+    scheme: TimeSteppingFunction = adams_bashforth3,
     step: float = 1.0,  # time stepping in s
     time: float = 3600.0,  # end time
-) -> Generator[State, None, None]:
+) -> Iterator[State]:
     """Integrate a system of differential equations.
 
     Generator which can be iterated over to produce new time steps.
@@ -308,11 +277,10 @@ def integrate(
     ...    pass
     """
     N = int(time // step)
-    dt = seconds_to_timedelta64(step)
 
     try:
-        state = deque([initial_state], maxlen=scheme.n_state)
-        rhs: StateDeque = deque([], maxlen=scheme.n_rhs)
+        state = StateDeque([initial_state], maxlen=scheme.n_state)
+        rhs = StateDeque([], maxlen=scheme.n_rhs)
     except AttributeError:
         raise AttributeError(
             f"Either n_state or n_rhs attribute missing for {scheme.__name__}. "
@@ -327,6 +295,116 @@ def integrate(
         state.append(state[-1] + scheme(rhs, step))
 
         for k, v in state[-1].variables.items():
-            v.time = old_state.variables[k].time + dt
+            v.time = add_time(old_state.variables[k].time, step)
 
         yield state[-1]
+
+
+class Solver(SolverBase[Domain]):
+    """Implement Solver class from API for use with any provided function."""
+
+    def integrate(self, domain: Domain) -> Domain:
+        """Integrate set of PDEs on domain.
+
+        Arguments
+        ---------
+        domain: Domain
+            Domain to integrate.
+
+        Returns
+        -------
+        Domain object at the next time step.
+        """
+        inc = self._compute_increment(domain.state, domain.parameter)
+        new = self._integrate(domain, inc)
+        return new
+
+    def get_border_width(self) -> int:
+        """Retuns fixed border width."""
+        return 2
+
+    def integrate_border(  # type: ignore[override]
+        self,
+        domain: Domain,
+        border: Border,
+        neighbor_border: Border,
+        direction: bool,
+    ) -> Border:
+        """Integrate set of PDEs on a border of a domian.
+
+        Arguments
+        ---------
+        domain: Domain
+            Domain of which the border is part of.
+        border: Border
+            The border to integrate.
+        neighbor_border: Border
+            Border of the neighboring domain.
+        direction: bool
+            True of border is the right border of the domain,
+            False if it is the left border.
+
+        Returns
+        -------
+        Border object at the next time step.
+        """
+        b_w = border.get_width()
+        dim = border.dim
+        assert domain.state.u.grid.x.shape[dim] >= 2 * b_w
+
+        if direction:
+            halo_slice = BorderDirection.RIGHT_HALO(b_w)  # type: ignore
+        else:
+            halo_slice = BorderDirection.LEFT_HALO(b_w)  # type: ignore
+
+        halo_splitter = BorderSplitter(slice=halo_slice, axis=dim)
+        # parts argument has no effect on merging logic
+        list_merger = RegularSplitMerger(parts=0, dim=(dim,))
+        area_of_interest_splitter = BorderSplitter(
+            slice=BorderDirection.CENTER(b_w, b_w), axis=dim  # type: ignore
+        )
+
+        dom = domain.state.split(halo_splitter)[0]
+        dom_param = domain.parameter.split(halo_splitter)[0]
+
+        state_list = [dom, border.state, neighbor_border.state]
+        param_list = [dom_param, border.parameter, neighbor_border.parameter]
+        if not direction:
+            state_list.reverse()
+            param_list.reverse()
+        merged_state = dom.merge(state_list, list_merger)
+        merged_parameters = dom_param.merge(tuple(param_list), list_merger)
+        inc = self._compute_increment(merged_state, merged_parameters)
+        new = self._integrate(
+            border,
+            inc.split(area_of_interest_splitter)[0],
+        )
+
+        result = border.from_domain(
+            new,
+            width=border.get_width(),
+            dim=dim,
+        )
+        result.id = domain.id
+        return result
+
+    def _compute_increment(self, state: State, parameter: Parameter) -> State:
+        inc = self.rhs(state, parameter)
+        return inc
+
+    def _integrate(self, domain: Domain, inc: State) -> Domain:
+        # shallow copy to avoid side effects
+        history = copy(domain.history)
+        history.append(inc)
+        new = sum_states(
+            (domain.state, self.ts_schema(history, self.step)), keep_time=0
+        )
+        # increment time
+        new._increment_time(self.step)
+        return Domain(
+            state=new,
+            history=history,
+            parameter=domain.parameter,
+            iteration=domain.increment_iteration(),
+            id=domain.id,
+        )

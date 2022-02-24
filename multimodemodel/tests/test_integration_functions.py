@@ -1,15 +1,27 @@
 """Test the behavior of the term functions."""
-from multimodemodel.grid import StaggeredGrid
-from multimodemodel.coriolis import f_constant
-from multimodemodel.integrate import seconds_to_timedelta64
+import pytest
 import numpy as np
 from collections import deque
-import multimodemodel as swe
-from typing import Tuple
-import pytest
+from multimodemodel import (
+    Grid,
+    StaggeredGrid,
+    Variable,
+    State,
+    StateDeque,
+    Parameter,
+    linearised_SWE,
+    euler_forward,
+    adams_bashforth2,
+    adams_bashforth3,
+    integrate,
+    f_constant,
+    time_stepping_function,
+)
+
+from multimodemodel.util import add_time
 
 
-def get_x_y(nx: int, ny: int, dx: float, dy: float) -> Tuple[np.ndarray, np.ndarray]:
+def get_x_y(nx: int, ny: int, dx: float, dy: float) -> tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
     x = np.arange(nx) * dx
     y = np.arange(ny) * dy
@@ -51,14 +63,14 @@ class TestRHS:
             mask=mask_eta,  # type: ignore
         )
 
-        eta = x * y * c_grid.eta.mask
+        eta = 1.0 * x * y * c_grid.eta.mask
         u = 2.0 * x * y * c_grid.u.mask
         v = 3.0 * x * y * c_grid.v.mask
 
-        s = swe.State(
-            u=swe.Variable(u, c_grid.u, t),
-            v=swe.Variable(v, c_grid.v, t),
-            eta=swe.Variable(eta, c_grid.eta, t),
+        s = State(
+            u=Variable(u, c_grid.u, t),
+            v=Variable(v, c_grid.v, t),
+            eta=Variable(eta, c_grid.eta, t),
         )
 
         d_u = c_grid.u.mask * (
@@ -89,9 +101,9 @@ class TestRHS:
             * ((np.roll(u, -1, axis=-1) - u) / dx + (np.roll(v, -1, axis=-2) - v) / dy)
         )
 
-        params = swe.Parameters(H=H, g=g, coriolis_func=f_constant(f0), on_grid=c_grid)
+        params = Parameter(H=H, g=g, coriolis_func=f_constant(f0), on_grid=c_grid)
 
-        ds = swe.linearised_SWE(s, params)
+        ds = linearised_SWE(s, params)
         assert np.all(ds.variables["u"].data == d_u)
         assert np.all(ds.variables["v"].data == d_v)
         assert np.all(ds.variables["eta"].data == d_eta)
@@ -106,15 +118,15 @@ class TestIntegration:
             ValueError, match="n_rhs and n_state both needs to be larger than 0."
         ):
 
-            @swe.time_stepping_function(0, 1)  # type: ignore
+            @time_stepping_function(0, 1)  # type: ignore
             def test():  # pragma: no cover
-                pass
+                ...
 
         with pytest.raises(
             ValueError, match="n_rhs and n_state both needs to be larger than 0."
         ):
 
-            @swe.time_stepping_function(1, 0)  # type: ignore
+            @time_stepping_function(1, 0)  # type: ignore
             def test2():  # pragma: no cover
                 pass
 
@@ -127,22 +139,21 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
-        c_grid = StaggeredGrid.cartesian_c_grid(
-            x=x[0, :],
-            y=y[:, 0],
-            mask=mask,  # type: ignore
+        kwargs = dict(x=x[0], y=y[:, 0], mask=mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+
+        ds = State(
+            u=Variable(2 * np.ones(x.shape), c_grid.u, t),
+            v=Variable(3 * np.ones(x.shape), c_grid.v, t),
+            eta=Variable(1 * np.ones(x.shape), c_grid.eta, t),
         )
 
-        ds = swe.State(
-            u=swe.Variable(2 * np.ones(x.shape), c_grid.u, t),
-            v=swe.Variable(3 * np.ones(x.shape), c_grid.v, t),
-            eta=swe.Variable(1 * np.ones(x.shape), c_grid.eta, t),
+        ds_test = euler_forward(StateDeque([ds], maxlen=1), dt)
+        assert np.all(ds_test.variables["u"].data == dt * ds.variables["u"].safe_data)
+        assert np.all(ds_test.variables["v"].data == dt * ds.variables["v"].safe_data)
+        assert np.all(
+            ds_test.variables["eta"].data == dt * ds.variables["eta"].safe_data
         )
-
-        ds_test = swe.euler_forward(deque([ds], maxlen=1), dt)
-        assert np.all(ds_test.variables["u"].data == dt * ds.variables["u"].data)
-        assert np.all(ds_test.variables["v"].data == dt * ds.variables["v"].data)
-        assert np.all(ds_test.variables["eta"].data == dt * ds.variables["eta"].data)
         assert np.all(ds_test.variables["eta"].time == t)
 
     def test_adams_bashforth2_euler_forward_dropin(self):
@@ -154,19 +165,19 @@ class TestIntegration:
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        grid = swe.Grid(x=x, y=y, mask=mask)
+        grid = Grid(x=x, y=y, mask=mask)
 
-        state1 = swe.State(
-            u=swe.Variable(np.ones(x.shape), grid, t),
-            v=swe.Variable(np.ones(x.shape), grid, t),
-            eta=swe.Variable(np.ones(x.shape), grid, t),
+        state1 = State(
+            u=Variable(np.ones(x.shape), grid, t),
+            v=Variable(np.ones(x.shape), grid, t),
+            eta=Variable(np.ones(x.shape), grid, t),
         )
 
         d_u = dt * np.ones(x.shape)
 
         rhs = deque([state1], maxlen=3)
 
-        d_state = swe.adams_bashforth2(rhs, step=dt)  # type: ignore
+        d_state = adams_bashforth2(rhs, step=dt)  # type: ignore
 
         assert np.all(d_state.variables["u"].data == d_u)
         assert np.all(d_state.variables["v"].data == d_u)
@@ -184,46 +195,49 @@ class TestIntegration:
         dx, dy = 1, 2
         ni, nj = 10, 5
         t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + seconds_to_timedelta64(dt)
-        t3 = t2 + seconds_to_timedelta64(dt / 2)
+        t2 = add_time(t1, dt)
+        t3 = add_time(t2, dt / 2)
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(
-            x=x[0, :],
-            y=y[:, 0],
-            mask=mask,  # type: ignore
+        kwargs = dict(x=x[0], y=y[:, 0], mask=mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+
+        ds1 = State(
+            u=Variable(1 * np.ones(x.shape), c_grid.u, t1),
+            v=Variable(2 * np.ones(x.shape), c_grid.v, t1),
+            eta=Variable(3 * np.ones(x.shape), c_grid.eta, t1),
+        )
+        ds2 = State(
+            u=Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
+            v=Variable(5 * np.ones(x.shape), c_grid.v, t2),
+            eta=Variable(6 * np.ones(x.shape), c_grid.eta, t2),
         )
 
-        ds1 = swe.State(
-            u=swe.Variable(1 * np.ones(x.shape), c_grid.u, t1),
-            v=swe.Variable(2 * np.ones(x.shape), c_grid.v, t1),
-            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta, t1),
-        )
-        ds2 = swe.State(
-            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
-            v=swe.Variable(5 * np.ones(x.shape), c_grid.v, t2),
-            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta, t2),
-        )
-
-        ds3 = swe.State(
-            u=swe.Variable(
+        ds3 = State(
+            u=Variable(
                 dt
-                * (3 / 2 * ds2.variables["u"].data - 1 / 2 * ds1.variables["u"].data),
+                * (
+                    3 / 2 * ds2.variables["u"].safe_data
+                    - 1 / 2 * ds1.variables["u"].safe_data
+                ),
                 c_grid.u,
                 t3,
             ),
-            v=swe.Variable(
+            v=Variable(
                 dt
-                * (3 / 2 * ds2.variables["v"].data - 1 / 2 * ds1.variables["v"].data),
+                * (
+                    3 / 2 * ds2.variables["v"].safe_data
+                    - 1 / 2 * ds1.variables["v"].safe_data
+                ),
                 c_grid.v,
                 t3,
             ),
-            eta=swe.Variable(
+            eta=Variable(
                 dt
                 * (
-                    3 / 2 * ds2.variables["eta"].data
-                    - 1 / 2 * ds1.variables["eta"].data
+                    3 / 2 * ds2.variables["eta"].safe_data
+                    - 1 / 2 * ds1.variables["eta"].safe_data
                 ),
                 c_grid.eta,
                 t3,
@@ -232,7 +246,7 @@ class TestIntegration:
 
         rhs = deque([ds1, ds2], maxlen=3)
 
-        d_state = swe.adams_bashforth2(rhs, step=dt)  # type: ignore
+        d_state = adams_bashforth2(rhs, step=dt)  # type: ignore
 
         assert np.all(d_state.variables["u"].data == ds3.variables["u"].data)
         assert np.all(d_state.variables["v"].data == ds3.variables["v"].data)
@@ -250,37 +264,34 @@ class TestIntegration:
         dx, dy = 1, 2
         ni, nj = 10, 5
         t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + seconds_to_timedelta64(dt)
-        t3 = t2 + seconds_to_timedelta64(dt)
-        t4 = t3 + seconds_to_timedelta64(dt / 2)
+        t2 = add_time(t1, dt)
+        t3 = add_time(t2, dt)
+        t4 = add_time(t3, dt / 2)
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(
-            x=x[0, :],
-            y=y[:, 0],
-            mask=mask,  # type: ignore
+        kwargs = dict(x=x[0], y=y[:, 0], mask=mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+
+        ds1 = State(
+            u=Variable(1 * np.ones(x.shape), c_grid.u, t1),
+            v=Variable(2 * np.ones(x.shape), c_grid.v, t1),
+            eta=Variable(3 * np.ones(x.shape), c_grid.eta, t1),
+        )
+        ds2 = State(
+            u=Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
+            v=Variable(5 * np.ones(x.shape), c_grid.v, t2),
+            eta=Variable(6 * np.ones(x.shape), c_grid.eta, t2),
         )
 
-        ds1 = swe.State(
-            u=swe.Variable(1 * np.ones(x.shape), c_grid.u, t1),
-            v=swe.Variable(2 * np.ones(x.shape), c_grid.v, t1),
-            eta=swe.Variable(3 * np.ones(x.shape), c_grid.eta, t1),
-        )
-        ds2 = swe.State(
-            u=swe.Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
-            v=swe.Variable(5 * np.ones(x.shape), c_grid.v, t2),
-            eta=swe.Variable(6 * np.ones(x.shape), c_grid.eta, t2),
+        ds3 = State(
+            u=Variable(7 * np.ones(x.shape), c_grid.u, t3),
+            v=Variable(8 * np.ones(x.shape), c_grid.v, t3),
+            eta=Variable(9 * np.ones(x.shape), c_grid.eta, t3),
         )
 
-        ds3 = swe.State(
-            u=swe.Variable(7 * np.ones(x.shape), c_grid.u, t3),
-            v=swe.Variable(8 * np.ones(x.shape), c_grid.v, t3),
-            eta=swe.Variable(9 * np.ones(x.shape), c_grid.eta, t3),
-        )
-
-        ds4 = swe.State(
-            u=swe.Variable(
+        ds4 = State(
+            u=Variable(
                 dt
                 * (
                     23 / 12 * ds3.variables["u"].safe_data
@@ -290,7 +301,7 @@ class TestIntegration:
                 c_grid.u,
                 t4,
             ),
-            v=swe.Variable(
+            v=Variable(
                 dt
                 * (
                     23 / 12 * ds3.variables["v"].safe_data
@@ -300,7 +311,7 @@ class TestIntegration:
                 c_grid.v,
                 t4,
             ),
-            eta=swe.Variable(
+            eta=Variable(
                 dt
                 * (
                     23 / 12 * ds3.variables["eta"].safe_data
@@ -314,11 +325,17 @@ class TestIntegration:
 
         rhs = deque([ds1, ds2, ds3], maxlen=3)
 
-        d_state = swe.adams_bashforth3(rhs, step=dt)  # type: ignore
+        d_state = adams_bashforth3(rhs, step=dt)  # type: ignore
 
-        assert np.allclose(d_state.variables["u"].data, ds4.variables["u"].data)
-        assert np.allclose(d_state.variables["v"].data, ds4.variables["v"].data)
-        assert np.allclose(d_state.variables["eta"].data, ds4.variables["eta"].data)
+        assert np.allclose(
+            d_state.variables["u"].safe_data, ds4.variables["u"].safe_data
+        )
+        assert np.allclose(
+            d_state.variables["v"].safe_data, ds4.variables["v"].safe_data
+        )
+        assert np.allclose(
+            d_state.variables["eta"].safe_data, ds4.variables["eta"].safe_data
+        )
         assert (
             d_state.variables["u"].time
             == d_state.variables["eta"].time
@@ -332,22 +349,22 @@ class TestIntegration:
         dx, dy = 1, 2
         ni, nj = 10, 5
         t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + seconds_to_timedelta64(dt)
-        t3 = t2 + seconds_to_timedelta64(dt / 2)
+        t2 = add_time(t1, dt)
+        t3 = add_time(t2, dt / 2)
 
         x, y = get_x_y(ni, nj, dx, dy)
         mask = np.ones(x.shape)
-        grid = swe.Grid(x=x, y=y, mask=mask)
+        grid = Grid(x=x, y=y, mask=mask)
 
-        state1 = swe.State(
-            u=swe.Variable(3 * np.ones(x.shape), grid, t1),
-            v=swe.Variable(3 * np.ones(x.shape), grid, t1),
-            eta=swe.Variable(3 * np.ones(x.shape), grid, t1),
+        state1 = State(
+            u=Variable(3 * np.ones(x.shape), grid, t1),
+            v=Variable(3 * np.ones(x.shape), grid, t1),
+            eta=Variable(3 * np.ones(x.shape), grid, t1),
         )
-        state2 = swe.State(
-            u=swe.Variable(np.ones(x.shape), grid, t2),
-            v=swe.Variable(np.ones(x.shape), grid, t2),
-            eta=swe.Variable(np.ones(x.shape), grid, t2),
+        state2 = State(
+            u=Variable(np.ones(x.shape), grid, t2),
+            v=Variable(np.ones(x.shape), grid, t2),
+            eta=Variable(np.ones(x.shape), grid, t2),
         )
 
         d_u = np.zeros(x.shape)
@@ -356,7 +373,7 @@ class TestIntegration:
 
         rhs = deque([state1, state2], maxlen=3)
 
-        d_state = swe.adams_bashforth3(rhs, step=dt)  # type: ignore
+        d_state = adams_bashforth3(rhs, step=dt)  # type: ignore
 
         assert np.all(d_state.variables["u"].data == d_u)
         assert np.all(d_state.variables["v"].data == d_v)
@@ -392,22 +409,22 @@ class TestIntegration:
         u_1 = 2 * np.ones(x.shape)
         v_1 = 0 * np.ones(x.shape)
 
-        params = swe.Parameters(
+        params = Parameter(
             H=H,
             g=g,
             coriolis_func=f_constant(f),
             on_grid=c_grid,
         )
-        state_0 = swe.State(
-            u=swe.Variable(u_0, c_grid.u, t),
-            v=swe.Variable(v_0, c_grid.v, t),
-            eta=swe.Variable(eta_0, c_grid.eta, t),
+        state_0 = State(
+            u=Variable(u_0, c_grid.u, t),
+            v=Variable(v_0, c_grid.v, t),
+            eta=Variable(eta_0, c_grid.eta, t),
         )
-        for state_1 in swe.integrate(
+        for state_1 in integrate(
             state_0,
             params,
-            scheme=swe.euler_forward,
-            RHS=swe.linearised_SWE,
+            scheme=euler_forward,
+            RHS=linearised_SWE,
             step=dt,
             time=t_end,
         ):
@@ -418,16 +435,16 @@ class TestIntegration:
 
     def test_integrate_raises_on_missing_scheme_attr(self):
         """Test integrate raises on unknown scheme."""
-        p = swe.Parameters()
-        state_0 = swe.State()
+        p = Parameter()
+        state_0 = State()
 
-        def rhs(state, params):  # pragma: no cover
+        def rhs(state, p):  # pragma: no cover
             return state
 
         with pytest.raises(
             AttributeError, match="declare the function with time_stepping_function"
         ):
-            for _ in swe.integrate(
+            for _ in integrate(
                 state_0,
                 p,
                 scheme=(lambda x: x),  # type: ignore

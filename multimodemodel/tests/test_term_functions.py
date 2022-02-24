@@ -1,15 +1,28 @@
 """Test the behavior of the term functions."""
-from typing import Tuple
-from multimodemodel.coriolis import f_constant
-from multimodemodel.grid import StaggeredGrid
-import numpy as np
 import pytest
-import multimodemodel as swe
+import numpy as np
+from multimodemodel import (
+    beta_plane,
+    f_constant,
+    f_on_sphere,
+    Parameter,
+    State,
+    Variable,
+    Grid,
+    StaggeredGrid,
+    coriolis_i,
+    coriolis_j,
+    divergence_i,
+    divergence_j,
+    pressure_gradient_i,
+    pressure_gradient_j,
+)
+from multimodemodel.kernel import _pressure_gradient_i
 
 some_datetime = np.datetime64("2001-01-01", "s")
 
 
-def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> Tuple[np.ndarray, np.ndarray]:
+def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
     x = np.arange(nx) * dx
     y = np.arange(ny) * dy
@@ -47,7 +60,7 @@ class TestTerms:
         dx_a = dx * np.ones(x.shape)
 
         oracle = -g * (eta * mask - np.roll(eta * mask, 1, axis=-1)) / dx_a * mask_u
-        result = swe._pressure_gradient_i(ni, nj, eta, g, dx_a, mask_u)  # type: ignore
+        result = _pressure_gradient_i(ni, nj, eta, g, dx_a, mask_u)  # type: ignore
         print(oracle, result, x.shape)
 
         assert np.all(result == oracle)
@@ -61,20 +74,20 @@ class TestTerms:
         c_grid_2D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
         c_grid_3D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], z=z)
 
-        params_2D = swe.Parameters(coriolis_func=f_constant(1e-4), on_grid=c_grid_2D)
-        params_3D = swe.Parameters(coriolis_func=f_constant(1e-4), on_grid=c_grid_3D)
+        params_2D = Parameter(coriolis_func=f_constant(1e-4), on_grid=c_grid_2D)
+        params_3D = Parameter(coriolis_func=f_constant(1e-4), on_grid=c_grid_3D)
 
-        state_2D = swe.State(
-            u=swe.Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u, some_datetime),
-            v=swe.Variable(None, c_grid_2D.v, some_datetime),
+        state_2D = State(
+            u=Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u, some_datetime),
+            v=Variable(None, c_grid_2D.v, some_datetime),
         )
-        inc_2D = swe.coriolis_j(state_2D, params_2D)
+        inc_2D = coriolis_j(state_2D, params_2D)
 
-        state_3D = swe.State(
-            u=swe.Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u, some_datetime),
-            v=swe.Variable(None, c_grid_3D.v, some_datetime),
+        state_3D = State(
+            u=Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u, some_datetime),
+            v=Variable(None, c_grid_3D.v, some_datetime),
         )
-        inc_3D = swe.coriolis_j(state_3D, params_3D)
+        inc_3D = coriolis_j(state_3D, params_3D)
 
         # exploit broadcasting before comparison
         assert np.all(inc_2D.variables["v"].data == inc_3D.variables["v"].data)
@@ -89,14 +102,14 @@ class TestTerms:
         eta = np.copy(x) * mask
         result = -g * mask * (eta - np.roll(eta, 1, axis=-1)) / dx
 
-        params = swe.Parameters(g=g)
-        grid = swe.Grid(x=x, y=y, mask=mask)
-        state = swe.State(
-            u=swe.Variable(None, grid, some_datetime),
-            eta=swe.Variable(eta, grid, some_datetime),
+        params = Parameter(g=g)
+        grid = Grid(x, y, mask=mask)
+        state = State(
+            u=Variable(None, grid, some_datetime),
+            eta=Variable(eta, grid, some_datetime),
         )
 
-        inc = swe.pressure_gradient_i(state, params)
+        inc = pressure_gradient_i(state, params)
 
         assert "eta" not in inc.variables
         assert "v" not in inc.variables
@@ -113,14 +126,14 @@ class TestTerms:
         eta = np.copy(y)
         result = -g * mask * (eta - np.roll(eta, 1, axis=-2)) / dy
 
-        params = swe.Parameters(g=g)
-        grid = swe.Grid(x=x, y=y, mask=mask)
-        state = swe.State(
-            v=swe.Variable(None, grid, some_datetime),
-            eta=swe.Variable(eta, grid, some_datetime),
+        params = Parameter(g=g)
+        grid = Grid(x, y, mask=mask)
+        state = State(
+            v=Variable(None, grid, some_datetime),
+            eta=Variable(eta, grid, some_datetime),
         )
 
-        inc = swe.pressure_gradient_j(state, params)
+        inc = pressure_gradient_j(state, params)
 
         assert "eta" not in inc.variables
         assert "u" not in inc.variables
@@ -138,15 +151,15 @@ class TestTerms:
         u = np.copy(x) * mask_u
         result = -H * (np.roll(u, -1, axis=-1) - u) / dx
 
-        params = swe.Parameters(H=H)
-        grid_u = swe.Grid(x=x, y=y, mask=mask_u)
-        grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
-        state = swe.State(
-            u=swe.Variable(u, grid_u, some_datetime),
-            eta=swe.Variable(None, grid_eta, some_datetime),
+        params = Parameter(H=H)
+        grid_u = Grid(x, y, mask=mask_u)
+        grid_eta = Grid(x, y, mask=mask_eta)
+        state = State(
+            u=Variable(u, grid_u, some_datetime),
+            eta=Variable(None, grid_eta, some_datetime),
         )
 
-        inc = swe.divergence_i(state, params)
+        inc = divergence_i(state, params)
 
         assert "u" not in inc.variables
         assert "v" not in inc.variables
@@ -164,15 +177,15 @@ class TestTerms:
         v = np.copy(y) * mask_v
         result = -H * (np.roll(v, -1, axis=-2) - v) / dy
 
-        params = swe.Parameters(H=H)
-        grid_v = swe.Grid(x=x, y=y, mask=mask_v)
-        grid_eta = swe.Grid(x=x, y=y, mask=mask_eta)
-        state = swe.State(
-            v=swe.Variable(v, grid_v, some_datetime),
-            eta=swe.Variable(None, grid_eta, some_datetime),
+        params = Parameter(H=H)
+        grid_v = Grid(x, y, mask=mask_v)
+        grid_eta = Grid(x, y, mask=mask_eta)
+        state = State(
+            v=Variable(v, grid_v, some_datetime),
+            eta=Variable(None, grid_eta, some_datetime),
         )
 
-        inc = swe.divergence_j(state, params)
+        inc = divergence_j(state, params)
         assert "u" not in inc.variables
         assert "v" not in inc.variables
         assert np.all(inc.variables["eta"].data == result)
@@ -181,10 +194,10 @@ class TestTerms:
     @pytest.mark.parametrize(
         "coriolis_func",
         [
-            swe.f_constant(0.0),
-            swe.f_constant(1.0),
-            swe.beta_plane(0.0, 1.0, 5),
-            swe.f_on_sphere(1.0),
+            f_constant(0.0),
+            f_constant(1.0),
+            beta_plane(0.0, 1.0, 5),
+            f_on_sphere(1.0),
         ],
     )
     def test_coriolis_j(self, coriolis_func):
@@ -199,7 +212,7 @@ class TestTerms:
             mask=mask,  # type: ignore
         )
 
-        params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
+        params = Parameter(coriolis_func=coriolis_func, on_grid=c_grid)
 
         u = np.ones(x.shape) * c_grid.u.mask  # type: ignore
 
@@ -215,12 +228,12 @@ class TestTerms:
             / 4.0
         )
 
-        state = swe.State(
-            u=swe.Variable(u, c_grid.u, some_datetime),
-            v=swe.Variable(None, c_grid.v, some_datetime),
+        state = State(
+            u=Variable(u, c_grid.u, some_datetime),
+            v=Variable(None, c_grid.v, some_datetime),
         )
 
-        inc = swe.coriolis_j(state, params)
+        inc = coriolis_j(state, params)
         assert "u" not in inc.variables
         assert "eta" not in inc.variables
         assert np.all(inc.variables["v"].data == result)
@@ -229,10 +242,10 @@ class TestTerms:
     @pytest.mark.parametrize(
         "coriolis_func",
         [
-            swe.f_constant(0.0),
-            swe.f_constant(1.0),
-            swe.beta_plane(0.0, 1.0, 5),
-            swe.f_on_sphere(1.0),
+            f_constant(0.0),
+            f_constant(1.0),
+            beta_plane(0.0, 1.0, 5),
+            f_on_sphere(1.0),
         ],
     )
     def test_coriolis_i(self, coriolis_func):
@@ -241,15 +254,12 @@ class TestTerms:
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
         mask = get_test_mask(x)
-        c_grid = StaggeredGrid.cartesian_c_grid(
-            x=x[0, :],
-            y=y[:, 0],
-            mask=mask,  # type: ignore
-        )
+        kwargs = dict(x=x[0, :], y=y[:, 0], mask=mask)
+        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
 
-        params = swe.Parameters(coriolis_func=coriolis_func, on_grid=c_grid)
+        params = Parameter(coriolis_func=coriolis_func, on_grid=c_grid)
 
-        v = np.ones(y.shape) * c_grid.v.mask  # type: ignore
+        v = np.ones(y.shape, dtype=np.float64) * c_grid.v.mask
 
         result = (
             c_grid.u.mask
@@ -263,13 +273,13 @@ class TestTerms:
             / 4.0
         )
 
-        state = swe.State(
-            u=swe.Variable(None, c_grid.u, some_datetime),
-            v=swe.Variable(v, c_grid.v, some_datetime),
-            eta=swe.Variable(None, c_grid.eta, some_datetime),
+        state = State(
+            u=Variable(None, c_grid.u, some_datetime),
+            v=Variable(v, c_grid.v, some_datetime),
+            eta=Variable(None, c_grid.eta, some_datetime),
         )
 
-        inc = swe.coriolis_i(state, params)
+        inc = coriolis_i(state, params)
         assert "v" not in inc.variables
         assert "eta" not in inc.variables
         assert np.all(inc.variables["u"].data == result)
@@ -278,12 +288,12 @@ class TestTerms:
     @pytest.mark.parametrize(
         "term",
         (
-            swe.pressure_gradient_i,
-            swe.pressure_gradient_j,
-            swe.coriolis_i,
-            swe.coriolis_j,
-            swe.divergence_i,
-            swe.divergence_j,
+            pressure_gradient_i,
+            pressure_gradient_j,
+            coriolis_i,
+            coriolis_j,
+            divergence_i,
+            divergence_j,
         ),
     )
     def test_none_input(self, term):
@@ -291,13 +301,14 @@ class TestTerms:
         dx, dy = 1, 2
         ni, nj = 10, 5
         x, y = get_x_y(ni, nj, dx, dy)
-        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
-        params = swe.Parameters(coriolis_func=f_constant(1.0), on_grid=c_grid)
+        kwargs = dict(x=x[0, :], y=y[:, 0])
+        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+        params = Parameter(coriolis_func=f_constant(1.0), on_grid=c_grid)
 
-        state = swe.State(
-            u=swe.Variable(None, c_grid.u, some_datetime),
-            v=swe.Variable(None, c_grid.v, some_datetime),
-            eta=swe.Variable(None, c_grid.eta, some_datetime),
+        state = State(
+            u=Variable(None, c_grid.u, some_datetime),
+            v=Variable(None, c_grid.v, some_datetime),
+            eta=Variable(None, c_grid.eta, some_datetime),
         )
 
         _ = term(state, params)

@@ -1,48 +1,56 @@
 """Logic related to creation of grids."""
 
-from __future__ import annotations  # enable type hinting for factory methods
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Callable, Tuple
-from .typing import Array, Shape
-import numpy as np
-from enum import Enum, unique
+from dataclasses import dataclass, field, fields
 
+from typing import Any, Type, Optional, Callable
+import numpy as np
+from functools import lru_cache
+
+from .api import (
+    GridShift,
+    GridBase,
+    StaggeredGridBase,
+    Array,
+    Shape,
+    MergeVisitorBase,
+    SplitVisitorBase,
+)
+from .config import config
 from .jit import _numba_2D_grid_iterator_i8
 
 
-@unique
-class GridShift(Enum):
-    """Direction of shift of staggered grids with respect to the eta-grid.
-
-    E.g., `GridShift.LR` indicates that the grid points of the other grids which share
-    the same index are located on the lower and/or left face of the eta Grid. The
-    value of the enumerator is a tuple giving the direction of shift in
-    y- and x-direction.
-    """
-
-    LR = (1, -1)  #: Subgrids are shifted to the lower right
-    UR = (1, 1)  #: Subgrids are shifted to the upper right
-    LL = (-1, -1)  #: Subgrids are shifted to the lower left
-    UL = (-1, 1)  #: Subgrids are shifted to the upper left
+def _check_shape(arr1, expected, msg=""):
+    if arr1.shape != expected.shape:
+        raise ValueError(f"{msg}. Got {arr1.shape}, but expected {expected.shape}.")
 
 
-class Grid:
+@dataclass(frozen=True)
+class Grid(GridBase[np.ndarray]):
     """Grid information.
 
     A Grid object holds all information about coordinates of the grid points
-    and grid spacing, i.e. size of the grid box faces.
+    and grid spacing, i.e. size of the grid box faces. For convenience there
+    are following class methods:
 
-    Parameters
-    ----------
-    x : Array
-      2D Array of x-coordinates on grid
-    y : Array
-      2D Array of y-coordinates on grid
+    Arguments
+    ---------
+    (of the __init__ method)
+
+    x: np.ndarray
+      2D np.ndarray of x-coordinates on grid
+    y: np.ndarray
+      2D np.ndarray of y-coordinates on grid
     z : Array, default=None
       1D Array of z coordinates.
-    mask : Array, default=None
-      Ocean mask, 1 where ocean is, 0 where land is.
-      Default is a closed basin
+    mask: Array = None
+      optional. Ocean mask, 1 where ocean is, 0 where land is. Default is a
+      rectangular domain with closed boundaries.
+    dx: Optional[np.ndarray] = None
+      Initialization of dx
+    dy: Optional[np.ndarray] = None
+      Initialization of dy
+    dz: Optional[np.ndarray] = None
+      Initialization of dz
 
     Attributes
     ----------
@@ -52,6 +60,19 @@ class Grid:
       Grid spacing in y.
     dz : Array
       Grid spacing in z.
+    mask: Array
+      optional. Ocean mask, 1 where ocean is, 0 where land is. Default is a
+      rectangular domain with closed boundaries.
+    shape: tuple[int]
+      Shape of the grid data.
+    ndim: int:
+      Number of dimensions
+    dim_x: int
+      Axis index of x dimension.
+    dim_y: int
+      Axis index of y dimension.
+    dim_z: int
+      Axis index of z dimension.
 
     Raises
     ------
@@ -59,7 +80,14 @@ class Grid:
       Raised if the shape of `mask` does not fit the shape of the grid.
     """
 
-    __slots__ = ["x", "y", "z", "mask", "dx", "dy", "dz"]
+    x: Array
+    y: Array
+    z: Array
+    mask: Array
+    dx: Array
+    dy: Array
+    dz: Array
+    _id: int = field(init=False)
 
     def __init__(
         self,
@@ -67,24 +95,44 @@ class Grid:
         y: Array,
         z: Optional[Array] = None,
         mask: Optional[Array] = None,
+        dx: Optional[Array] = None,
+        dy: Optional[Array] = None,
+        dz: Optional[Array] = None,
     ):
         """Initialize self."""
-        self.x = x
-        self.y = y
+        super().__setattr__("_id", id(self))
+        super().__setattr__("x", x)
+        super().__setattr__("y", y)
         if z is None:
-            _z = np.array([])
+            _z = np.array([], dtype=self.x.dtype)
         else:
             _z = z
-        self.z = _z
+        super().__setattr__("z", _z)
         if mask is None:
-            _mask = self._get_default_mask(self.shape)
-        else:
-            _mask = mask
-        self.mask = _mask
+            mask = self._get_default_mask(self.shape)
+        super().__setattr__("mask", mask)
 
-        self.dx, self.dy, self.dz = self._compute_grid_spacing()
+        if dx is None:
+            dx = self._compute_grid_spacing(coord=self.x, axis=self.dim_x)
+        super().__setattr__("dx", dx)
+        if dy is None:
+            dy = self._compute_grid_spacing(coord=self.y, axis=self.dim_y)
+        super().__setattr__("dy", dy)
+        if dz is None:
+            if z is None:
+                dz = np.array([], dtype=self.z.dtype)
+            else:
+                dz = self._compute_grid_spacing(coord=self.z, axis=0)
+        super().__setattr__("dz", dz)
 
-        self._validate()
+        # validate
+        _check_shape(self.mask, self, "Mask shape not matching grid shape")
+        _check_shape(self.dx, self.x, "dx shape not matching shape of x")
+        _check_shape(self.dy, self.y, "dy shape not matching shape of y")
+        assert self.x.ndim == 2
+        assert self.y.ndim == 2
+        if self.z is not None:
+            assert self.z.ndim == 1
 
     @property
     def shape(self) -> Shape:
@@ -93,11 +141,6 @@ class Grid:
             return self.x.shape
         else:
             return self.z.shape + self.x.shape
-
-    @property
-    def ndim(self) -> int:
-        """Return number of dimensions."""
-        return len(self.shape)
 
     @property
     def dim_x(self) -> int:
@@ -114,28 +157,38 @@ class Grid:
         """Return axis of x dimension."""
         return -3
 
-    def _compute_grid_spacing(self) -> Tuple[Array, Array, Array]:
-        dx, dy = self._compute_horizontal_grid_spacing()
-        dz = self._compute_vertical_grid_spacing()
-        return dx, dy, dz
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def split(self, splitter: SplitVisitorBase[np.ndarray]):
+        """Split grid."""
+        x, y, mask, dx, dy = (
+            splitter.split_array(arr)
+            for arr in (self.x, self.y, self.mask, self.dx, self.dy)
+        )
+        return tuple(
+            self.__class__(
+                **dict(x=x0, y=y0, z=self.z, mask=mask0, dx=dx0, dy=dy0, dz=self.dz)
+            )
+            for x0, y0, mask0, dx0, dy0 in zip(x, y, mask, dx, dy)
+        )
 
-    def _compute_horizontal_grid_spacing(self) -> Tuple[Array, Array]:
-        """Compute the spatial differences along x and y."""
-        dx = np.diff(self.x, axis=self.dim_x)
-        dy = np.diff(self.y, axis=self.dim_y)
-        dx_0 = dx[:, 0]
-        dy_0 = dy[0, :]
-        dx = np.append(dx, np.expand_dims(dx_0, axis=self.dim_x), axis=self.dim_x)
-        dy = np.append(dy, np.expand_dims(dy_0, axis=self.dim_y), axis=self.dim_y)
-        return dx, dy
+    @classmethod
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def merge(cls, others: tuple["Grid"], merger: MergeVisitorBase):
+        """Merge grids."""
+        x = merger.merge_array(tuple(o.x for o in others))
+        y = merger.merge_array(tuple(o.y for o in others))
+        mask = merger.merge_array(tuple(o.mask for o in others))
+        dx = merger.merge_array(tuple(o.dx for o in others))
+        dy = merger.merge_array(tuple(o.dy for o in others))
+        return cls(x=x, y=y, z=others[0].z, mask=mask, dx=dx, dy=dy, dz=others[0].dz)
 
-    def _compute_vertical_grid_spacing(self) -> Array:
-        """Compute grid box size along z."""
-        if len(self.z) == 0:
-            return np.array([], dtype=self.z.dtype)
-        dz = np.diff(self.z, axis=0)
-        dz = np.append(dz, dz[0])
-        return dz
+    @staticmethod
+    def _compute_grid_spacing(coord: Array, axis: int) -> Array:
+        """Compute the spatial differences of a coordinate along a given axis."""
+        dx = np.diff(coord, axis=axis)
+        dx_0 = dx.take(indices=0, axis=axis)
+        dx = np.append(dx, np.expand_dims(dx_0, axis=axis), axis=axis)
+        return dx
 
     @classmethod
     def cartesian(
@@ -144,11 +197,12 @@ class Grid:
         y: Array,
         z: Optional[Array] = None,
         mask: Optional[Array] = None,
-    ) -> Grid:
+        **kwargs,
+    ) -> "Grid":
         """Generate a Cartesian grid.
 
-        Parameters
-        ----------
+        Arguments
+        ---------
         x : Array
           1D Array of coordinates along x dimension.
         y : Array
@@ -166,13 +220,14 @@ class Grid:
             y=y_2D,
             z=z,
             mask=mask,
+            **kwargs,
         )
 
         return grid
 
     @classmethod
     def regular_lat_lon(
-        cls: Any,
+        cls: Type["Grid"],
         lon_start: float,
         lon_end: float,
         lat_start: float,
@@ -182,7 +237,7 @@ class Grid:
         z: Optional[Array] = None,
         mask: Optional[Array] = None,
         radius: float = 6_371_000.0,
-    ) -> Grid:
+    ) -> "Grid":
         """Generate a regular spherical grid.
 
         Arguments
@@ -217,23 +272,14 @@ class Grid:
             mask=mask,
         )
 
-        # reset to have a dimension of length
-        grid.dx = radius * np.cos(grid.y * to_rad) * grid.dx * to_rad
-        grid.dy = radius * grid.dy * to_rad
+        # compute grid spacing
+        dx = radius * np.cos(grid.y * to_rad) * grid.dx * to_rad
+        dy = radius * grid.dy * to_rad
 
+        grid = cls.cartesian(
+            x=lon, y=lat, z=z, dx=dx, dy=dy, dz=grid.dz, mask=grid.mask
+        )
         return grid
-
-    def _validate(self) -> None:
-        """Validate Attributes of Grid class after init."""
-        if self.mask is not None and self.mask.shape != self.shape:
-            raise ValueError(
-                f"Mask shape not matching grid shape. "
-                f"Got {self.mask.shape} and {self.shape}."
-            )
-        assert self.x.ndim == 2
-        assert self.y.ndim == 2
-        if self.z is not None:
-            assert self.z.ndim == 1
 
     @staticmethod
     def _get_default_mask(shape: Shape) -> Array:
@@ -244,9 +290,31 @@ class Grid:
         mask[..., :, -1] = 0
         return mask
 
+    def __hash__(self):
+        """Return object id as hashing."""
+        return self._id
 
-@dataclass
-class StaggeredGrid:
+    def __eq__(self, other) -> bool:
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, Grid):
+            return NotImplemented
+        if self.__hash__() == other.__hash__():
+            return True
+        return self.__eq__grid__(other)
+
+    @lru_cache(maxsize=config.lru_cache_maxsize)
+    def __eq__grid__(self, other) -> bool:
+        """Return True if all fields are equal, except _id."""
+        return all(
+            (getattr(self, f.name) == getattr(other, f.name)).all()
+            if f.name in ("x", "y", "mask", "dx", "dy", "z", "dz")
+            else getattr(self, f.name) == getattr(other, f.name)
+            for f in fields(self)
+            if f.name not in ("_id", "z", "dz")
+        )
+
+
+class StaggeredGrid(StaggeredGridBase[Grid]):
     """Staggered Grid.
 
     Subgrids are available as attributes `eta`, `u`, `v` and `q` where
@@ -265,17 +333,14 @@ class StaggeredGrid:
       Grid of the box vertices
     """
 
-    eta: Grid  #: Grid of the box centeroids
-    u: Grid  #: Grid of the box faces perpendicular to the fist spatial dimension
-    v: Grid  #: Grid of the box faces perpendicular to the second spatial dimension
-    q: Grid  #: Grid of the box vertices
+    _gtype = Grid
 
     @classmethod
     def cartesian_c_grid(
         cls: Any,
         shift: GridShift = GridShift.LL,
-        **grid_kwargs: Dict[str, Any],
-    ) -> StaggeredGrid:
+        **grid_kwargs: dict[str, Any],
+    ) -> "StaggeredGrid":
         """Generate a Cartesian Arakawa C-Grid.
 
         Arguments
@@ -283,7 +348,7 @@ class StaggeredGrid:
         shift : GridShift, default=GridShift.LL
           Direction of shift of staggered grids with respect to the eta-grid.
           See :py:class:`GridShift` for more details.
-        **grid_kwargs : Dict[str, Any]
+        **grid_kwargs : dict[str, Any]
           Keyword arguments are passed to :py:meth:`Grid.cartesian` to create
           the `eta` subgrid, i.e. the grid of the box centeroids.
 
@@ -296,7 +361,7 @@ class StaggeredGrid:
         u_x, u_y = (eta_grid.x + shift.value[0] * eta_grid.dx / 2, eta_grid.y)
         v_x, v_y = (eta_grid.x, eta_grid.y + shift.value[1] * eta_grid.dy / 2)
         q_x, q_y = (u_x, v_y)
-        z = eta_grid.z
+        z = eta_grid.z if len(eta_grid.z != 0) else None
         u_grid = Grid(
             x=u_x,
             y=u_y,
@@ -315,14 +380,14 @@ class StaggeredGrid:
             z=z,
             mask=cls._compute_mask(cls._q_mask_from_eta, eta_grid, shift),
         )
-        return StaggeredGrid(eta_grid, u_grid, v_grid, q_grid)
+        return StaggeredGrid(eta=eta_grid, u=u_grid, v=v_grid, q=q_grid)
 
     @classmethod
     def regular_lat_lon_c_grid(
         cls,
         shift: GridShift = GridShift.LL,
-        **kwargs: Dict[str, Any],
-    ) -> StaggeredGrid:
+        **kwargs,
+    ) -> "StaggeredGrid":
         """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
         Arguments
@@ -330,7 +395,7 @@ class StaggeredGrid:
         shift : GridShift, default=GridShift.LL
           Direction of shift of staggered grids with respect to the eta-grid.
           See :py:class:`GridShift` for more details.
-        **grid_kwargs : Dict[str, Any]
+        **grid_kwargs : dict[str, Any]
           Keyword arguments are passed to :py:meth:`Grid.regular_lat_lon` to create
           the `eta` subgrid, i.e. the grid of the box centeroids.
 
@@ -338,34 +403,40 @@ class StaggeredGrid:
         -------
         StaggeredGrid
         """
-        eta_grid = Grid.regular_lat_lon(**kwargs)  # type: ignore
-        dx, dy = eta_grid._compute_horizontal_grid_spacing()
+        eta_grid = Grid.regular_lat_lon(**kwargs)
+        dx = eta_grid._compute_grid_spacing(eta_grid.x, eta_grid.dim_x)
+        dy = eta_grid._compute_grid_spacing(eta_grid.y, eta_grid.dim_y)
 
         u_x_start, u_x_end = (
             eta_grid.x.min() + shift.value[0] * dx.min() / 2,
             eta_grid.x.max() + shift.value[0] * dx.min() / 2,
         )
         u_kwargs = kwargs.copy()
-        u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end))
-        u_grid = Grid.regular_lat_lon(**u_kwargs)  # type: ignore
-        u_grid.mask = cls._compute_mask(
-            cls._u_mask_from_eta,  # type: ignore
+        u_grid_mask = cls._compute_mask(
+            cls._u_mask_from_eta,
             eta_grid,
             shift,
         )
+        u_kwargs.update(dict(lon_start=u_x_start, lon_end=u_x_end, mask=u_grid_mask))
+        u_grid = Grid.regular_lat_lon(**u_kwargs)
 
         v_y_start, v_y_end = (
             eta_grid.y.min() + shift.value[1] * dy.min() / 2,
             eta_grid.y.max() + shift.value[1] * dy.min() / 2,
         )
         v_kwargs = kwargs.copy()
-        v_kwargs.update(dict(lat_start=v_y_start, lat_end=v_y_end))
-        v_grid = Grid.regular_lat_lon(**v_kwargs)  # type: ignore
-        v_grid.mask = cls._compute_mask(
-            cls._v_mask_from_eta,  # type: ignore
-            eta_grid,
-            shift,
+        v_kwargs.update(
+            dict(
+                lat_start=v_y_start,
+                lat_end=v_y_end,
+                mask=cls._compute_mask(
+                    cls._v_mask_from_eta,
+                    eta_grid,
+                    shift,
+                ),
+            )
         )
+        v_grid = Grid.regular_lat_lon(**v_kwargs)
 
         q_kwargs = kwargs.copy()
         q_kwargs.update(
@@ -374,14 +445,14 @@ class StaggeredGrid:
                 lon_end=u_x_end,
                 lat_start=v_y_start,
                 lat_end=v_y_end,
+                mask=cls._compute_mask(
+                    cls._q_mask_from_eta,
+                    eta_grid,
+                    shift,
+                ),
             )
         )
-        q_grid = Grid.regular_lat_lon(**q_kwargs)  # type: ignore
-        q_grid.mask = cls._compute_mask(
-            cls._q_mask_from_eta,  # type: ignore
-            eta_grid,
-            shift,
-        )
+        q_grid = Grid.regular_lat_lon(**q_kwargs)
 
         return cls(eta_grid, u_grid, v_grid, q_grid)
 
@@ -389,7 +460,7 @@ class StaggeredGrid:
     def _compute_mask(
         func: Callable[..., Array], from_grid: Grid, shift: GridShift
     ) -> Array:
-        if from_grid.mask.ndim <= 2:  # type: ignore
+        if from_grid.mask.ndim <= 2:
             return func(
                 from_grid.shape[from_grid.dim_x],
                 from_grid.shape[from_grid.dim_y],
@@ -397,12 +468,12 @@ class StaggeredGrid:
                 shift.value[0],
                 shift.value[1],
             )
-        res = np.empty_like(from_grid.mask)  # type: ignore
+        res = np.empty_like(from_grid.mask)
         for k in range(from_grid.shape[from_grid.dim_z]):
             res[k] = func(
                 from_grid.shape[from_grid.dim_x],
                 from_grid.shape[from_grid.dim_y],
-                from_grid.mask[k],  # type: ignore
+                from_grid.mask[k],
                 shift.value[0],
                 shift.value[1],
             )

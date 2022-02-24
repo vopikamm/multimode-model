@@ -12,6 +12,7 @@ v0.1.0 (unreleased)
 
 New Features
 ~~~~~~~~~~~~
+- Support for splitting the domain into subdomains and distribute the computation across several processes.
 - Use `flake8 <https://flake8.pycqa.org/en/latest/>`_ for linting and `black <https://black.readthedocs.io/en/stable/>`_ for styling.
 - Enable `SAST <https://git.geomar.de/help/user/application_security/sast/index.md>`_.
 - Support of grid staggering via :py:class:`.StaggeredGrid` class.
