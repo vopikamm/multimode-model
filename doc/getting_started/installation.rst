@@ -4,7 +4,7 @@ Installation
 Required dependencies
 ---------------------
 
-- Python (3.7 or later)
+- Python (3.9 or later)
 - `numba <https://numba.pydata.org/>`__ (0.50.1 or later)
 - `numpy <http://www.numpy.org/>`__
 

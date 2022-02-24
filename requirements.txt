@@ -11,4 +11,4 @@ pre-commit
 pytest
 pytest-benchmark
 pytest-cov
-python >= 3.7.0
+python >= 3.8.0

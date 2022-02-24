@@ -1,17 +1,25 @@
 """Test the behavior of the dataclasses."""
-from typing import Tuple
+# flake8: noqa
 import numpy as np
 import pytest
 
 from multimodemodel import (
-    Parameters,
+    GridShift,
     Grid,
+    StaggeredGrid,
+    Parameter,
     Variable,
     State,
-    StaggeredGrid,
-    GridShift,
+    StateDeque,
     f_constant,
+    beta_plane,
+    f_on_sphere,
+    sum_states,
+    Domain,
 )
+
+from multimodemodel.kernel import sum_vars
+from multimodemodel.util import str_to_date, add_time
 
 try:
     import xarray as xr
@@ -29,10 +37,96 @@ grid_order = {
     GridShift.UR: "euqv",
 }
 
-some_datetime = np.datetime64("2000-01-01", "s")
+some_datetime = str_to_date("2000-01-01")
 
 
-def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> Tuple[np.ndarray, np.ndarray]:
+def _not_share_memory(a1, a2):
+    if a1 is not None and a2 is not None:
+        assert not np.may_share_memory(a1, a2)
+
+
+@pytest.fixture(
+    params=(
+        # (100, 50),
+        (20, 15),
+    )
+)
+def staggered_grid(request):
+    nx, ny = request.param
+
+    args = dict(
+        x=np.arange(nx),
+        y=np.arange(ny),
+        mask=None,
+    )
+
+    return StaggeredGrid.cartesian_c_grid(**args)
+
+
+@pytest.fixture(
+    params=[
+        (f_constant, (1.0,)),
+        (beta_plane, (10, 0.1, 0.0)),
+        (f_on_sphere, ()),
+    ]
+)
+def coriolis_func(request):
+    return request.param[0](*request.param[1])
+
+
+@pytest.fixture
+def param(staggered_grid, coriolis_func):
+    return Parameter(
+        coriolis_func=coriolis_func,
+        on_grid=staggered_grid,
+    )
+
+
+@pytest.fixture(params=[True, False])
+def state_param(staggered_grid, coriolis_func, request):
+    param = Parameter(coriolis_func=coriolis_func, on_grid=staggered_grid)
+    u = Variable(
+        np.arange(staggered_grid.u.x.size).reshape(staggered_grid.u.x.shape) + 0.0,
+        staggered_grid.u,
+        time=some_datetime,
+    )
+    v = Variable(
+        np.arange(staggered_grid.v.x.size).reshape(staggered_grid.v.x.shape) + 1.0,
+        staggered_grid.v,
+        time=some_datetime,
+    )
+    eta = Variable(
+        np.arange(staggered_grid.eta.x.size).reshape(staggered_grid.eta.x.shape) + 2.0,
+        staggered_grid.eta,
+        time=some_datetime,
+    )
+    if request.param:
+        eta.data = None
+    return State(u=u, v=v, eta=eta), param
+
+
+@pytest.fixture(params=[0, 99])
+def ident(request):
+    return request.param
+
+
+@pytest.fixture
+def domain_state(state_param):
+    state, param = state_param
+    return Domain(state, history=StateDeque(), parameter=param, iteration=0, id=0)
+
+
+@pytest.fixture(params=[-1, 0, 99])
+def it(request):
+    return request.param
+
+
+@pytest.fixture(params=(1, 2, 3))
+def dt(request):
+    return request.param
+
+
+def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> tuple[np.ndarray, np.ndarray]:
     """Return 2D coordinate arrays."""
     x = np.arange(nx) * dx
     y = np.arange(ny) * dy
@@ -55,7 +149,7 @@ def get_test_mask(shape):
     return mask
 
 
-class TestParameters:
+class TestParameter:
     """Test Parameters class."""
 
     @pytest.mark.parametrize("f0", [0.0, 1.0])
@@ -67,14 +161,14 @@ class TestParameters:
 
         # 2D
         staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
-        p = Parameters(coriolis_func=f_constant(f=f0), on_grid=staggered_grid)
+        p = Parameter(coriolis_func=f_constant(f=f0), on_grid=staggered_grid)
         for var in ("u", "v", "eta"):
             assert np.all(p.f[var] == f0)
             assert p.f[var].ndim == 2
 
         # 3D
         staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y, z=np.arange(10.0))
-        p = Parameters(coriolis_func=f_constant(f=f0), on_grid=staggered_grid)
+        p = Parameter(coriolis_func=f_constant(f=f0), on_grid=staggered_grid)
         for var in ("u", "v", "eta"):
             assert np.all(p.f[var] == f0)
             assert p.f[var].ndim == 2
@@ -92,13 +186,85 @@ class TestParameters:
         else:
             staggered_grid = None
 
-        p = Parameters(coriolis_func=f, on_grid=staggered_grid)
+        p = Parameter(coriolis_func=f, on_grid=staggered_grid)
 
         if f is None or g is None:
             with pytest.raises(
                 RuntimeError, match="Coriolis parameter not available.*"
             ):
                 _ = p.f
+
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    def test_hash_of_identical_objects_is_same(self, f):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f, on_grid=staggered_grid)
+        p2 = p
+        assert hash(p) == hash(p2)
+
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    def test_hash_of_same_objects_is_false(self, f):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f, on_grid=staggered_grid)
+        p2 = Parameter(coriolis_func=f, on_grid=staggered_grid)
+        assert hash(p) != hash(p2)
+
+    @pytest.mark.parametrize("f", (f_constant(1.0), None))
+    def test_hash_of_different_objects_is_false(self, f):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f, on_grid=staggered_grid)
+        p2 = Parameter(coriolis_func=f_constant(0.0), on_grid=staggered_grid)
+        assert hash(p) != hash(p2)
+
+    def test_comparison_with_identical_returns_true(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        p2 = p
+        assert p == p2
+
+    def test_comparison_with_same_returns_true(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        p2 = Parameter(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        assert p == p2
+
+    def test_comparison_with_different_returns_false(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        p2 = Parameter(coriolis_func=f_constant(f=2.0), on_grid=staggered_grid)
+        assert p != p2
+
+    def test_comparison_with_wrong_type_returns_false(self):
+        nx, ny = 20, 10
+        dx, dy = 1.0, 0.25
+        x, y = (np.arange(0.0, n * d, d) for (n, d) in ((nx, dx), (ny, dy)))
+        staggered_grid = StaggeredGrid.cartesian_c_grid(x=x, y=y)
+
+        p = Parameter(coriolis_func=f_constant(f=1.0), on_grid=staggered_grid)
+        assert p != 5
 
 
 class TestVariable:
@@ -112,6 +278,7 @@ class TestVariable:
     def test_data_grid_shape_missmatch(self, data, grid):
         """Test detection of shape missmatch."""
         if data.shape != grid.shape:
+            print(data.shape, grid.shape)
             with pytest.raises(ValueError, match="Shape of data and grid missmatch.*"):
                 _ = Variable(data, grid, some_datetime)
         else:
@@ -137,14 +304,17 @@ class TestVariable:
         var_copy = Variable(None, Grid(*get_x_y(*shape, 1, 1)), some_datetime).copy()
         assert var_copy.data is None
 
+    def test__grid_type_is_Grid(self):
+        """Test value of _stype attribute."""
+        assert Variable._grid_type() is Grid
+
     def test_add_data(self):
         """Test variable summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + np.timedelta64(2, "s")
+        t1 = str_to_date("2000-01-01")
+        t2 = add_time(t1, 2)
         x, y = get_x_y(nx, ny, dx, dy)
-        g1 = Grid(x=x, y=y)
-        g1.mask = get_test_mask(g1.shape)
+        g1 = Grid(x=x, y=y, mask=get_test_mask(x.shape))
 
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
@@ -152,6 +322,10 @@ class TestVariable:
         v2 = Variable(d2, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == 3.0)
+        print(v3.data == sum_vars((v1, v2)).data)
+        print(v3.grid == sum_vars((v1, v2)).grid)
+        print(v3.time == sum_vars((v1, v2)).time)
+        assert v3 == sum_vars((v1, v2))
         assert np.all(v3.grid.mask == v1.grid.mask)
         assert v3.time == t1 + np.timedelta64(1, "s")
 
@@ -170,6 +344,7 @@ class TestVariable:
         assert np.all(v3.data == v1.data)
         v3 = v2 + v1
         assert np.all(v3.data == v1.data)
+        assert v3 == sum_vars((v1, v2))
 
     def test_add_none_with_none(self):
         """Test summing with None data."""
@@ -184,8 +359,9 @@ class TestVariable:
         v2 = Variable(None, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == v1.data)
+        assert v3 == sum_vars((v1, v2))
 
-    def test_grid_mismatch(self):
+    def test_add_grid_mismatch(self):
         """Test grid mismatch detection."""
         nx, ny, dx, dy = 10, 5, 1, 2
         t1 = np.datetime64("2000-01-01", "s")
@@ -193,7 +369,7 @@ class TestVariable:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x=x, y=y, mask=mask)
-        g2 = Grid(x=x, y=y, mask=mask)
+        g2 = Grid(x=x + 1, y=y, mask=mask)
         d1 = np.zeros_like(g1.x) + 1.0
         d2 = np.zeros_like(g1.x) + 2.0
         v1 = Variable(d1, g1, t1)
@@ -212,8 +388,59 @@ class TestVariable:
         d1 = np.zeros_like(g1.x) + 1.0
         v1 = Variable(d1, g1, t1)
         with pytest.raises(TypeError) as excinfo:
-            _ = v1 + 1.0
+            _ = v1 + 1.0  # type: ignore
         assert "unsupported operand type(s)" in str(excinfo.value)
+
+    def test_comparison_with_identical_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+
+        d1 = np.zeros_like(g1.x) + 1.0
+        v1 = Variable(d1, g1, some_datetime)
+        v2 = v1
+        assert v1 == v2
+
+    def test_comparison_with_same_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+
+        d1 = np.zeros_like(g1.x) + 1.0
+        v1 = Variable(d1, g1, some_datetime)
+        v2 = Variable(d1.copy(), g1, some_datetime)
+        assert v1 == v2
+
+    def test_comparison_with_both_none_data_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+
+        v1 = Variable(None, g1, some_datetime)
+        v2 = Variable(None, g1, some_datetime)
+        assert v1 == v2
+
+    def test_comparison_with_different_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+
+        v1 = Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime)
+        v2 = Variable(np.zeros_like(g1.x) + 2.0, g1, some_datetime)
+        assert v1 != v2
+
+    def test_comparison_with_wrong_type_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+
+        v1 = Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime)
+        assert v1 != 5
 
 
 @pytest.mark.skipif(not has_xarray, reason="Xarray not available.")
@@ -283,6 +510,26 @@ class TestVariableAsDataArray:
 class TestState:
     """Test State class."""
 
+    def test__variable_type_is_Variable(self):
+        """Test value of _stype attribute."""
+        assert State._variable_type() is Variable
+
+    def test_variables_dict_set_correctly(self):
+        """Test state summation."""
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(d1, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        assert s1.u is s1.variables["u"]
+        assert s1.v is s1.variables["v"]
+        assert s1.eta is s1.variables["eta"]
+
     def test_init_raise_on_non_variable_keyword_argument(self):
         """Test if keyword argument of type other than Variable raises error."""
         with pytest.raises(ValueError, match="Keyword argument"):
@@ -291,7 +538,7 @@ class TestState:
     def test_add(self):
         """Test state summation."""
         nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = np.datetime64("2000-01-01", "s")
+        t1 = str_to_date("2000-01-01")
         t2 = t1 + np.timedelta64(2, "s")
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
@@ -318,3 +565,166 @@ class TestState:
         g1 = Grid(*get_x_y(10, 10, 1, 1))
         s = State(var=Variable(np.ones(g1.shape), g1, some_datetime))
         assert s.var is s.variables["var"]  # type: ignore
+
+    def test_comparison_with_identical_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        s2 = s1
+        assert s1 == s2
+
+    def test_comparison_with_same_returns_true(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        s2 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        assert s1 == s2
+
+    def test_comparison_with_different_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        s2 = State(
+            u=Variable(np.zeros_like(g1.x) + 2.0, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        assert s1 != s2
+
+    def test_comparison_with_wrong_type_returns_false(self):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        s1 = State(
+            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            v=Variable(d1, g1, some_datetime),
+            eta=Variable(d1, g1, some_datetime),
+        )
+        assert s1 != 5
+
+    @pytest.mark.parametrize("n_states", range(2, 11))
+    def test_sum_states_sums_correctly(self, n_states):
+        nx, ny, dx, dy = 10, 5, 1, 2
+        x, y = get_x_y(nx, ny, dx, dy)
+        mask = get_test_mask(x.shape)
+        g1 = Grid(x, y, mask=mask)
+        d1 = np.zeros_like(g1.x) + 1.0
+        states = n_states * (
+            State(
+                u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+                v=Variable(d1, g1, some_datetime),
+                eta=Variable(d1, g1, some_datetime),
+            ),
+        )
+        states[-1].eta.data = None
+        start_state = State(
+            u=Variable(np.zeros_like(d1), g1, some_datetime),
+            v=Variable(np.zeros_like(d1), g1, some_datetime),
+            eta=Variable(np.zeros_like(d1), g1, some_datetime),
+        )
+        assert sum(states, start=start_state) == sum_states(states)
+
+
+class TestStateDeque:
+    def test__state_type_is_State(self):
+        """Test value of _stype attribute."""
+        assert StateDeque._state_type() is State
+
+
+class TestDomain:
+    def test_type_class_variables(self, domain_state):
+        assert domain_state._stype is State
+        assert domain_state._ptype is Parameter
+
+    def test_init_None_history_to_empty_StateDeque(self, state_param):
+        state, param = state_param
+        ds = Domain(state, None, param)
+        assert isinstance(ds.history, StateDeque)
+        assert len(ds.history) == 0
+        assert ds.history.maxlen == 3
+
+    def test_set_id(self, domain_state, ident):
+        domain_state.id = ident
+        assert domain_state.id == ident
+
+    def test_get_id(self, domain_state, ident):
+        domain_state.id = ident
+        assert ident == domain_state.id
+
+    def test_get_iteration(self, domain_state, it):
+        domain_state.iteration = it
+        assert domain_state.iteration == it
+
+    def test_increment_iteration(self, domain_state, it):
+        domain_state.iteration = it
+        assert domain_state.increment_iteration() == it + 1
+
+    def test_copy(self, domain_state):
+        ds_copy = domain_state.copy()
+        assert ds_copy == domain_state
+        assert id(ds_copy) is not id(domain_state)
+        assert ds_copy == domain_state
+        tuple(
+            _not_share_memory(
+                getattr(ds_copy.state, v).data, getattr(domain_state.state, v).data
+            )
+            for v in ("u", "v", "eta")
+        )
+        assert all(
+            id(getattr(ds_copy.state, v).grid)
+            is not id(getattr(domain_state.state, v).grid)
+            for v in ("u", "v", "eta")
+        )
+        tuple(
+            (
+                _not_share_memory(
+                    getattr(getattr(ds_copy.state, v).grid, c),
+                    getattr(getattr(domain_state.state, v).grid, c),
+                )
+                for c in ("x", "y", "mask")
+            )
+            for v in ("u", "v", "eta")
+        )
+
+    def test_comparison_with_identical_returns_true(self, domain_state):
+        d2 = domain_state
+        assert domain_state == d2
+
+    def test_comparison_with_same_returns_true(self, domain_state):
+        d2 = domain_state.copy()
+        assert domain_state == d2
+
+    def test_comparison_with_different_returns_false(self, domain_state):
+        d2 = domain_state.copy()
+        d2.id = 100
+        assert domain_state != d2
+
+    def test_comparison_with_wrong_type_returns_false(self, domain_state):
+        assert domain_state != 5

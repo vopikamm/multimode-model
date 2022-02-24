@@ -6,7 +6,7 @@ explicit type of these. The callables will be used to
 initialize the Parameter class.
 """
 
-from .typing import Array
+from .api import Array
 from typing import Callable
 import numpy as np
 

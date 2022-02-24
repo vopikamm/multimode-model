@@ -40,7 +40,7 @@ A list of examples can be found in the :doc:`examples` section.
 
    Contributing guide <contributing>
    What's new <whats_new>
-   Gitlab repository <https://git.geomar.de/mcgroup/multimodemodel>
+   Gitlab repository <https://git.geomar.de/mcgroup/multimode-model>
 
 
 Indices and tables

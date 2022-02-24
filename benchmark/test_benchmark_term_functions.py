@@ -2,7 +2,7 @@
 import pytest
 
 from multimodemodel import (
-    Parameters,
+    Parameter,
     Variable,
     State,
     StaggeredGrid,
@@ -14,6 +14,7 @@ from multimodemodel import (
     divergence_j,
     f_on_sphere,
 )
+from multimodemodel.util import str_to_date
 
 
 def _get_grids():
@@ -29,7 +30,7 @@ def _get_grids():
 
 
 def _get_params(staggered_grid):
-    return Parameters(coriolis_func=f_on_sphere(1.0), on_grid=staggered_grid)
+    return Parameter(coriolis_func=f_on_sphere(1.0), on_grid=staggered_grid)
 
 
 @pytest.mark.benchmark(warmup="on", warmup_iterations=5, max_time=2.0, min_time=0.01)
@@ -49,10 +50,12 @@ def test_benchmark_term(benchmark, func):
     c_grid = _get_grids()
     params = _get_params(c_grid)
 
+    t0 = str_to_date("2000")
+
     state = State(
-        u=Variable(c_grid.u.x.copy(), c_grid.u, time=0.0),
-        v=Variable(c_grid.v.x.copy(), c_grid.v, time=0.0),
-        eta=Variable(c_grid.eta.x.copy(), c_grid.eta, time=0.0),
+        u=Variable(c_grid.u.x.copy(), c_grid.u, time=t0),
+        v=Variable(c_grid.v.x.copy(), c_grid.v, time=t0),
+        eta=Variable(c_grid.eta.x.copy(), c_grid.eta, time=t0),
     )
 
     _ = benchmark(func, state, params)

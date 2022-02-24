@@ -21,12 +21,16 @@
 		"python.languageServer": "Pylance",
 		"python.defaultInterpreterPath": "/app/conda/bin/python",
 		"python.analysis.typeCheckingMode": "basic",
+		"python.formatting.provider": "black",
+		"python.formatting.blackPath": "/app/conda/bin/black",
+		"editor.formatOnSave": true,
 	},
 	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
 		"ms-python.python",
 		"ryanluker.vscode-coverage-gutters",
 		"streetsidesoftware.code-spell-checker",
+		"eamodio.gitlens",
 	],
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],

@@ -13,3 +13,4 @@ features of the package.
 
     examples/1_gravity_wave
     examples/2_subtropical_gyre
+    examples/3_domain_decomposition_dask
