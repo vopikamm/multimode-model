@@ -6,7 +6,7 @@ import functools as ft
 import operator as op
 
 from multimodemodel import StaggeredGrid
-from multimodemodel import MultimodeParameters, f_on_sphere
+from multimodemodel import MultimodeParameter, f_on_sphere
 from multimodemodel import State, Variable
 from multimodemodel import integrate, adams_bashforth3
 from multimodemodel import (
@@ -42,7 +42,7 @@ Nsq = np.load("Nsq.npy", allow_pickle=True)
 depth = Nsq[1, :]
 Nsq = Nsq[0, :]
 
-multimode_params = MultimodeParameters(
+multimode_params = MultimodeParameter(
     z=depth,
     Nsq=Nsq,
     nmodes=nmodes,
@@ -54,8 +54,8 @@ ds = multimode_params.as_dataset
 
 A = 5.5e-5 * np.max(Nsq)
 H = abs(depth[0] - depth[-1])
-multimode_params.gamma_h = (A / ds.c ** 2).values
-multimode_params.gamma_v = (A / ds.c ** 2).values
+multimode_params.__setattr__("gamma_h", (A / ds.c**2).values)
+multimode_params.__setattr__("gamma_v", (A / ds.c**2).values)
 
 tau_x = np.empty(c_grid.u.shape)
 for k in range(nmodes):

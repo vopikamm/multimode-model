@@ -5,7 +5,7 @@ import numpy as np
 
 from multimodemodel import (
     StaggeredGrid,
-    MultimodeParameters,
+    MultimodeParameter,
     f_on_sphere,
     State,
     Variable,
@@ -49,7 +49,7 @@ c_grid = StaggeredGrid.regular_lat_lon_c_grid(
     z=np.arange(nmodes),
 )
 
-multimode_params = MultimodeParameters(
+multimode_params = MultimodeParameter(
     z=depth,
     Nsq=Nsq,
     nmodes=nmodes,
@@ -61,8 +61,9 @@ ds = multimode_params.as_dataset
 
 H = abs(depth[0] - depth[-1])
 A = 1.33e-7 / H
-gamma = A / ds.c.values ** 2
-multimode_params.gamma = gamma
+gamma = A / ds.c.values**2
+multimode_params.__setattr__("gamma_h", (A / ds.c**2).values)
+multimode_params.__setattr__("gamma_v", (A / ds.c**2).values)
 
 
 tau_x = np.empty(c_grid.u.shape)
@@ -102,7 +103,7 @@ def rhs(state, params):
     return ft.reduce(op.add, (term(state, params) for term in terms))
 
 
-def save_as_Dataset(state: State, params: MultimodeParameters):
+def save_as_Dataset(state: State, params: MultimodeParameter):
     """Save output as xarray.Dataset."""
     ds = state.variables["u"].as_dataarray.to_dataset(name="u_tilde")
     ds["v_tilde"] = state.variables["v"].as_dataarray
