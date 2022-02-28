@@ -26,18 +26,20 @@ class SplitVisitorBase(Generic[ArrayType]):
         return hash(self) == hash(other)
 
     @abstractmethod
-    def __hash__(self):
+    def __hash__(self):  # pragma: no cover
         """Return hash based on number of parts and dimension."""
         return 1
 
     @abstractmethod
-    def split_array(self, array: ArrayType) -> tuple[ArrayType, ...]:
+    def split_array(
+        self, array: ArrayType
+    ) -> tuple[ArrayType, ...]:  # pragma: no cover
         """Split numpy array in various parts."""
         ...
 
     @property
     @abstractmethod
-    def parts(self) -> int:
+    def parts(self) -> int:  # pragma: no cover
         """Return number of splits."""
         ...
 
@@ -56,12 +58,12 @@ class MergeVisitorBase(Generic[ArrayType]):
         return hash(self) == hash(other)
 
     @abstractmethod
-    def __hash__(self):
+    def __hash__(self):  # pragma: no cover
         """Return hash based on number of parts and dimension."""
         return 1
 
     @abstractmethod
-    def merge_array(self, arrays: Sequence[ArrayType]) -> ArrayType:
+    def merge_array(self, arrays: Sequence[ArrayType]) -> ArrayType:  # pragma: no cover
         """Merge numpy array in various parts."""
         ...
 
@@ -96,7 +98,7 @@ class Splitable(ABC):
     @abstractmethod
     def split(
         self: SplitableType, splitter: SplitVisitorBase
-    ) -> tuple[SplitableType, ...]:
+    ) -> tuple[SplitableType, ...]:  # pragma: no cover
         """Split the Domain into given number of parts along axis given by dim.
 
         For splitting among more than one axis pass tuple as dim.
@@ -109,6 +111,6 @@ class Splitable(ABC):
         cls: Type[SplitableType],
         others: Sequence[SplitableType],
         merger: MergeVisitorBase,
-    ) -> SplitableType:
+    ) -> SplitableType:  # pragma: no cover
         """Merge multiple Domains into one new domain."""
         ...

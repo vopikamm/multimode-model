@@ -136,6 +136,17 @@ def get_x_y(nx=10.0, ny=10.0, dx=1.0, dy=2.0) -> tuple[np.ndarray, np.ndarray]:
     return X, Y
 
 
+def get_x_y_z(nx=10.0, ny=10.0, nz=1, dx=1.0, dy=2.0):
+    """Return 2D coordinate arrays."""
+    x = np.arange(nx) * dx
+    y = np.arange(ny) * dy
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    Z = np.arange(nz)
+    assert np.all(X[0, :] == x)
+    assert np.all(Y[:, 0] == y)
+    return X, Y, Z
+
+
 def get_test_mask(shape):
     """Return a test ocean mask with the shape of the input coordinate array.
 
@@ -270,6 +281,10 @@ class TestParameter:
 class TestVariable:
     """Test Variable class."""
 
+    def _get_grid(self, nx=10, ny=5, nz=2, dx=1, dy=2):
+        x, y, z = get_x_y_z(nx, ny, nz, dx, dy)
+        return Grid(x=x, y=y, z=z, mask=get_test_mask((nz, ny, nx)))
+
     @pytest.mark.parametrize("data", (np.zeros((5, 10)), np.zeros((10, 5, 10))))
     @pytest.mark.parametrize(
         "grid",
@@ -286,10 +301,10 @@ class TestVariable:
 
     def test_copy(self):
         """Test that deepcopy of data and reference to grid is returned."""
-        shape = (10, 5)
+        shape = (10, 5, 2)
         var = Variable(
             np.ones(shape[::-1]),
-            Grid(*get_x_y(*shape, 1, 1)),
+            self._get_grid(*shape, 1, 1),
             time=np.datetime64("2000-01-01", "s"),
         )
         var_copy = var.copy()
@@ -310,14 +325,12 @@ class TestVariable:
 
     def test_add_data(self):
         """Test variable summation."""
-        nx, ny, dx, dy = 10, 5, 1, 2
         t1 = str_to_date("2000-01-01")
         t2 = add_time(t1, 2)
-        x, y = get_x_y(nx, ny, dx, dy)
-        g1 = Grid(x=x, y=y, mask=get_test_mask(x.shape))
+        g1 = self._get_grid()
 
-        d1 = np.zeros_like(g1.x) + 1.0
-        d2 = np.zeros_like(g1.x) + 2.0
+        d1 = np.zeros(g1.shape) + 1.0
+        d2 = np.zeros(g1.shape) + 2.0
         v1 = Variable(d1, g1, t1)
         v2 = Variable(d2, g1, t2)
         v3 = v1 + v2
@@ -331,14 +344,11 @@ class TestVariable:
 
     def test_add_data_with_none(self):
         """Test summing with None data."""
-        nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + np.timedelta64(2, "s")
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x=x, y=y, mask=mask)
+        t1 = str_to_date("2000-01-01")
+        t2 = add_time(t1, 2)
+        g1 = self._get_grid()
 
-        v1 = Variable(np.ones_like(g1.x), g1, t1)
+        v1 = Variable(np.ones(g1.shape), g1, t1)
         v2 = Variable(None, g1, t2)
         v3 = v1 + v2
         assert np.all(v3.data == v1.data)
@@ -348,12 +358,9 @@ class TestVariable:
 
     def test_add_none_with_none(self):
         """Test summing with None data."""
-        nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + np.timedelta64(2, "s")
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x=x, y=y, mask=mask)
+        t1 = str_to_date("2000-01-01")
+        t2 = add_time(t1, 2)
+        g1 = self._get_grid()
 
         v1 = Variable(None, g1, t1)
         v2 = Variable(None, g1, t2)
@@ -363,15 +370,13 @@ class TestVariable:
 
     def test_add_grid_mismatch(self):
         """Test grid mismatch detection."""
-        nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = np.datetime64("2000-01-01", "s")
-        t2 = t1 + np.timedelta64(2, "s")
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x=x, y=y, mask=mask)
-        g2 = Grid(x=x + 1, y=y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
-        d2 = np.zeros_like(g1.x) + 2.0
+        t1 = str_to_date("2000-01-01")
+        t2 = add_time(t1, 2)
+        g1 = self._get_grid()
+        g2 = self._get_grid()
+        g2.x[:] = g2.x + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
+        d2 = np.zeros(g2.shape) + 2.0
         v1 = Variable(d1, g1, t1)
         v2 = Variable(d2, g2, t2)
         with pytest.raises(ValueError) as excinfo:
@@ -380,66 +385,48 @@ class TestVariable:
 
     def test_not_implemented_add(self):
         """Test missing summation implementation."""
-        nx, ny, dx, dy = 10, 5, 1, 2
-        t1 = np.datetime64("2000-01-01", "s")
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x=x, y=y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        t1 = str_to_date("2000-01-01")
+        g1 = self._get_grid()
+        d1 = np.zeros(g1.shape) + 1.0
         v1 = Variable(d1, g1, t1)
         with pytest.raises(TypeError) as excinfo:
             _ = v1 + 1.0  # type: ignore
         assert "unsupported operand type(s)" in str(excinfo.value)
 
     def test_comparison_with_identical_returns_true(self):
-        nx, ny, dx, dy = 10, 5, 1, 2
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask=mask)
+        g1 = self._get_grid()
 
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         v1 = Variable(d1, g1, some_datetime)
         v2 = v1
         assert v1 == v2
 
     def test_comparison_with_same_returns_true(self):
-        nx, ny, dx, dy = 10, 5, 1, 2
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask=mask)
+        g1 = self._get_grid()
 
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         v1 = Variable(d1, g1, some_datetime)
         v2 = Variable(d1.copy(), g1, some_datetime)
         assert v1 == v2
 
     def test_comparison_with_both_none_data_returns_true(self):
-        nx, ny, dx, dy = 10, 5, 1, 2
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask=mask)
+        g1 = self._get_grid()
 
         v1 = Variable(None, g1, some_datetime)
         v2 = Variable(None, g1, some_datetime)
         assert v1 == v2
 
     def test_comparison_with_different_returns_false(self):
-        nx, ny, dx, dy = 10, 5, 1, 2
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask=mask)
+        g1 = self._get_grid()
 
-        v1 = Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime)
-        v2 = Variable(np.zeros_like(g1.x) + 2.0, g1, some_datetime)
+        v1 = Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime)
+        v2 = Variable(np.zeros(g1.shape) + 2.0, g1, some_datetime)
         assert v1 != v2
 
     def test_comparison_with_wrong_type_returns_false(self):
-        nx, ny, dx, dy = 10, 5, 1, 2
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask=mask)
+        g1 = self._get_grid()
 
-        v1 = Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime)
+        v1 = Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime)
         assert v1 != 5
 
 
@@ -447,11 +434,10 @@ class TestVariable:
 class TestVariableAsDataArray:
     """Test Variable to xarray.DataArray conversion."""
 
-    nx, ny, dx, dy = 10, 5, 1, 2
+    nx, ny, nz, dx, dy = 10, 5, 1, 1, 2
 
-    def _gen_var(self, data=None, mask=None, has_z=False):
-        x, y = get_x_y(self.nx, self.ny, self.dx, self.dy)
-        z = np.arange(10.0) if has_z else None
+    def _gen_var(self, data=None, mask=None):
+        x, y, z = get_x_y_z(self.nx, self.ny, self.nz, self.dx, self.dy)
         g1 = Grid(x=x, y=y, z=z, mask=mask)
         return Variable(data, g1, some_datetime)
 
@@ -474,14 +460,15 @@ class TestVariableAsDataArray:
     def test_data_assignment(self):
         """Test assignment of data."""
         v = self._gen_var(
-            data=np.random.randn(self.ny, self.nx), mask=np.ones((self.ny, self.nx))
+            data=np.random.randn(self.nz, self.ny, self.nx),
+            mask=np.ones((self.nz, self.ny, self.nx)),
         )
         assert (v.as_dataarray == v.data).all()
 
     @pytest.mark.parametrize("has_z", (True, False))
     def test_coords_and_dims(self, has_z):
         """Test coordinate and dimension definition."""
-        v = self._gen_var(has_z=has_z)
+        v = self._gen_var()
         v_da = v.as_dataarray
 
         assert (v_da.x == v.grid.x).all()  # type: ignore
@@ -491,16 +478,12 @@ class TestVariableAsDataArray:
         )
         assert v_da.dims[0] == "time"  # type: ignore
 
-        if has_z:
-            assert (v_da.z == v.grid.z).all()  # type: ignore
-            assert v_da.dims[v.grid.dim_z] == "z"  # type: ignore
-        else:
-            assert "z" not in v_da.coords  # type: ignore
-            assert "z" not in v_da.dims  # type: ignore
+        assert (v_da.z == v.grid.z).all()  # type: ignore
+        assert v_da.dims[v.grid.dim_z] == "z"  # type: ignore
 
     def test_masking_has_no_side_effects(self):
         """Test if masking has side effects."""
-        data = np.ones((self.ny, self.nx))
+        data = np.ones((self.nz, self.ny, self.nx))
         v = self._gen_var(data=data)
         _ = v.as_dataarray
 
@@ -510,17 +493,18 @@ class TestVariableAsDataArray:
 class TestState:
     """Test State class."""
 
+    def _get_grid(self, nx=10, ny=5, nz=1, dx=1, dy=2):
+        x, y, z = get_x_y_z(nx, ny, nz, dx, dy)
+        return Grid(x=x, y=y, z=z, mask=get_test_mask((nz, ny, nx)))
+
     def test__variable_type_is_Variable(self):
         """Test value of _stype attribute."""
         assert State._variable_type() is Variable
 
     def test_variables_dict_set_correctly(self):
         """Test state summation."""
-        nx, ny, dx, dy = 10, 5, 1, 2
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x, y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        g1 = self._get_grid()
+        d1 = np.zeros(g1.shape) + 1.0
         s1 = State(
             u=Variable(d1, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
@@ -537,13 +521,10 @@ class TestState:
 
     def test_add(self):
         """Test state summation."""
-        nx, ny, dx, dy = 10, 5, 1, 2
         t1 = str_to_date("2000-01-01")
-        t2 = t1 + np.timedelta64(2, "s")
-        x, y = get_x_y(nx, ny, dx, dy)
-        mask = get_test_mask(x.shape)
-        g1 = Grid(x=x, y=y, mask=mask)
-        d1 = np.ones_like(g1.x)
+        t2 = add_time(t1, 2)
+        g1 = self._get_grid()
+        d1 = np.ones(g1.shape)
         s1 = State(
             u=Variable(d1, g1, t1),
             v=Variable(d1, g1, t1),
@@ -571,9 +552,9 @@ class TestState:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         s1 = State(
-            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            u=Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
             eta=Variable(d1, g1, some_datetime),
         )
@@ -585,14 +566,14 @@ class TestState:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         s1 = State(
-            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            u=Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
             eta=Variable(d1, g1, some_datetime),
         )
         s2 = State(
-            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            u=Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
             eta=Variable(d1, g1, some_datetime),
         )
@@ -603,14 +584,14 @@ class TestState:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         s1 = State(
-            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            u=Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
             eta=Variable(d1, g1, some_datetime),
         )
         s2 = State(
-            u=Variable(np.zeros_like(g1.x) + 2.0, g1, some_datetime),
+            u=Variable(np.zeros(g1.shape) + 2.0, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
             eta=Variable(d1, g1, some_datetime),
         )
@@ -621,9 +602,9 @@ class TestState:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         s1 = State(
-            u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+            u=Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime),
             v=Variable(d1, g1, some_datetime),
             eta=Variable(d1, g1, some_datetime),
         )
@@ -635,19 +616,19 @@ class TestState:
         x, y = get_x_y(nx, ny, dx, dy)
         mask = get_test_mask(x.shape)
         g1 = Grid(x, y, mask=mask)
-        d1 = np.zeros_like(g1.x) + 1.0
+        d1 = np.zeros(g1.shape) + 1.0
         states = n_states * (
             State(
-                u=Variable(np.zeros_like(g1.x) + 1.0, g1, some_datetime),
+                u=Variable(np.zeros(g1.shape) + 1.0, g1, some_datetime),
                 v=Variable(d1, g1, some_datetime),
                 eta=Variable(d1, g1, some_datetime),
             ),
         )
         states[-1].eta.data = None
         start_state = State(
-            u=Variable(np.zeros_like(d1), g1, some_datetime),
-            v=Variable(np.zeros_like(d1), g1, some_datetime),
-            eta=Variable(np.zeros_like(d1), g1, some_datetime),
+            u=Variable(np.zeros(d1.shape), g1, some_datetime),
+            v=Variable(np.zeros(d1.shape), g1, some_datetime),
+            eta=Variable(np.zeros(d1.shape), g1, some_datetime),
         )
         assert sum(states, start=start_state) == sum_states(states)
 

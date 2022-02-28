@@ -14,6 +14,7 @@ from .api import (
 from .border import Border, BorderSplitter, RegularSplitMerger
 from .util import add_time
 from .datastructure import Domain, StateDeque, Parameter, State
+
 from .kernel import (
     pressure_gradient_i,
     pressure_gradient_j,

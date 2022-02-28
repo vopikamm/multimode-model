@@ -6,7 +6,14 @@ water equation as python functions.
 
 from .config import config
 
-from .datastructure import Parameter, Variable, State, StateDeque, Domain
+from .datastructure import (
+    Parameter,
+    Variable,
+    State,
+    StateDeque,
+    Domain,
+    MultimodeParameter,
+)
 
 from .grid import (
     Grid,
@@ -37,6 +44,14 @@ from .kernel import (
     sum_states,
     sum_vars,
     linear_combination,
+    laplacian_mixing_u,
+    laplacian_mixing_v,
+    linear_damping_u,
+    linear_damping_v,
+    linear_damping_eta,
+    advection_momentum_u,
+    advection_momentum_v,
+    advection_density,
 )
 
 from .coriolis import (

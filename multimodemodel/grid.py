@@ -16,7 +16,7 @@ from .api import (
     SplitVisitorBase,
 )
 from .config import config
-from .jit import _numba_2D_grid_iterator_i8
+from .jit import _numba_3D_grid_iterator_i8
 
 
 def _check_shape(arr1, expected, msg=""):
@@ -119,10 +119,7 @@ class Grid(GridBase[np.ndarray]):
             dy = self._compute_grid_spacing(coord=self.y, axis=self.dim_y)
         super().__setattr__("dy", dy)
         if dz is None:
-            if z is None:
-                dz = np.array([], dtype=self.z.dtype)
-            else:
-                dz = self._compute_grid_spacing(coord=self.z, axis=0)
+            dz = self._compute_grid_spacing(coord=self.z, axis=0)
         super().__setattr__("dz", dz)
 
         # validate
@@ -185,6 +182,8 @@ class Grid(GridBase[np.ndarray]):
     @staticmethod
     def _compute_grid_spacing(coord: Array, axis: int) -> Array:
         """Compute the spatial differences of a coordinate along a given axis."""
+        if coord is None or len(coord) <= 1:
+            return np.array([], dtype=coord.dtype)
         dx = np.diff(coord, axis=axis)
         dx_0 = dx.take(indices=0, axis=axis)
         dx = np.append(dx, np.expand_dims(dx_0, axis=axis), axis=axis)
@@ -457,69 +456,74 @@ class StaggeredGrid(StaggeredGridBase[Grid]):
         return cls(eta_grid, u_grid, v_grid, q_grid)
 
     @staticmethod
-    def _compute_mask(
-        func: Callable[..., Array], from_grid: Grid, shift: GridShift
-    ) -> Array:
-        if from_grid.mask.ndim <= 2:
-            return func(
-                from_grid.shape[from_grid.dim_x],
-                from_grid.shape[from_grid.dim_y],
-                from_grid.mask,
-                shift.value[0],
-                shift.value[1],
-            )
-        res = np.empty_like(from_grid.mask)
-        for k in range(from_grid.shape[from_grid.dim_z]):
-            res[k] = func(
-                from_grid.shape[from_grid.dim_x],
-                from_grid.shape[from_grid.dim_y],
-                from_grid.mask[k],
-                shift.value[0],
-                shift.value[1],
-            )
-        return res
+    def _compute_mask(func: Callable[..., Array], from_grid: Grid, shift: GridShift):
+        is_2D = from_grid.ndim < 3
+        if is_2D:
+            nk = 1
+            mask = from_grid.mask[np.newaxis]
+        else:
+            nk = from_grid.shape[from_grid.dim_z]
+            mask = from_grid.mask
+        res = func(
+            from_grid.shape[from_grid.dim_x],
+            from_grid.shape[from_grid.dim_y],
+            nk,
+            mask,
+            shift.value[0],
+            shift.value[1],
+        )
+        if is_2D:
+            return res[0, ...]
+        else:
+            return res
 
     @staticmethod
-    @_numba_2D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8
     def _u_mask_from_eta(
         i: int,
         j: int,
+        k: int,
         ni: int,
         nj: int,
+        nk: int,
         eta_mask: Array,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover
         i_shift = (i + shift_x) % ni
-        if (eta_mask[j, i] + eta_mask[j, i_shift]) == 2:
+        if (eta_mask[k, j, i] + eta_mask[k, j, i_shift]) == 2:
             return 1
         else:
             return 0
 
     @staticmethod
-    @_numba_2D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8
     def _v_mask_from_eta(
         i: int,
         j: int,
+        k: int,
         ni: int,
         nj: int,
+        nk: int,
         eta_mask: Array,
         shift_x: int,
         shift_y: int,
     ) -> int:  # pragma: no cover
         j_shift = (j + shift_y) % nj
-        if (eta_mask[j, i] + eta_mask[j_shift, i]) == 2:
+        if (eta_mask[k, j, i] + eta_mask[k, j_shift, i]) == 2:
             return 1
         else:
             return 0
 
     @staticmethod
-    @_numba_2D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8
     def _q_mask_from_eta(
         i: int,
         j: int,
+        k: int,
         ni: int,
         nj: int,
+        nk: int,
         eta_mask: Array,
         shift_x: int,
         shift_y: int,
@@ -527,10 +531,10 @@ class StaggeredGrid(StaggeredGridBase[Grid]):
         i_shift = (i + shift_x) % ni
         j_shift = (j + shift_y) % nj
         if (
-            eta_mask[j, i]
-            + eta_mask[j_shift, i]
-            + eta_mask[j, i_shift]
-            + eta_mask[j_shift, i_shift]
+            eta_mask[k, j, i]
+            + eta_mask[k, j_shift, i]
+            + eta_mask[k, j, i_shift]
+            + eta_mask[k, j_shift, i_shift]
         ) == 4:
             return 1
         else:

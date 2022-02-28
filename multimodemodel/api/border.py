@@ -127,7 +127,7 @@ class BorderBase(DomainBase[StateType, ParameterType]):
 
     @staticmethod
     @abstractmethod
-    def _provide_border_splitter() -> Type:
+    def _provide_border_splitter() -> Type:  # pragma: no cover
         """Return type of the associated border splitter class."""
         ...
 
@@ -203,7 +203,7 @@ class TailorBase(Generic[DomainType, BorderType]):
 
     @staticmethod
     @abstractmethod
-    def _provide_border_type() -> Type:
+    def _provide_border_type() -> Type:  # pragma: no cover
         """Return type of the border instance associated with the domain class."""
         ...
 
@@ -234,7 +234,7 @@ class TailorBase(Generic[DomainType, BorderType]):
     def stitch(
         base: DomainType,
         borders: tuple[BorderType, BorderType],
-    ) -> DomainType:
+    ) -> DomainType:  # pragma: no cover
         """Copy data from Border to Domain.
 
         Whether it mutates Domain object is up to implementation.

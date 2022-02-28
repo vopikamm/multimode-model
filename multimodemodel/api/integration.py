@@ -83,7 +83,7 @@ class SolverBase(Generic[DomainType]):
         return self._rhs(state, parameter)
 
     @abstractmethod
-    def integrate(self, domain: DomainType) -> DomainType:
+    def integrate(self, domain: DomainType) -> DomainType:  # pragma: no cover
         """Compute next iteration."""
         ...
 
@@ -94,11 +94,11 @@ class SolverBase(Generic[DomainType]):
         border: BorderType,
         neighbor_border: BorderType,
         direction: bool,
-    ) -> DomainType:
+    ) -> DomainType:  # pragma: no cover
         """Integrate set of PDEs on a border of a domian."""
         ...
 
     @abstractmethod
-    def get_border_width(self) -> int:
+    def get_border_width(self) -> int:  # pragma: no cover
         """Provide minimal required border width."""
         ...

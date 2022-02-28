@@ -64,30 +64,30 @@ class GridBase(Splitable, Generic[ArrayType]):
 
     @property
     @abstractmethod
-    def shape(self) -> Shape:
+    def shape(self) -> Shape:  # pragma: no cover
         """Return shape tuple of grid."""
         ...
 
     @property
     @abstractmethod
-    def dim_x(self) -> int:
+    def dim_x(self) -> int:  # pragma: no cover
         """Return axis of x dimension."""
         return -1
 
     @property
     @abstractmethod
-    def dim_y(self) -> int:
+    def dim_y(self) -> int:  # pragma: no cover
         """Return axis of x dimension."""
         return -2
 
     @property
     @abstractmethod
-    def dim_z(self) -> int:
+    def dim_z(self) -> int:  # pragma: no cover
         """Return axis of x dimension."""
         return -3
 
     @abstractmethod
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: Any) -> bool:  # pragma: no cover
         """Compare to Grid objects."""
         ...
 
@@ -221,7 +221,7 @@ class StaggeredGridBase(Splitable, Generic[GridType]):
         cls: Type[StaggeredGridType],
         shift: GridShift = GridShift.LL,
         **grid_kwargs: dict[str, Any],
-    ) -> StaggeredGridType:
+    ) -> StaggeredGridType:  # pragma: no cover
         """Generate a Cartesian Arakawa C-Grid.
 
         Arguments
@@ -241,7 +241,7 @@ class StaggeredGridBase(Splitable, Generic[GridType]):
         cls: Type[StaggeredGridType],
         shift: GridShift = GridShift.LL,
         **kwargs: dict[str, Any],
-    ) -> StaggeredGridType:
+    ) -> StaggeredGridType:  # pragma: no cover
         """Generate a Arakawa C-grid for a regular longitude/latitude grid.
 
         Arguments
@@ -260,7 +260,7 @@ class ParameterBase(Splitable):
     """Base class for all Parameter classes."""
 
     @abstractmethod
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: Any) -> bool:  # pragma: no cover
         """Compare to parameter objects."""
         ...
 
@@ -341,7 +341,9 @@ class VariableBase(Splitable, Generic[ArrayType, GridType]):
         )
 
     @abstractmethod
-    def _add_data(self, other_data: Optional[ArrayType]) -> Optional[ArrayType]:
+    def _add_data(
+        self, other_data: Optional[ArrayType]
+    ) -> Optional[ArrayType]:  # pragma: no cover
         """Sum data of two variables.
 
         Should throw TypeError or AttributeError if addition is not possible.
@@ -350,12 +352,12 @@ class VariableBase(Splitable, Generic[ArrayType, GridType]):
 
     @property
     @abstractmethod
-    def safe_data(self) -> ArrayType:
+    def safe_data(self) -> ArrayType:  # pragma: no cover
         """Return variable data or, if it is None, a zero array of appropriate shape."""
         ...
 
     @abstractmethod
-    def copy(self: VariableType) -> VariableType:
+    def copy(self: VariableType) -> VariableType:  # pragma: no cover
         """Return a deep copy of the variable."""
         ...
 
@@ -383,12 +385,12 @@ class VariableBase(Splitable, Generic[ArrayType, GridType]):
         return self.__class__(data=new_data, grid=self.grid, time=new_time)
 
     @abstractmethod
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: Any) -> bool:  # pragma: no cover
         """Compare two variables."""
         ...
 
     @abstractmethod
-    def _validate_init(self):
+    def _validate_init(self):  # pragma: no cover
         """Validate after initialization."""
         ...
 
@@ -407,20 +409,17 @@ class StateBase(Splitable, Generic[VariableType]):
     v: VariableType
     eta: VariableType
     variables: dict[str, VariableType] = field(init=False, default_factory=dict)
+    diagnostic_variables: dict[str, VariableType] = field(
+        init=False, default_factory=dict
+    )
     _vtype: Type[VariableType] = field(init=False)
 
     def __init__(self, **kwargs):
         """Create State object."""
         self.variables = dict()
+        self._add_to_var_dict(self.variables, **kwargs)
 
-        for k, v in kwargs.items():
-            if type(v) is not self._vtype:
-                raise ValueError(
-                    f"Keyword arguments must be of type {self._vtype}. Got {type(v)} for variable {k}"
-                )
-            else:
-                self.variables[k] = v
-                self.__setattr__(k, self.variables[k])
+        self.diagnostic_variables = dict()
 
     @classmethod
     def _variable_type(cls):
@@ -489,6 +488,24 @@ class StateBase(Splitable, Generic[VariableType]):
             return self.__class__(**sum)
         except (AttributeError, TypeError):  # pragma: no cover
             return NotImplemented
+
+    def set_diagnostic_variable(self, **kwargs):
+        """Set variables for diagnostic purposes.
+
+        Diagnostic variables are given by keyword arguments.
+        Attributes are not considered by the add function.
+        """
+        self._add_to_var_dict(self.diagnostic_variables, **kwargs)
+
+    def _add_to_var_dict(self, var_dict, **kwargs):
+        for k, v in kwargs.items():
+            if type(v) is not self._vtype:
+                raise ValueError(
+                    f"Keyword arguments must be of type {self._vtype}. Got {type(v)} for variable {k}"
+                )
+            else:
+                var_dict[k] = v
+                self.__setattr__(k, var_dict[k])
 
 
 StateDequeType = TypeVar("StateDequeType", bound="StateDequeBase")

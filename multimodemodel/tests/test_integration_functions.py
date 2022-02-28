@@ -31,12 +31,23 @@ def get_x_y(nx: int, ny: int, dx: float, dy: float) -> tuple[np.ndarray, np.ndar
     return X, Y
 
 
-def get_test_mask(x: np.ndarray) -> np.ndarray:
+def get_x_y_z(nx=10.0, ny=10.0, nz=1, dx=1.0, dy=2.0):
+    """Return 2D coordinate arrays."""
+    x = np.arange(nx) * dx
+    y = np.arange(ny) * dy
+    X, Y = np.meshgrid(x, y, indexing="xy")
+    Z = np.arange(nz)
+    assert np.all(X[0, :] == x)
+    assert np.all(Y[:, 0] == y)
+    return X, Y, Z
+
+
+def get_test_mask(shape) -> np.ndarray:
     """Return a test ocean mask with the shape of the input coordinate array.
 
     The mask is zero at the outmost array elements, one elsewhere.
     """
-    mask = np.ones(x.shape, dtype=int)
+    mask = np.ones(shape, dtype=int)
     mask[0, :] = 0
     mask[-1, :] = 0
     mask[:, 0] = 0
@@ -49,20 +60,19 @@ class TestRHS:
 
     def test_linearised_SWE(self):
         """Test LSWE."""
-        H, g, f0 = 1.0, 2.0, 4.0
+        H, g, f0 = np.array([1.0]), 2.0, 4.0
         dx, dy = 1.0, 2.0
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t = np.datetime64("2000-01-01", "s")
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask_eta = get_test_mask(x)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask_eta = get_test_mask(z.shape + x.shape)
 
         c_grid = StaggeredGrid.cartesian_c_grid(
-            x=x[0, :],
-            y=y[:, 0],
-            mask=mask_eta,  # type: ignore
+            x=x[0, :], y=y[:, 0], z=z, mask=mask_eta  # type: ignore
         )
-
+        x = x[np.newaxis]
+        y = y[np.newaxis]
         eta = 1.0 * x * y * c_grid.eta.mask
         u = 2.0 * x * y * c_grid.u.mask
         v = 3.0 * x * y * c_grid.v.mask
@@ -134,18 +144,22 @@ class TestIntegration:
         """Test euler_forward."""
         dt = 5.0
         dx, dy = 1, 2
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t = np.datetime64("2000-01-01", "s")
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
-        kwargs = dict(x=x[0], y=y[:, 0], mask=mask)
-        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask = np.ones(z.shape + x.shape)
+        c_grid = StaggeredGrid.cartesian_c_grid(
+            x=x[0, :],
+            y=y[:, 0],
+            z=z,
+            mask=mask,  # type: ignore
+        )
 
         ds = State(
-            u=Variable(2 * np.ones(x.shape), c_grid.u, t),
-            v=Variable(3 * np.ones(x.shape), c_grid.v, t),
-            eta=Variable(1 * np.ones(x.shape), c_grid.eta, t),
+            u=Variable(2 * np.ones(mask.shape), c_grid.u, t),
+            v=Variable(3 * np.ones(mask.shape), c_grid.v, t),
+            eta=Variable(1 * np.ones(mask.shape), c_grid.eta, t),
         )
 
         ds_test = euler_forward(StateDeque([ds], maxlen=1), dt)
@@ -160,20 +174,20 @@ class TestIntegration:
         """Test adams_bashforth2 computational initial condition."""
         dx, dy = 1, 2
         dt = 2.0
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t = np.datetime64("2000-01-01", "s")
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = get_test_mask(x)
-        grid = Grid(x=x, y=y, mask=mask)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask = get_test_mask(z.shape + x.shape)
+        grid = Grid(x=x, y=y, z=z, mask=mask)
 
         state1 = State(
-            u=Variable(np.ones(x.shape), grid, t),
-            v=Variable(np.ones(x.shape), grid, t),
-            eta=Variable(np.ones(x.shape), grid, t),
+            u=Variable(np.ones(mask.shape), grid, t),
+            v=Variable(np.ones(mask.shape), grid, t),
+            eta=Variable(np.ones(mask.shape), grid, t),
         )
 
-        d_u = dt * np.ones(x.shape)
+        d_u = dt * np.ones(mask.shape)
 
         rhs = deque([state1], maxlen=3)
 
@@ -193,25 +207,29 @@ class TestIntegration:
         """Test adams_bashforth2."""
         dt = 5
         dx, dy = 1, 2
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t1 = np.datetime64("2000-01-01", "s")
         t2 = add_time(t1, dt)
         t3 = add_time(t2, dt / 2)
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = get_test_mask(x)
-        kwargs = dict(x=x[0], y=y[:, 0], mask=mask)
-        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask = get_test_mask(z.shape + x.shape)
+        c_grid = StaggeredGrid.cartesian_c_grid(
+            x=x[0, :],
+            y=y[:, 0],
+            z=z,
+            mask=mask,  # type: ignore
+        )
 
         ds1 = State(
-            u=Variable(1 * np.ones(x.shape), c_grid.u, t1),
-            v=Variable(2 * np.ones(x.shape), c_grid.v, t1),
-            eta=Variable(3 * np.ones(x.shape), c_grid.eta, t1),
+            u=Variable(1 * np.ones(mask.shape), c_grid.u, t1),
+            v=Variable(2 * np.ones(mask.shape), c_grid.v, t1),
+            eta=Variable(3 * np.ones(mask.shape), c_grid.eta, t1),
         )
         ds2 = State(
-            u=Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
-            v=Variable(5 * np.ones(x.shape), c_grid.v, t2),
-            eta=Variable(6 * np.ones(x.shape), c_grid.eta, t2),
+            u=Variable(4.0 * np.ones(mask.shape), c_grid.u, t2),
+            v=Variable(5 * np.ones(mask.shape), c_grid.v, t2),
+            eta=Variable(6 * np.ones(mask.shape), c_grid.eta, t2),
         )
 
         ds3 = State(
@@ -262,32 +280,36 @@ class TestIntegration:
         """Test adams_bashforth3."""
         dt = 5
         dx, dy = 1, 2
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t1 = np.datetime64("2000-01-01", "s")
         t2 = add_time(t1, dt)
         t3 = add_time(t2, dt)
         t4 = add_time(t3, dt / 2)
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = get_test_mask(x)
-        kwargs = dict(x=x[0], y=y[:, 0], mask=mask)
-        c_grid = StaggeredGrid.cartesian_c_grid(**kwargs)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask = get_test_mask(z.shape + x.shape)
+        c_grid = StaggeredGrid.cartesian_c_grid(
+            x=x[0, :],
+            y=y[:, 0],
+            z=z,
+            mask=mask,  # type: ignore
+        )
 
         ds1 = State(
-            u=Variable(1 * np.ones(x.shape), c_grid.u, t1),
-            v=Variable(2 * np.ones(x.shape), c_grid.v, t1),
-            eta=Variable(3 * np.ones(x.shape), c_grid.eta, t1),
+            u=Variable(1 * np.ones(mask.shape), c_grid.u, t1),
+            v=Variable(2 * np.ones(mask.shape), c_grid.v, t1),
+            eta=Variable(3 * np.ones(mask.shape), c_grid.eta, t1),
         )
         ds2 = State(
-            u=Variable(4.0 * np.ones(x.shape), c_grid.u, t2),
-            v=Variable(5 * np.ones(x.shape), c_grid.v, t2),
-            eta=Variable(6 * np.ones(x.shape), c_grid.eta, t2),
+            u=Variable(4.0 * np.ones(mask.shape), c_grid.u, t2),
+            v=Variable(5 * np.ones(mask.shape), c_grid.v, t2),
+            eta=Variable(6 * np.ones(mask.shape), c_grid.eta, t2),
         )
 
         ds3 = State(
-            u=Variable(7 * np.ones(x.shape), c_grid.u, t3),
-            v=Variable(8 * np.ones(x.shape), c_grid.v, t3),
-            eta=Variable(9 * np.ones(x.shape), c_grid.eta, t3),
+            u=Variable(7 * np.ones(mask.shape), c_grid.u, t3),
+            v=Variable(8 * np.ones(mask.shape), c_grid.v, t3),
+            eta=Variable(9 * np.ones(mask.shape), c_grid.eta, t3),
         )
 
         ds4 = State(
@@ -347,29 +369,29 @@ class TestIntegration:
         """Test adams_bashforth2."""
         dt = 2.0
         dx, dy = 1, 2
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t1 = np.datetime64("2000-01-01", "s")
         t2 = add_time(t1, dt)
         t3 = add_time(t2, dt / 2)
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones(x.shape)
-        grid = Grid(x=x, y=y, mask=mask)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask = np.ones(z.shape + x.shape)
+        grid = Grid(x=x, y=y, z=z, mask=mask)
 
         state1 = State(
-            u=Variable(3 * np.ones(x.shape), grid, t1),
-            v=Variable(3 * np.ones(x.shape), grid, t1),
-            eta=Variable(3 * np.ones(x.shape), grid, t1),
+            u=Variable(3 * np.ones(mask.shape), grid, t1),
+            v=Variable(3 * np.ones(mask.shape), grid, t1),
+            eta=Variable(3 * np.ones(mask.shape), grid, t1),
         )
         state2 = State(
-            u=Variable(np.ones(x.shape), grid, t2),
-            v=Variable(np.ones(x.shape), grid, t2),
-            eta=Variable(np.ones(x.shape), grid, t2),
+            u=Variable(np.ones(mask.shape), grid, t2),
+            v=Variable(np.ones(mask.shape), grid, t2),
+            eta=Variable(np.ones(mask.shape), grid, t2),
         )
 
-        d_u = np.zeros(x.shape)
-        d_v = np.zeros(x.shape)
-        d_eta = np.zeros(x.shape)
+        d_u = np.zeros(mask.shape)
+        d_v = np.zeros(mask.shape)
+        d_eta = np.zeros(mask.shape)
 
         rhs = deque([state1, state2], maxlen=3)
 
@@ -387,27 +409,28 @@ class TestIntegration:
 
     def test_integrator(self):
         """Test integrate."""
-        H, g, f = 1, 1, 1
+        H, g, f = np.array([1]), 1, 1
         t_end, dt = 1, 1
         dx, dy = 1, 2
-        ni, nj = 10, 5
+        ni, nj, nz = 10, 5, 1
         t = np.datetime64("2000-01-01", "s")
 
-        x, y = get_x_y(ni, nj, dx, dy)
-        mask = np.ones_like(x)
+        x, y, z = get_x_y_z(ni, nj, nz, dx, dy)
+        mask = np.ones(z.shape + x.shape)
         c_grid = StaggeredGrid.cartesian_c_grid(
             x=x[0, :],
             y=y[:, 0],
+            z=z,
             mask=mask,  # type: ignore
         )
 
-        eta_0 = 1 * np.ones(x.shape)
-        u_0 = 1 * np.ones(x.shape)
-        v_0 = 1 * np.ones(x.shape)
+        eta_0 = 1 * np.ones(mask.shape)
+        u_0 = 1 * np.ones(mask.shape)
+        v_0 = 1 * np.ones(mask.shape)
 
-        eta_1 = 1 * np.ones(x.shape)
-        u_1 = 2 * np.ones(x.shape)
-        v_1 = 0 * np.ones(x.shape)
+        eta_1 = 1 * np.ones(mask.shape)
+        u_1 = 2 * np.ones(mask.shape)
+        v_1 = 0 * np.ones(mask.shape)
 
         params = Parameter(
             H=H,

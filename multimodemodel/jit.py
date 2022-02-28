@@ -8,44 +8,226 @@ from .api import Array
 
 
 @numba.njit(inline="always")  # type: ignore
-def _expand_11_arguments(func, i, j, ni, nj, args):  # pragma: no cover
+def _expand_20_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
     return func(
-        i, j, ni, nj, args[0], args[1], args[2], args[3], args[4], args[5], args[6]
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+        args[10],
+        args[11],
+        args[12],
+        args[13],
     )
 
 
 @numba.njit(inline="always")  # type: ignore
-def _expand_10_arguments(func, i, j, ni, nj, args):  # pragma: no cover
-    return func(i, j, ni, nj, args[0], args[1], args[2], args[3], args[4], args[5])
+def _expand_19_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+        args[10],
+        args[11],
+        args[12],
+    )
 
 
 @numba.njit(inline="always")  # type: ignore
-def _expand_9_arguments(func, i, j, ni, nj, args):  # pragma: no cover
-    return func(i, j, ni, nj, args[0], args[1], args[2], args[3], args[4])
+def _expand_18_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+        args[10],
+        args[11],
+    )
 
 
 @numba.njit(inline="always")  # type: ignore
-def _expand_8_arguments(func, i, j, ni, nj, args):  # pragma: no cover
-    return func(i, j, ni, nj, args[0], args[1], args[2], args[3])
+def _expand_17_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+        args[10],
+    )
 
 
 @numba.njit(inline="always")  # type: ignore
-def _expand_7_arguments(func, i, j, ni, nj, args):  # pragma: no cover
-    return func(i, j, ni, nj, args[0], args[1], args[2])
+def _expand_16_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+        args[9],
+    )
 
 
 @numba.njit(inline="always")  # type: ignore
-def _expand_6_arguments(func, i, j, ni, nj, args):  # pragma: no cover
-    return func(i, j, ni, nj, args[0], args[1])
+def _expand_15_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+        args[8],
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_14_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+        args[7],
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_13_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i,
+        j,
+        k,
+        ni,
+        nj,
+        nk,
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+        args[4],
+        args[5],
+        args[6],
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_12_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(
+        i, j, k, ni, nj, nk, args[0], args[1], args[2], args[3], args[4], args[5]
+    )
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_11_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(i, j, k, ni, nj, nk, args[0], args[1], args[2], args[3], args[4])
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_10_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(i, j, k, ni, nj, nk, args[0], args[1], args[2], args[3])
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_9_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(i, j, k, ni, nj, nk, args[0], args[1], args[2])
+
+
+@numba.njit(inline="always")  # type: ignore
+def _expand_8_arguments(func, i, j, k, ni, nj, nk, args):  # pragma: no cover
+    return func(i, j, k, ni, nj, nk, args[0], args[1])
 
 
 _arg_expand_map = {
-    6: _expand_6_arguments,
-    7: _expand_7_arguments,
     8: _expand_8_arguments,
     9: _expand_9_arguments,
     10: _expand_10_arguments,
     11: _expand_11_arguments,
+    12: _expand_12_arguments,
+    13: _expand_13_arguments,
+    14: _expand_14_arguments,
+    15: _expand_15_arguments,
+    16: _expand_16_arguments,
+    17: _expand_17_arguments,
+    18: _expand_18_arguments,
+    19: _expand_19_arguments,
+    20: _expand_20_arguments,
 }
 
 
@@ -61,54 +243,74 @@ def _cyclic_shift(i: int, ni: int, shift: int = 1) -> int:  # pragma: no cover
         return shift - 1
 
 
-def _numba_2D_grid_iterator_template(func: Callable[..., float], return_type: Type):
-    """Evaluate func at every gridpoint of a horizontal domain slice.
+def _numba_3D_grid_iterator_template(
+    func: Callable[..., float], return_type: Type, parallel_kji: bool = False
+):
+    """Evaluate func at every gridpoint for every normal mode.
 
     func must take the indices of the grid point and the grid size as
-    first arguments, e.g. func(i, j, ni, nj, other_args).
+    first arguments, e.g. func(i, j, k, ni, nj, nk, other_args).
+    A mode dependent parameter must take the last argument position.
+    The evaluation can be parallelized over all dimensions for computational heavy functions with parallel_kij set to True. Otherwise the parallelization is performed over k only.
     """
     jitted_func = numba.njit(inline="always")(func)  # type: ignore
     exp_args = _arg_expand_map[len(signature(func).parameters)]
 
     @wraps(func)
-    @numba.njit
-    def _interate_over_grid_2D(
-        ni: int, nj: int, *args: tuple[Any]
+    @numba.njit(parallel=True)  # type: ignore
+    def _iterate_over_grid_3D_parallel_over_kji(
+        ni: int, nj: int, nk: int, *args: tuple[Any, ...]
     ) -> Array:  # pragma: no cover
-        result = np.empty((nj, ni), dtype=return_type)
-        for j in range(nj):
-            for i in range(ni):
-                result[j, i] = exp_args(jitted_func, i, j, ni, nj, args)
+        result = np.empty((nk, nj, ni), dtype=return_type)
+        for ind in numba.prange(nk * nj * ni):
+            k, residual = divmod(ind, nj * ni)
+            j, i = divmod(residual, ni)
+            k = int(k)
+            j = int(j)
+            i = int(i)
+            result[k, j, i] = exp_args(jitted_func, i, j, k, ni, nj, nk, args)
         return result
 
-    return _interate_over_grid_2D
+    @wraps(func)
+    @numba.njit(parallel=True)  # type: ignore
+    def _iterate_over_grid_3D_parallel_over_k(
+        ni: int, nj: int, nk: int, *args: tuple[Any, ...]
+    ) -> np.ndarray:  # pragma: no cover
+        result = np.empty((nk, nj, ni), dtype=return_type)
+        for k in numba.prange(nk):
+            for j in range(nj):
+                for i in range(ni):
+                    result[k, j, i] = exp_args(jitted_func, i, j, k, ni, nj, nk, args)
+        return result
+
+    if parallel_kji:
+        return _iterate_over_grid_3D_parallel_over_kji
+    else:
+        return _iterate_over_grid_3D_parallel_over_k
 
 
-_numba_2D_grid_iterator_f8 = partial(
-    _numba_2D_grid_iterator_template, return_type=np.float64
-)
-_numba_2D_grid_iterator_i8 = partial(
-    _numba_2D_grid_iterator_template, return_type=np.int64
-)
-_numba_2D_grid_iterator_i1 = partial(
-    _numba_2D_grid_iterator_template, return_type=np.int8
-)
-_numba_2D_grid_iterator_b1 = partial(
-    _numba_2D_grid_iterator_template, return_type=np.bool_
+_numba_3D_grid_iterator = partial(
+    _numba_3D_grid_iterator_template, return_type=np.float64, parallel_kji=False
 )
 
-_numba_2D_grid_iterator = _numba_2D_grid_iterator_f8
+_numba_3D_grid_iterator_i8 = partial(
+    _numba_3D_grid_iterator_template, return_type=np.int8, parallel_kji=False
+)
+
+_numba_3D_grid_iterator_parallel_over_kji = partial(
+    _numba_3D_grid_iterator_template, return_type=np.float64, parallel_kji=True
+)
 
 
 @numba.njit
-def _lin_comb_1(fac1: float, arr1: np.ndarray) -> np.ndarray:
+def _lin_comb_1(fac1: float, arr1: np.ndarray) -> np.ndarray:  # pragma: no cover
     result = fac1 * arr1
     return result
 
 
 @numba.njit
 def _lin_comb_2(
-    fac1: float, fac2: float, arr1: np.ndarray, arr2: np.ndarray
+    fac1: float, fac2: float, arr1: np.ndarray, arr2: np.ndarray  # pragma: no cover
 ) -> np.ndarray:
     result = fac1 * arr1 + fac2 * arr2
     return result
@@ -122,7 +324,7 @@ def _lin_comb_3(
     arr1: np.ndarray,
     arr2: np.ndarray,
     arr3: np.ndarray,
-) -> np.ndarray:
+) -> np.ndarray:  # pragma: no cover
     return fac1 * arr1 + fac2 * arr2 + fac3 * arr3
 
 
@@ -143,42 +345,42 @@ def _get_vectorize_signature(n_args: int) -> list:
 
 
 @numba.vectorize(_get_vectorize_signature(2))
-def _sum_arrs_2(x1, x2):
+def _sum_arrs_2(x1, x2):  # pragma: no cover
     return x1 + x2
 
 
 @numba.vectorize(_get_vectorize_signature(3))
-def _sum_arrs_3(x1, x2, x3):
+def _sum_arrs_3(x1, x2, x3):  # pragma: no cover
     return x1 + x2 + x3
 
 
 @numba.vectorize(_get_vectorize_signature(4))
-def _sum_arrs_4(x1, x2, x3, x4):
+def _sum_arrs_4(x1, x2, x3, x4):  # pragma: no cover
     return x1 + x2 + x3 + x4
 
 
 @numba.vectorize(_get_vectorize_signature(5))
-def _sum_arrs_5(x1, x2, x3, x4, x5):
+def _sum_arrs_5(x1, x2, x3, x4, x5):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5
 
 
 @numba.vectorize(_get_vectorize_signature(6))
-def _sum_arrs_6(x1, x2, x3, x4, x5, x6):
+def _sum_arrs_6(x1, x2, x3, x4, x5, x6):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6
 
 
 @numba.vectorize(_get_vectorize_signature(7))
-def _sum_arrs_7(x1, x2, x3, x4, x5, x6, x7):
+def _sum_arrs_7(x1, x2, x3, x4, x5, x6, x7):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6 + x7
 
 
 @numba.vectorize(_get_vectorize_signature(8))
-def _sum_arrs_8(x1, x2, x3, x4, x5, x6, x7, x8):
+def _sum_arrs_8(x1, x2, x3, x4, x5, x6, x7, x8):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8
 
 
 @numba.vectorize(_get_vectorize_signature(9))
-def _sum_arrs_9(x1, x2, x3, x4, x5, x6, x7, x8, x9):
+def _sum_arrs_9(x1, x2, x3, x4, x5, x6, x7, x8, x9):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9
 
 
