@@ -19,7 +19,8 @@ from multimodemodel import (
 )
 from multimodemodel.datastructure import MultimodeParameter
 from multimodemodel.kernel import (
-    _pressure_gradient_i,
+    _pressure_gradient_i_dispatch_table,
+    _get_from_dispatch_table,
     advection_density,
     advection_momentum_u,
     advection_momentum_v,
@@ -82,37 +83,38 @@ class TestTerms:
         dx_a = dx * np.ones(x.shape)
 
         oracle = -g * (eta * mask - np.roll(eta * mask, 1, axis=-1)) / dx_a * mask_u
-        result = _pressure_gradient_i(ni, nj, nz, eta, mask_u, dx_a, g)  # type: ignore
+        pg_i = _get_from_dispatch_table(eta, _pressure_gradient_i_dispatch_table)
+        result = pg_i(ni, nj, nz, eta, mask_u, dx_a, g)  # type: ignore
         print(oracle, result, eta.shape)
 
         assert np.all(result == oracle)
 
-    # def test_2D_on_3D(self):
-    #     """Test mapping of 2D iterator on 3D data."""
-    #     dx, dy = 1, 2
-    #     ni, nj = 10, 5
-    #     x, y = get_x_y(ni, nj, dx, dy)
-    #     z = np.arange(10.0)
-    #     c_grid_2D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
-    #     c_grid_3D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], z=z)
+    def test_2D_on_3D(self):
+        """Test mapping of 2D iterator on 3D data."""
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+        x, y = get_x_y(ni, nj, dx, dy)
+        z = np.arange(10.0)
+        c_grid_2D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
+        c_grid_3D = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0], z=z)
 
-    #     params_2D = Parameter(coriolis_func=f_constant(1e-4), on_grid=c_grid_2D)
-    #     params_3D = Parameter(coriolis_func=f_constant(1e-4), on_grid=c_grid_3D)
+        params_2D = Parameter(coriolis_func=f_constant(1e-4), on_grid=c_grid_2D)
+        params_3D = Parameter(coriolis_func=f_constant(1e-4), on_grid=c_grid_3D)
 
-    #     state_2D = State(
-    #         u=Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u, some_datetime),
-    #         v=Variable(None, c_grid_2D.v, some_datetime),
-    #     )
-    #     inc_2D = coriolis_j(state_2D, params_2D)
+        state_2D = State(
+            u=Variable(np.ones(c_grid_2D.u.shape), c_grid_2D.u, some_datetime),
+            v=Variable(None, c_grid_2D.v, some_datetime),
+        )
+        inc_2D = coriolis_j(state_2D, params_2D)
 
-    #     state_3D = State(
-    #         u=Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u, some_datetime),
-    #         v=Variable(None, c_grid_3D.v, some_datetime),
-    #     )
-    #     inc_3D = coriolis_j(state_3D, params_3D)
+        state_3D = State(
+            u=Variable(np.ones(c_grid_3D.u.shape), c_grid_3D.u, some_datetime),
+            v=Variable(None, c_grid_3D.v, some_datetime),
+        )
+        inc_3D = coriolis_j(state_3D, params_3D)
 
-    #     # exploit broadcasting before comparison
-    #     assert np.all(inc_2D.variables["v"].data == inc_3D.variables["v"].data)
+        # exploit broadcasting before comparison
+        assert np.all(inc_2D.variables["v"].data == inc_3D.variables["v"].data)
 
     def test_pressure_gradient_i(self):
         """Test pressure_gradient_i."""
@@ -351,6 +353,40 @@ class TestTerms:
             S=triple_tensors,
             T=triple_tensors,
         )
+
+        state = State(
+            u=Variable(None, c_grid.u, some_datetime),
+            v=Variable(None, c_grid.v, some_datetime),
+            eta=Variable(None, c_grid.eta, some_datetime),
+            q=Variable(None, c_grid.q, some_datetime),
+        )
+        state.set_diagnostic_variable(w=Variable(None, c_grid.eta, some_datetime))
+
+        _ = term(state, params)
+
+    @pytest.mark.parametrize(
+        "term",
+        (
+            pressure_gradient_i,
+            pressure_gradient_j,
+            coriolis_i,
+            coriolis_j,
+            divergence_i,
+            divergence_j,
+            laplacian_mixing_u,
+            laplacian_mixing_v,
+            linear_damping_u,
+            linear_damping_v,
+            linear_damping_eta,
+        ),
+    )
+    def test_on_2D_grid(self, term):
+        """Test for None input compatibility."""
+        dx, dy = 1, 2
+        ni, nj = 10, 5
+        x, y = get_x_y(ni, nj, dx, dy)
+        c_grid = StaggeredGrid.cartesian_c_grid(x=x[0, :], y=y[:, 0])
+        params = Parameter(coriolis_func=f_constant(1.0), on_grid=c_grid)
 
         state = State(
             u=Variable(None, c_grid.u, some_datetime),
