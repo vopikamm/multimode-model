@@ -5,13 +5,14 @@ not dataclass instances, as input. This enables numba to precompile
 computationally costly operations.
 """
 
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence, Callable
 import numpy as np
-from .api import Array, StateType
+
+from .api import Array, StateType, Shape
 from .util import average_npdatetime64
 from .jit import (
-    _numba_3D_grid_iterator,
-    _numba_3D_grid_iterator_parallel_over_kji,
+    ParallelizeIterateOver,
+    _make_grid_iteration_dispatch_table,
     _cyclic_shift,
     _lin_comb,
     sum_arr,
@@ -19,7 +20,16 @@ from .jit import (
 from .datastructure import Variable, Parameter, MultimodeParameter
 
 
-@_numba_3D_grid_iterator
+def _get_from_dispatch_table(
+    grid, dispatch_table: dict[ParallelizeIterateOver, Callable]
+) -> Callable:
+    if grid.ndim < 3:
+        par_over = ParallelizeIterateOver.KJ
+    else:
+        par_over = ParallelizeIterateOver.K
+    return dispatch_table[par_over]
+
+
 def _pressure_gradient_i(
     i: int,
     j: int,
@@ -36,7 +46,11 @@ def _pressure_gradient_i(
     return -g * mask_u[k, j, i] * (eta[k, j, i] - eta[k, j, i - 1]) / dx_u[j, i]
 
 
-@_numba_3D_grid_iterator
+_pressure_gradient_i_dispatch_table = _make_grid_iteration_dispatch_table(
+    _pressure_gradient_i
+)
+
+
 def _pressure_gradient_j(
     i: int,
     j: int,
@@ -53,7 +67,11 @@ def _pressure_gradient_j(
     return -g * mask_v[k, j, i] * (eta[k, j, i] - eta[k, j - 1, i]) / dy_v[j, i]
 
 
-@_numba_3D_grid_iterator
+_pressure_gradient_j_dispatch_table = _make_grid_iteration_dispatch_table(
+    _pressure_gradient_j
+)
+
+
 def _divergence_i(
     i: int,
     j: int,
@@ -84,7 +102,9 @@ def _divergence_i(
     )
 
 
-@_numba_3D_grid_iterator
+_divergence_i_dispatch_table = _make_grid_iteration_dispatch_table(_divergence_i)
+
+
 def _divergence_j(
     i: int,
     j: int,
@@ -115,7 +135,9 @@ def _divergence_j(
     )
 
 
-@_numba_3D_grid_iterator
+_divergence_j_dispatch_table = _make_grid_iteration_dispatch_table(_divergence_j)
+
+
 def _coriolis_nonlinear_j(
     i: int,
     j: int,
@@ -148,7 +170,11 @@ def _coriolis_nonlinear_j(
     )
 
 
-@_numba_3D_grid_iterator
+_coriolis_nonlinear_j_dispatch_table = _make_grid_iteration_dispatch_table(
+    _coriolis_nonlinear_j
+)
+
+
 def _coriolis_nonlinear_i(
     i: int,
     j: int,
@@ -211,7 +237,11 @@ def _coriolis_nonlinear_i(
     )
 
 
-@_numba_3D_grid_iterator
+_coriolis_nonlinear_i_dispatch_table = _make_grid_iteration_dispatch_table(
+    _coriolis_nonlinear_i
+)
+
+
 def _coriolis_j(
     i: int,
     j: int,
@@ -244,7 +274,9 @@ def _coriolis_j(
     )
 
 
-@_numba_3D_grid_iterator
+_coriolis_j_dispatch_table = _make_grid_iteration_dispatch_table(_coriolis_j)
+
+
 def _coriolis_i(
     i: int,
     j: int,
@@ -277,7 +309,9 @@ def _coriolis_i(
     )
 
 
-@_numba_3D_grid_iterator
+_coriolis_i_dispatch_table = _make_grid_iteration_dispatch_table(_coriolis_i)
+
+
 def _laplacian_mixing_u(
     i: int,
     j: int,
@@ -333,7 +367,11 @@ def _laplacian_mixing_u(
     )
 
 
-@_numba_3D_grid_iterator
+_laplacian_mixing_u_dispatch_table = _make_grid_iteration_dispatch_table(
+    _laplacian_mixing_u
+)
+
+
 def _laplacian_mixing_v(
     i: int,
     j: int,
@@ -389,7 +427,11 @@ def _laplacian_mixing_v(
     )
 
 
-@_numba_3D_grid_iterator
+_laplacian_mixing_v_dispatch_table = _make_grid_iteration_dispatch_table(
+    _laplacian_mixing_v
+)
+
+
 def _linear_damping(
     i: int,
     j: int,
@@ -405,7 +447,9 @@ def _linear_damping(
     return -gamma[k] * mask[k, j, i] * vel[k, j, i]
 
 
-@_numba_3D_grid_iterator_parallel_over_kji
+_linear_damping_dispatch_table = _make_grid_iteration_dispatch_table(_linear_damping)
+
+
 def _advection_momentum_u(
     i: int,
     j: int,
@@ -504,7 +548,11 @@ def _advection_momentum_u(
     return result
 
 
-@_numba_3D_grid_iterator_parallel_over_kji
+_advection_momentum_u_dispatch_table = _make_grid_iteration_dispatch_table(
+    _advection_momentum_u
+)
+
+
 def _advection_momentum_v(
     i: int,
     j: int,
@@ -603,7 +651,11 @@ def _advection_momentum_v(
     return result
 
 
-@_numba_3D_grid_iterator_parallel_over_kji
+_advection_momentum_v_dispatch_table = _make_grid_iteration_dispatch_table(
+    _advection_momentum_v
+)
+
+
 def _advection_density(
     i: int,
     j: int,
@@ -675,10 +727,26 @@ def _advection_density(
     return result
 
 
+_advection_density_dispatch_table = _make_grid_iteration_dispatch_table(
+    _advection_density
+)
+
 """
 Non jit-able functions. First level funcions connecting the jit-able
 function output to dataclasses.
 """
+
+
+def _at_least_3D(*arrs: Array):
+    """Prepend singleton dimensions to at least 3D."""
+    return tuple(a.reshape(_shape_at_least_3D(a.shape)) for a in arrs)
+
+
+def _shape_at_least_3D(shape: Shape):
+    """Expand shape to be at least 3D."""
+    if len(shape) >= 3:
+        return shape
+    return (3 - len(shape)) * (1,) + shape
 
 
 def pressure_gradient_i(state: StateType, params: Parameter) -> StateType:
@@ -698,18 +766,24 @@ def pressure_gradient_i(state: StateType, params: Parameter) -> StateType:
     State
     """
     grid = state.variables["u"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    eta, u_mask = _at_least_3D(
         state.variables["eta"].safe_data,
         state.variables["u"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _pressure_gradient_i_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        eta,
+        u_mask,
         state.variables["u"].grid.dx,
         params.g,
     )
     return state.__class__(
         u=state.variables["u"].__class__(
-            _pressure_gradient_i(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["u"].time,
         )
@@ -733,18 +807,24 @@ def pressure_gradient_j(state: StateType, params: Parameter) -> StateType:
     State
     """
     grid = state.variables["v"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    eta, v_mask = _at_least_3D(
         state.variables["eta"].safe_data,
         state.variables["v"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _pressure_gradient_j_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        eta,
+        v_mask,
         state.variables["v"].grid.dy,
         params.g,
     )
     return state.__class__(
         v=state.variables["v"].__class__(
-            _pressure_gradient_j(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["v"].time,
         )
@@ -766,12 +846,19 @@ def divergence_i(state: StateType, params: Parameter) -> StateType:
     State
     """
     grid = state.variables["eta"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    u, u_mask = _at_least_3D(
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _divergence_i_dispatch_table)
+
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        u,
+        u_mask,
         grid.dx,
         grid.dy,
         state.variables["u"].grid.dy,
@@ -779,7 +866,7 @@ def divergence_i(state: StateType, params: Parameter) -> StateType:
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
-            _divergence_i(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["eta"].time,
         )
@@ -801,12 +888,19 @@ def divergence_j(state: StateType, params: Parameter) -> StateType:
     State
     """
     grid = state.variables["eta"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    v, v_mask = _at_least_3D(
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _divergence_j_dispatch_table)
+
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        v,
+        v_mask,
         grid.dx,
         grid.dy,
         state.variables["v"].grid.dx,
@@ -814,7 +908,7 @@ def divergence_j(state: StateType, params: Parameter) -> StateType:
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
-            _divergence_j(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["eta"].time,
         )
@@ -838,20 +932,27 @@ def coriolis_j(state: StateType, params: Parameter) -> StateType:
     State
     """
     grid = state.variables["v"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    u, u_mask, v_mask = _at_least_3D(
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
         state.variables["v"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _coriolis_j_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        u,
+        u_mask,
+        v_mask,
         state.variables["u"].grid.dy,
         state.variables["v"].grid.dy,
         params.f["q"],
     )
     return state.__class__(
         v=state.variables["v"].__class__(
-            _coriolis_j(*args), grid, state.variables["v"].time
+            func(*args).reshape(grid.shape), grid, state.variables["v"].time
         ),
     )
 
@@ -873,20 +974,27 @@ def coriolis_i(state: StateType, params: Parameter) -> StateType:
     State
     """
     grid = state.variables["u"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    v, v_mask, u_mask = _at_least_3D(
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
         state.variables["u"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _coriolis_i_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        v,
+        v_mask,
+        u_mask,
         state.variables["u"].grid.dx,
         state.variables["v"].grid.dx,
         params.f["q"],
     )
     return state.__class__(
         u=state.variables["u"].__class__(
-            _coriolis_i(*args), grid, state.variables["u"].time
+            func(*args).reshape(grid.shape), grid, state.variables["u"].time
         ),
     )
 
@@ -894,14 +1002,21 @@ def coriolis_i(state: StateType, params: Parameter) -> StateType:
 def laplacian_mixing_u(state: StateType, params: Parameter) -> StateType:
     """Compute laplacian diffusion of zonal velocities."""
     grid = state.variables["u"].grid
-    lbc = 2 * params.no_slip
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    u, u_mask, q_mask = _at_least_3D(
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
         state.variables["q"].grid.mask,
+    )
+    lbc = 2 * params.no_slip
+    func = _get_from_dispatch_table(grid, _laplacian_mixing_u_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        u,
+        u_mask,
+        q_mask,
         state.variables["eta"].grid.dx,
         state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
@@ -913,7 +1028,7 @@ def laplacian_mixing_u(state: StateType, params: Parameter) -> StateType:
     )
     return state.__class__(
         u=state.variables["u"].__class__(
-            _laplacian_mixing_u(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["u"].time,
         )
@@ -923,14 +1038,21 @@ def laplacian_mixing_u(state: StateType, params: Parameter) -> StateType:
 def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
     """Compute laplacian diffusion of meridional velocities."""
     grid = state.variables["v"].grid
-    lbc = 2 * params.no_slip
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    v, v_mask, q_mask = _at_least_3D(
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
         state.variables["q"].grid.mask,
+    )
+    lbc = 2 * params.no_slip
+    func = _get_from_dispatch_table(grid, _laplacian_mixing_v_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        v,
+        v_mask,
+        q_mask,
         state.variables["eta"].grid.dx,
         state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
@@ -942,7 +1064,7 @@ def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
     )
     return state.__class__(
         v=state.variables["v"].__class__(
-            _laplacian_mixing_v(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["v"].time,
         )
@@ -952,17 +1074,23 @@ def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
 def linear_damping_u(state: StateType, params: Parameter) -> StateType:
     """Compute linear damping of zonal velocities."""
     grid = state.variables["u"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    u, u_mask = _at_least_3D(
         state.variables["u"].safe_data,
         state.variables["u"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _linear_damping_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        u,
+        u_mask,
         params.gamma_h,
     )
     return state.__class__(
         u=state.variables["u"].__class__(
-            _linear_damping(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["u"].time,
         )
@@ -972,17 +1100,23 @@ def linear_damping_u(state: StateType, params: Parameter) -> StateType:
 def linear_damping_v(state: StateType, params: Parameter) -> StateType:
     """Compute linear damping of meridional velocities."""
     grid = state.variables["v"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    v, v_mask = _at_least_3D(
         state.variables["v"].safe_data,
         state.variables["v"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _linear_damping_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        v,
+        v_mask,
         params.gamma_h,
     )
     return state.__class__(
         v=state.variables["v"].__class__(
-            _linear_damping(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["v"].time,
         )
@@ -992,17 +1126,23 @@ def linear_damping_v(state: StateType, params: Parameter) -> StateType:
 def linear_damping_eta(state: StateType, params: Parameter) -> StateType:
     """Compute linear damping of meridional velocities."""
     grid = state.variables["eta"].grid
-    args = (
-        grid.shape[grid.dim_x],
-        grid.shape[grid.dim_y],
-        grid.shape[grid.dim_z],
+    shape = _shape_at_least_3D(grid.shape)
+    eta, eta_mask = _at_least_3D(
         state.variables["eta"].safe_data,
         state.variables["eta"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _linear_damping_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        eta,
+        eta_mask,
         params.gamma_v,
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
-            _linear_damping(*args),
+            func(*args).reshape(grid.shape),
             grid,
             state.variables["eta"].time,
         )
@@ -1013,6 +1153,7 @@ def advection_momentum_u(state: StateType, params: MultimodeParameter) -> StateT
     """Compute advection of zonal momentum."""
     grid = state.variables["u"].grid
     lbc = 2 * params.free_slip
+    func = _advection_momentum_u_dispatch_table[ParallelizeIterateOver.KJI]
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
@@ -1033,7 +1174,7 @@ def advection_momentum_u(state: StateType, params: MultimodeParameter) -> StateT
     )
     return state.__class__(
         u=state.variables["u"].__class__(
-            _advection_momentum_u(*args),
+            func(*args).reshape(grid.shape),  # type: ignore
             grid,
             state.variables["u"].time,
         )
@@ -1044,6 +1185,7 @@ def advection_momentum_v(state: StateType, params: MultimodeParameter) -> StateT
     """Compute advection of meridional momentum."""
     grid = state.variables["v"].grid
     lbc = 2 * params.free_slip
+    func = _advection_momentum_v_dispatch_table[ParallelizeIterateOver.KJI]
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
@@ -1064,7 +1206,7 @@ def advection_momentum_v(state: StateType, params: MultimodeParameter) -> StateT
     )
     return state.__class__(
         v=state.variables["v"].__class__(
-            _advection_momentum_v(*args),
+            func(*args).reshape(grid.shape),  # type: ignore
             grid,
             state.variables["v"].time,
         )
@@ -1074,6 +1216,7 @@ def advection_momentum_v(state: StateType, params: MultimodeParameter) -> StateT
 def advection_density(state: StateType, params: MultimodeParameter) -> StateType:
     """Compute advection of perturbation density."""
     grid = state.variables["eta"].grid
+    func = _advection_density_dispatch_table[ParallelizeIterateOver.KJI]
     args = (
         grid.shape[grid.dim_x],
         grid.shape[grid.dim_y],
@@ -1095,7 +1238,7 @@ def advection_density(state: StateType, params: MultimodeParameter) -> StateType
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
-            _advection_density(*args),
+            func(*args).reshape(grid.shape),  # type: ignore
             grid,
             state.variables["eta"].time,
         )

@@ -1,4 +1,5 @@
 """Benchmark single terms."""
+import numpy as np
 import pytest
 
 from multimodemodel import (
@@ -17,7 +18,15 @@ from multimodemodel import (
 from multimodemodel.util import str_to_date
 
 
-def _get_grids():
+@pytest.fixture(params=(2, 3))
+def ndim(request):
+    """Return number of dimensions."""
+    return request.param
+
+
+@pytest.fixture()
+def grids(ndim):
+    """Return regular lon/lat staggered grid."""
     grid_pars = dict(
         lon_start=0.0,
         lon_end=100.0,
@@ -26,11 +35,17 @@ def _get_grids():
         nx=101,
         ny=51,
     )
+    if ndim > 2:
+        grid_pars["z"] = np.arange(10)
     return StaggeredGrid.regular_lat_lon_c_grid(**grid_pars)
 
 
 def _get_params(staggered_grid):
-    return Parameter(coriolis_func=f_on_sphere(1.0), on_grid=staggered_grid)
+    if staggered_grid.u.ndim > 2:
+        H = np.ones_like(staggered_grid.u.z, dtype=np.float64)
+    else:
+        H = np.array([1.0])
+    return Parameter(H=H, coriolis_func=f_on_sphere(1.0), on_grid=staggered_grid)
 
 
 @pytest.mark.benchmark(warmup="on", warmup_iterations=5, max_time=2.0, min_time=0.01)
@@ -45,17 +60,16 @@ def _get_params(staggered_grid):
         divergence_j,
     ),
 )
-def test_benchmark_term(benchmark, func):
+def test_benchmark_term(benchmark, grids, func):
     """Benchmark pressure_gradient_i."""
-    c_grid = _get_grids()
-    params = _get_params(c_grid)
+    params = _get_params(grids)
 
     t0 = str_to_date("2000")
 
     state = State(
-        u=Variable(c_grid.u.x.copy(), c_grid.u, time=t0),
-        v=Variable(c_grid.v.x.copy(), c_grid.v, time=t0),
-        eta=Variable(c_grid.eta.x.copy(), c_grid.eta, time=t0),
+        u=Variable(1.0 * np.ones(grids.u.shape), grids.u, time=t0),
+        v=Variable(2.0 * np.ones(grids.v.shape), grids.v, time=t0),
+        eta=Variable(3.0 * np.ones(grids.eta.shape), grids.eta, time=t0),
     )
 
     _ = benchmark(func, state, params)
