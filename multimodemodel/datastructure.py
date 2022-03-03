@@ -9,7 +9,7 @@ and their associated grids.
 import numpy as np
 from dataclasses import dataclass, field, fields
 from functools import lru_cache
-from typing import Union, Type, Optional, Mapping, Hashable, Any, Tuple
+from typing import Union, Type, Optional, Hashable, Any, Tuple
 from types import ModuleType
 
 from .config import config
@@ -72,7 +72,7 @@ class Parameter(ParameterBase):
     ----------
     g : float, default=9.81
       Gravitational acceleration m/s^2
-    H : float, default=1000.0
+    H : float or Array, default=1000.0
       Depth of the fluid or thickness of the undisturbed layer in m
     rho_0 : float, default=1024.0
       Reference density of sea water in kg / m^3
@@ -119,7 +119,7 @@ class Parameter(ParameterBase):
         """Initialize Parameter object."""
         _set_attr(super(), "_id", id(self))
         _set_attr(super(), "g", g)
-        _set_attr(super(), "H", H)
+        _set_attr(super(), "H", np.atleast_1d(H))
         _set_attr(super(), "rho_0", rho_0)
         _set_attr(super(), "a_h", a_h)
         _set_attr(super(), "gamma_h", gamma_h, np.array([0.0]))
@@ -598,19 +598,18 @@ class Variable(VariableBase[np.ndarray, Grid]):
         data[self.grid.mask == 0] = np.nan
         data = np.expand_dims(data, axis=0)
 
-        coords: Mapping[Hashable, Any] = dict(
+        coords: dict[Hashable, Any] = dict(
             x=(("j", "i"), self.grid.x),
             y=(("j", "i"), self.grid.y),
-            z=(("z",), self.grid.z),
         )
         dims = ["j", "i"]
 
         if self.grid.ndim >= 3:
-            coords["z"] = (("z",), self.grid.z)  # type: ignore
+            coords["z"] = (("z",), self.grid.z)
             dims.insert(0, "z")
 
         dims.insert(0, "time")
-        coords["time"] = (("time",), [self.time])  # type: ignore
+        coords["time"] = (("time",), [self.time])
 
         return xarray.DataArray(  # type: ignore
             data=data,

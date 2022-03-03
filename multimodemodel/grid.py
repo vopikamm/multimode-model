@@ -16,7 +16,7 @@ from .api import (
     SplitVisitorBase,
 )
 from .config import config
-from .jit import _numba_3D_grid_iterator_i8
+from .jit import _numba_3D_grid_iterator_i8_parallel_over_k
 
 
 def _check_shape(arr1, expected, msg=""):
@@ -478,7 +478,7 @@ class StaggeredGrid(StaggeredGridBase[Grid]):
             return res
 
     @staticmethod
-    @_numba_3D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8_parallel_over_k
     def _u_mask_from_eta(
         i: int,
         j: int,
@@ -497,7 +497,7 @@ class StaggeredGrid(StaggeredGridBase[Grid]):
             return 0
 
     @staticmethod
-    @_numba_3D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8_parallel_over_k
     def _v_mask_from_eta(
         i: int,
         j: int,
@@ -516,7 +516,7 @@ class StaggeredGrid(StaggeredGridBase[Grid]):
             return 0
 
     @staticmethod
-    @_numba_3D_grid_iterator_i8
+    @_numba_3D_grid_iterator_i8_parallel_over_k
     def _q_mask_from_eta(
         i: int,
         j: int,

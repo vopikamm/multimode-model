@@ -1,10 +1,19 @@
 """Just-in-time compiler logic."""
 import numba
+from enum import Enum
 from inspect import signature
 from typing import Any, Callable, Type, Optional
 from functools import wraps, partial
 import numpy as np
 from .api import Array
+
+
+class ParallelizeIterateOver(Enum):
+    """Enumerator of possible loop parallelization options for grid iterator."""
+
+    K = 0
+    KJ = 1
+    KJI = 2
 
 
 @numba.njit(inline="always")  # type: ignore
@@ -244,14 +253,16 @@ def _cyclic_shift(i: int, ni: int, shift: int = 1) -> int:  # pragma: no cover
 
 
 def _numba_3D_grid_iterator_template(
-    func: Callable[..., float], return_type: Type, parallel_kji: bool = False
+    func: Callable[..., float], return_type: Type, parallel_kji: ParallelizeIterateOver
 ):
-    """Evaluate func at every gridpoint for every normal mode.
+    """Evaluate func at every gridpoint of a 3D grid.
 
     func must take the indices of the grid point and the grid size as
     first arguments, e.g. func(i, j, k, ni, nj, nk, other_args).
     A mode dependent parameter must take the last argument position.
-    The evaluation can be parallelized over all dimensions for computational heavy functions with parallel_kij set to True. Otherwise the parallelization is performed over k only.
+    The evaluation can be parallelized over all dimensions for computational
+    heavy functions with parallel_kij set to True.
+    Otherwise the parallelization is performed over k only.
     """
     jitted_func = numba.njit(inline="always")(func)  # type: ignore
     exp_args = _arg_expand_map[len(signature(func).parameters)]
@@ -273,6 +284,20 @@ def _numba_3D_grid_iterator_template(
 
     @wraps(func)
     @numba.njit(parallel=True)  # type: ignore
+    def _iterate_over_grid_3D_parallel_over_kj(
+        ni: int, nj: int, nk: int, *args: tuple[Any, ...]
+    ) -> np.ndarray:  # pragma: no cover
+        result = np.empty((nk, nj, ni), dtype=return_type)
+        for ind in numba.prange(nk * nj):
+            k, j = divmod(ind, nj)
+            k = int(k)
+            j = int(j)
+            for i in range(ni):
+                result[k, j, i] = exp_args(jitted_func, i, j, k, ni, nj, nk, args)
+        return result
+
+    @wraps(func)
+    @numba.njit(parallel=True)  # type: ignore
     def _iterate_over_grid_3D_parallel_over_k(
         ni: int, nj: int, nk: int, *args: tuple[Any, ...]
     ) -> np.ndarray:  # pragma: no cover
@@ -283,23 +308,58 @@ def _numba_3D_grid_iterator_template(
                     result[k, j, i] = exp_args(jitted_func, i, j, k, ni, nj, nk, args)
         return result
 
-    if parallel_kji:
-        return _iterate_over_grid_3D_parallel_over_kji
-    else:
-        return _iterate_over_grid_3D_parallel_over_k
+    dispatch_table = {
+        ParallelizeIterateOver.K: _iterate_over_grid_3D_parallel_over_k,
+        ParallelizeIterateOver.KJ: _iterate_over_grid_3D_parallel_over_kj,
+        ParallelizeIterateOver.KJI: _iterate_over_grid_3D_parallel_over_kji,
+    }
+
+    return dispatch_table[parallel_kji]
 
 
-_numba_3D_grid_iterator = partial(
-    _numba_3D_grid_iterator_template, return_type=np.float64, parallel_kji=False
+_numba_3D_grid_iterator_parallel_over_k = partial(
+    _numba_3D_grid_iterator_template,
+    return_type=np.float64,
+    parallel_kji=ParallelizeIterateOver.K,
 )
 
-_numba_3D_grid_iterator_i8 = partial(
-    _numba_3D_grid_iterator_template, return_type=np.int8, parallel_kji=False
+_numba_3D_grid_iterator_i8_parallel_over_k = partial(
+    _numba_3D_grid_iterator_template,
+    return_type=np.int8,
+    parallel_kji=ParallelizeIterateOver.K,
+)
+
+_numba_3D_grid_iterator_parallel_over_kj = partial(
+    _numba_3D_grid_iterator_template,
+    return_type=np.float64,
+    parallel_kji=ParallelizeIterateOver.KJ,
+)
+
+_numba_3D_grid_iterator_i8_parallel_over_kj = partial(
+    _numba_3D_grid_iterator_template,
+    return_type=np.int8,
+    parallel_kji=ParallelizeIterateOver.KJ,
 )
 
 _numba_3D_grid_iterator_parallel_over_kji = partial(
-    _numba_3D_grid_iterator_template, return_type=np.float64, parallel_kji=True
+    _numba_3D_grid_iterator_template,
+    return_type=np.float64,
+    parallel_kji=ParallelizeIterateOver.KJI,
 )
+
+
+def _make_grid_iteration_dispatch_table(
+    func: Callable,
+) -> dict[ParallelizeIterateOver, Callable[[int, int, int, tuple[Any, ...]], Array]]:
+    dispatch_table = {
+        k: _numba_3D_grid_iterator_template(func, np.float64, k)
+        for k in (
+            ParallelizeIterateOver.K,
+            ParallelizeIterateOver.KJ,
+            ParallelizeIterateOver.KJI,
+        )
+    }
+    return dispatch_table
 
 
 @numba.njit
@@ -340,46 +400,46 @@ def _sum_arrs_default(*arrs: np.ndarray) -> np.ndarray:
 _vectorize_types = (numba.int32, numba.int64, numba.float32, numba.float64)
 
 
-def _get_vectorize_signature(n_args: int) -> list:
-    return [t(*(n_args * (t,))) for t in _vectorize_types]
+def _get_vectorize_signature(n_args: int):
+    return tuple(t(*(n_args * (t,))) for t in _vectorize_types)
 
 
-@numba.vectorize(_get_vectorize_signature(2))
+@numba.vectorize(_get_vectorize_signature(2))  # type: ignore
 def _sum_arrs_2(x1, x2):  # pragma: no cover
     return x1 + x2
 
 
-@numba.vectorize(_get_vectorize_signature(3))
+@numba.vectorize(_get_vectorize_signature(3))  # type: ignore
 def _sum_arrs_3(x1, x2, x3):  # pragma: no cover
     return x1 + x2 + x3
 
 
-@numba.vectorize(_get_vectorize_signature(4))
+@numba.vectorize(_get_vectorize_signature(4))  # type: ignore
 def _sum_arrs_4(x1, x2, x3, x4):  # pragma: no cover
     return x1 + x2 + x3 + x4
 
 
-@numba.vectorize(_get_vectorize_signature(5))
+@numba.vectorize(_get_vectorize_signature(5))  # type: ignore
 def _sum_arrs_5(x1, x2, x3, x4, x5):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5
 
 
-@numba.vectorize(_get_vectorize_signature(6))
+@numba.vectorize(_get_vectorize_signature(6))  # type: ignore
 def _sum_arrs_6(x1, x2, x3, x4, x5, x6):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6
 
 
-@numba.vectorize(_get_vectorize_signature(7))
+@numba.vectorize(_get_vectorize_signature(7))  # type: ignore
 def _sum_arrs_7(x1, x2, x3, x4, x5, x6, x7):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6 + x7
 
 
-@numba.vectorize(_get_vectorize_signature(8))
+@numba.vectorize(_get_vectorize_signature(8))  # type: ignore
 def _sum_arrs_8(x1, x2, x3, x4, x5, x6, x7, x8):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8
 
 
-@numba.vectorize(_get_vectorize_signature(9))
+@numba.vectorize(_get_vectorize_signature(9))  # type: ignore
 def _sum_arrs_9(x1, x2, x3, x4, x5, x6, x7, x8, x9):  # pragma: no cover
     return x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9
 

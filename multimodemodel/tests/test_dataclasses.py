@@ -436,9 +436,13 @@ class TestVariableAsDataArray:
 
     nx, ny, nz, dx, dy = 10, 5, 1, 1, 2
 
-    def _gen_var(self, data=None, mask=None):
-        x, y, z = get_x_y_z(self.nx, self.ny, self.nz, self.dx, self.dy)
-        g1 = Grid(x=x, y=y, z=z, mask=mask)
+    def _gen_var(self, data=None, mask=None, has_z=True):
+        if has_z:
+            x, y, z = get_x_y_z(self.nx, self.ny, self.nz, self.dx, self.dy)
+            g1 = Grid(x=x, y=y, z=z, mask=mask)
+        else:
+            x, y = get_x_y(self.nx, self.ny, self.dx, self.dy)
+            g1 = Grid(x=x, y=y, mask=mask)
         return Variable(data, g1, some_datetime)
 
     def test_None_data_is_zero(self):
@@ -468,7 +472,7 @@ class TestVariableAsDataArray:
     @pytest.mark.parametrize("has_z", (True, False))
     def test_coords_and_dims(self, has_z):
         """Test coordinate and dimension definition."""
-        v = self._gen_var()
+        v = self._gen_var(has_z=has_z)
         v_da = v.as_dataarray
 
         assert (v_da.x == v.grid.x).all()  # type: ignore
@@ -478,8 +482,9 @@ class TestVariableAsDataArray:
         )
         assert v_da.dims[0] == "time"  # type: ignore
 
-        assert (v_da.z == v.grid.z).all()  # type: ignore
-        assert v_da.dims[v.grid.dim_z] == "z"  # type: ignore
+        if has_z:
+            assert (v_da.z == v.grid.z).all()  # type: ignore
+            assert v_da.dims[v.grid.dim_z] == "z"  # type: ignore
 
     def test_masking_has_no_side_effects(self):
         """Test if masking has side effects."""
