@@ -451,9 +451,9 @@ def _vertical_mixing(
     """
     result = 0.0
     for m in range(nk):
-        result += -mask[m, j, i] * P[m, k] * var[m, j, i]
+        result += mask[m, j, i] * P[m, k] * var[m, j, i]
 
-    return result
+    return -result
 
 
 _vertical_mixing_dispatch_table = _make_grid_iteration_dispatch_table(_vertical_mixing)
@@ -572,7 +572,7 @@ def _advection_momentum_u(
                 )
                 - R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
             )
-    return result
+    return -result
 
 
 _advection_momentum_u_dispatch_table = _make_grid_iteration_dispatch_table(
@@ -675,7 +675,7 @@ def _advection_momentum_v(
                 )
                 - R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
             )
-    return result
+    return -result
 
 
 _advection_momentum_v_dispatch_table = _make_grid_iteration_dispatch_table(
@@ -751,7 +751,7 @@ def _advection_density(
                 )
                 - T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
             )
-    return result
+    return -result
 
 
 _advection_density_dispatch_table = _make_grid_iteration_dispatch_table(

@@ -289,6 +289,7 @@ class MultimodeParameter(Parameter):
     psi: np.ndarray = np.array([])
     dpsi_dz: np.ndarray = np.array([])
     c: np.ndarray = np.array([])
+    H_e: np.ndarray = np.array([])
     P: np.ndarray = np.array([])
     Q: np.ndarray = np.array([])
     R: np.ndarray = np.array([])
@@ -304,6 +305,7 @@ class MultimodeParameter(Parameter):
         psi: Optional[np.ndarray] = None,
         dpsi_dz: Optional[np.ndarray] = None,
         c: Optional[np.ndarray] = None,
+        H_e: Optional[np.ndarray] = None,
         P: Optional[np.ndarray] = None,
         Q: Optional[np.ndarray] = None,
         R: Optional[np.ndarray] = None,
@@ -320,6 +322,7 @@ class MultimodeParameter(Parameter):
         _set_attr(super(), "psi", psi, np.array([]))
         _set_attr(super(), "dpsi_dz", dpsi_dz, np.array([]))
         _set_attr(super(), "c", c, np.array([]))
+        _set_attr(super(), "H_e", H_e, np.array([]))
         _set_attr(super(), "P", P, np.array([]))
         _set_attr(super(), "Q", Q, np.array([]))
         _set_attr(super(), "R", R, np.array([]))
@@ -344,6 +347,7 @@ class MultimodeParameter(Parameter):
             _set_attr(super(), "psi", psi, np.array([]))
             _set_attr(super(), "dpsi_dz", dpsi_dz, np.array([]))
             _set_attr(super(), "c", c, np.array([]))
+            _set_attr(super(), "H_e", self.g / self.c**2, np.array([]))
 
             P = self.compute_P()
             Q = self.compute_Q()
@@ -372,7 +376,7 @@ class MultimodeParameter(Parameter):
             psi=(["depth", "nmode"], self.psi),
             dpsi_dz=(["depth", "nmode"], self.dpsi_dz),
             c=("nmode", self.c),
-            H=("nmode", self.c**2 / self.g),
+            H_e=("nmode", self.H_e),
             Nsq=("depth", self.Nsq),
             rho=("depth", self.rho),
         )
@@ -473,7 +477,7 @@ class MultimodeParameter(Parameter):
         tensor = np.empty((self.nmodes, self.nmodes))
         for m in range(self.nmodes):
             for k in range(self.nmodes):
-                tensor[m, k] = np.trapz(
+                tensor[m, k] = -np.trapz(
                     self.dpsi_dz[:, m] * self.dpsi_dz[:, k],
                     self.z,
                 )
@@ -491,7 +495,7 @@ class MultimodeParameter(Parameter):
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    tensor[n, m, k] = np.trapz(
+                    tensor[n, m, k] = -np.trapz(
                         self.psi[:, n] * self.psi[:, m] * self.psi[:, k],
                         self.z,
                     )
@@ -514,7 +518,7 @@ class MultimodeParameter(Parameter):
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    tensor[n, m, k] = np.trapz(
+                    tensor[n, m, k] = -np.trapz(
                         self.psi[:, k]
                         * self.dpsi_dz[:, m]
                         * self.dpsi_dz[:, n]
@@ -540,7 +544,7 @@ class MultimodeParameter(Parameter):
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    tensor[n, m, k] = np.trapz(
+                    tensor[n, m, k] = -np.trapz(
                         self.dpsi_dz[:, k] * self.dpsi_dz[:, m] * self.psi[:, n],
                         self.z,
                     )
@@ -565,7 +569,7 @@ class MultimodeParameter(Parameter):
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
-                    tensor[n, m, k] = np.trapz(
+                    tensor[n, m, k] = -np.trapz(
                         self.dpsi_dz[:, k]
                         * d2psi_dz[:, m]
                         * self.dpsi_dz[:, n]
