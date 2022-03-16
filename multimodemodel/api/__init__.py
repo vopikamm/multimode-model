@@ -34,6 +34,7 @@ from .border import (
     TailorBase,
 )
 
+from .workflow import WorkflowBase
 
 # import public type aliases and bound TypeVars
 from .core import (

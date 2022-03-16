@@ -6,10 +6,11 @@ from .typing import ArrayType
 
 def _validate_splitting_axis(axis: int) -> None:
     """Allow splitting only along the horizontal axis."""
-    valid_min_axis = 1
-    ndim = 3
-    if not (axis >= valid_min_axis or (axis >= valid_min_axis - ndim and axis < 0)):
-        raise ValueError("You cannot split along the first dimension.")
+    # valid_min_axis = 1
+    # ndim = 3
+    # # if not (axis >= valid_min_axis or (axis >= valid_min_axis - ndim and axis < 0)):
+    #     raise ValueError("You cannot split along the first dimension.")
+    ...
 
 
 class SplitVisitorBase(Generic[ArrayType]):

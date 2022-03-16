@@ -405,9 +405,6 @@ class StateBase(Splitable, Generic[VariableType]):
     Combines the dynamical variables u,v, eta into one state object.
     """
 
-    u: VariableType
-    v: VariableType
-    eta: VariableType
     variables: dict[str, VariableType] = field(init=False, default_factory=dict)
     diagnostic_variables: dict[str, VariableType] = field(
         init=False, default_factory=dict

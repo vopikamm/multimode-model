@@ -466,10 +466,20 @@ def test_Tail_stitch_raise_ValueError_on_iteration_mismatch(domain_state):
 def rhs(state: State, _: Parameter) -> State:
     it = 1
     return State(
-        u=Variable((it + 1) * state.u.safe_data, state.u.grid, time=state.u.time),
-        v=Variable((it + 1) * state.v.safe_data, state.v.grid, time=state.v.time),
+        u=Variable(
+            (it + 1) * state.variables["u"].safe_data,
+            state.variables["u"].grid,
+            time=state.variables["u"].time,
+        ),
+        v=Variable(
+            (it + 1) * state.variables["v"].safe_data,
+            state.variables["v"].grid,
+            time=state.variables["v"].time,
+        ),
         eta=Variable(
-            (it + 1) * state.eta.safe_data, state.eta.grid, time=state.eta.time
+            (it + 1) * state.variables["eta"].safe_data,
+            state.variables["eta"].grid,
+            time=state.variables["eta"].time,
         ),
     )
 
