@@ -69,4 +69,6 @@ from .border import (
     Tail,
 )
 
+from .workflow import Workflow
+
 from .util import str_to_date

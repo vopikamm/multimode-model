@@ -72,7 +72,7 @@ class SolverBase(Generic[DomainType]):
             Integration schema like euler_forward or adams_bashforth3
 
         step: float
-            Length of time step in the integration process.
+            Length of time step in the integration process [s].
         """
         self.step = step
         self._rhs = rhs
