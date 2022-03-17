@@ -84,3 +84,5 @@ This page provides an auto-generated summary of multimodemodel's API
    f_constant
    beta_plane
    f_on_sphere
+   Workflow
+   DaskWorkflow

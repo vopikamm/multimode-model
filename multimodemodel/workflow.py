@@ -7,7 +7,7 @@ from typing import Any, Tuple, Type
 from multimodemodel.api.core import DomainBase
 from multimodemodel.api.integration import SolverBase
 from multimodemodel.api.split import RegularSplitMergerBase
-from multimodemodel.api.workflow import WorkflowBase
+from multimodemodel.api.workflow import DiagnosticCallback, WorkflowBase
 from multimodemodel.border import Border, Tail
 
 
@@ -30,18 +30,13 @@ class Workflow(WorkflowBase):
         self.domain = domain
         self.solver = solver
 
-    def run(self, steps: int):
-        """Run model forward for a number of steps.
+    def _run_next(self):
+        """Run model forward for a single time step."""
+        self.domain = self.solver.integrate(self.domain)
 
-        Arguments
-        ---------
-        steps: int
-            Number of time steps to integrate.
-        """
-        next = self.domain
-        for _ in range(steps):
-            next = self.solver.integrate(next)
-        self.domain = next
+    def _run_diag(self, diag: DiagnosticCallback) -> None:
+        """Run diagnostics on newly computed state."""
+        diag(self.domain)
 
 
 class DaskWorkflow(WorkflowBase):
@@ -82,59 +77,61 @@ class DaskWorkflow(WorkflowBase):
         self.solver = solver
         self.client = client
         self.splitter = splitter
-        self._worker = self._get_cluster_worker()
         domains, borders = self._split_domain(border_width=2)
         self.domain_stack = deque([domains], maxlen=1)
         self.border_stack = deque([borders], maxlen=1)
 
-    def run(self, steps: int):
-        """Integrate PDEs on a splitted domain for a number of time steps.
+    def _run_setup(self) -> None:
+        """Set up iteration."""
+        self._run_vars = {}
+        self._run_vars["tailor"] = self.client.scatter([Tail()], broadcast=True)[0]
+        self._run_vars["solver"] = self.client.scatter(
+            [self.solver],
+            broadcast=True,
+        )[0]
 
-        Arguments
-        ---------
-        steps: int
-            Number of time steps to integrate.
-        """
+    def _run_teardown(self) -> None:
+        """Tear down after iteration."""
+        del self._run_vars
+        self.domain = self.client.submit(
+            self._domain_type.merge, self.domain_stack[-1], self.splitter
+        )
+
+    def _run_next(self) -> None:
+        """Compute state at next time step."""
         splitter = self.splitter
         client = self.client
         workers = self._get_cluster_worker()
+        solver = self._run_vars["solver"]
+        tailor = self._run_vars["tailor"]
+        now_subdomains = self.domain_stack[-1]
+        now_borders = self.border_stack[-1]
 
-        [tailor] = client.scatter([Tail()], broadcast=True)
-        [solver] = client.scatter(
-            [self.solver],
-            broadcast=True,
-        )
-        for _ in range(steps):
-            new_borders = []
-            new_subdomains = []
-            for i, (s, worker_of_s) in enumerate(
-                zip(self.domain_stack[-1], cycle(workers))
-            ):
-                borders = self.client.submit(
-                    self._pint,
-                    solver,
-                    s,
-                    self.border_stack[-1][i],
-                    self.border_stack[-1][i - 1],
-                    self.border_stack[-1][(i + 1) % (splitter.parts)],
-                    workers=worker_of_s,
-                )
-                new_s = self.client.submit(self._int, solver, s, workers=worker_of_s)
-                new_subdomains.append(
-                    self.client.submit(
-                        self._stitch, tailor, new_s, borders, workers=worker_of_s
-                    )
-                )
-                new_borders.append(borders)
+        new_borders = []
+        new_subdomains = []
+        for i, (s, worker_of_s) in enumerate(zip(now_subdomains, cycle(workers))):
+            borders = client.submit(
+                self._pint,
+                solver,
+                s,
+                now_borders[i],
+                now_borders[i - 1],
+                now_borders[(i + 1) % (splitter.parts)],
+                workers=worker_of_s,
+            )
+            new_s = client.submit(self._int, solver, s, workers=worker_of_s)
+            new_subdomains.append(
+                client.submit(self._stitch, tailor, new_s, borders, workers=worker_of_s)
+            )
+            new_borders.append(borders)
 
-            self.domain_stack.append(new_subdomains)
-            self.border_stack.append(new_borders)
+        self.domain_stack.append(new_subdomains)
+        self.border_stack.append(new_borders)
 
-        del solver
-        del tailor
-        self.domain = self.client.submit(
-            self._domain_type.merge, self.domain_stack[-1], splitter
-        )
+    def _run_diag(self, diag: DiagnosticCallback) -> None:
+        """Run diagnostics on newly computed states."""
+        for s in self.domain_stack[-1]:
+            diag(s)
 
     def _get_cluster_worker(self) -> Tuple[str, ...]:
         return tuple(self.client.scheduler_info()["workers"].keys())
@@ -152,7 +149,9 @@ class DaskWorkflow(WorkflowBase):
         client = self.client
         domains = tuple(
             client.scatter(d, workers=w)
-            for d, w in zip(self.domain.split(self.splitter), cycle(self._worker))
+            for d, w in zip(
+                self.domain.split(self.splitter), cycle(self._get_cluster_worker())
+            )
         )
 
         borders = tuple(

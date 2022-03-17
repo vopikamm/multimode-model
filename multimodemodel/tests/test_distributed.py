@@ -303,10 +303,10 @@ def test_Domain_merge_raises_on_iteration_counter_discrepancy(
             _ = Domain.merge(out, split_merger)
 
 
-def test_Domain_split_preserves_id(domain_state, split_merger, ident):
+def test_Domain_split_sets_id_incrementing(domain_state, split_merger, ident):
     domain_state.id = ident
     out = domain_state.split(split_merger)
-    assert all(ident == o.id for o in out)
+    assert all(i == o.id for i, o in enumerate(out))
 
 
 def test_Domain_merge(domain_state, split_merger):

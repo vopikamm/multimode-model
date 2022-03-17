@@ -69,6 +69,6 @@ from .border import (
     Tail,
 )
 
-from .workflow import Workflow
+from .workflow import Workflow, DaskWorkflow
 
 from .util import str_to_date
