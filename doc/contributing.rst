@@ -298,7 +298,7 @@ to build the docs you need additional dependencies.
 Building the documentation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Navigate to your local ``multimodemodel/doc/`` directory in the console and run
+Navigate to your local ``doc/`` directory in the console and run
 
 .. code-block:: sh
 

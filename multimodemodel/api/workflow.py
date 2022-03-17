@@ -2,13 +2,26 @@
 
 from abc import ABC, abstractmethod
 from math import ceil
-from typing import Union
+from typing import Optional, Union, Protocol
 
 import numpy as np
 from multimodemodel.api.core import DomainBase
 from multimodemodel.api.integration import SolverBase
 
 from multimodemodel.util import average_npdatetime64, str_to_date
+
+
+class DiagnosticCallback(Protocol):
+    """Protocol for diagnostic callback."""
+
+    def __call__(self, domain: DomainBase) -> None:
+        """Define signature of diagnostic callback functions."""
+        ...
+
+
+def _default_diag(domain: DomainBase) -> None:
+    """Do nothing by default."""
+    ...
 
 
 def _to_datetime64(date: Union[str, np.datetime64]) -> np.datetime64:
@@ -23,15 +36,48 @@ class WorkflowBase(ABC):
     domain: DomainBase
     solver: SolverBase
 
-    @abstractmethod
-    def run(self, steps: int) -> None:  # pragma: no cover
+    def run(
+        self, steps: int, diag: Optional[DiagnosticCallback] = None
+    ) -> None:  # pragma: no cover
         """Run model forward for a number of steps.
+
+        Before and after the iteration, `self.run_setup()` and
+        `self.run_teardown()` is called. For each iteration,
+        `self.run_next()`, which computes the domain state
+        at the next time step, and `self.run_diag(diag)`, which runs
+        the diagnostic function, are called.
 
         Arguments
         ---------
         steps: int
             Number of time steps to integrate.
+        diag: Optional[(DomainBase) -> None]
+            Function called with each new iteration result for
+            online diagnostics purposes.
         """
+        if diag is None:
+            diag = _default_diag
+        self._run_setup()
+        for _ in range(steps):
+            self._run_next()
+            self._run_diag(diag)
+        self._run_teardown()
+
+    def _run_setup(self) -> None:
+        """Set up the iteration."""
+        ...
+
+    @abstractmethod
+    def _run_next(self) -> None:
+        """Compute the state at the next time step."""
+        ...
+
+    def _run_diag(self, diag: DiagnosticCallback) -> None:
+        """Perform diagnostics."""
+        ...
+
+    def _run_teardown(self) -> None:
+        """Clean up and finalize after iteration."""
         ...
 
     def run_until(self, date: Union[str, np.datetime64]):

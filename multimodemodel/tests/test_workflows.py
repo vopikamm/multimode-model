@@ -4,7 +4,7 @@ from itertools import count
 from xmlrpc.client import NOT_WELLFORMED_ERROR
 import numpy as np
 import pytest
-from multimodemodel.api import WorkflowBase, workflow
+from multimodemodel.api import WorkflowBase
 from multimodemodel.border import RegularSplitMerger
 from multimodemodel.datastructure import Domain, Parameter, Variable, State
 from multimodemodel.grid import Grid
@@ -83,6 +83,16 @@ def regular_splitter(dim):
     return RegularSplitMerger(parts=3, dim=(dim,))
 
 
+class CountingWorkflow(WorkflowBase):
+    def __init__(self, domain, solver):
+        self.domain = domain
+        self.solver = solver
+        self.counter = 0
+
+    def _run_next(self):
+        self.counter += 1
+
+
 def test_WorkflowBase_cannot_instantiate():
     """Test WorkflowBase cannot be instantiated."""
     with pytest.raises(TypeError, match="Can't instantiate abstract class *"):
@@ -94,29 +104,19 @@ def test_WorkflowBase_run_until_runs_until_datetime64(
 ):
     """Test WorkflowBase runs until specified datetime64."""
 
-    class DummyWorkflow(WorkflowBase):
-        def __init__(self, domain, solver):
-            self.domain = domain
-            self.solver = solver
-            self.counter = 0
-
-        def run(self, steps):
-            for _ in range(steps):
-                self.counter += 1
-
-    wf = DummyWorkflow(single_variable_domain, counting_solver)
+    wf = CountingWorkflow(single_variable_domain, counting_solver)
     assert wf.counter == 0
     end_date = single_variable_domain.state.v.time + np.timedelta64(5, "s")
     wf.run_until(end_date)
     assert wf.counter == 5
 
-    wf = DummyWorkflow(single_variable_domain, counting_solver)
+    wf = CountingWorkflow(single_variable_domain, counting_solver)
     assert wf.counter == 0
     end_date = single_variable_domain.state.v.time + np.timedelta64(5010, "ms")
     wf.run_until(end_date)
     assert wf.counter == 6
 
-    wf = DummyWorkflow(single_variable_domain, counting_solver)
+    wf = CountingWorkflow(single_variable_domain, counting_solver)
     assert wf.counter == 0
     end_date = single_variable_domain.state.v.time
     wf.run_until(end_date)
@@ -126,23 +126,13 @@ def test_WorkflowBase_run_until_runs_until_datetime64(
 def test_WorkflowBase_run_until_runs_until_str(single_variable_domain, counting_solver):
     """Test WorkflowBase runs until specified date str."""
 
-    class DummyWorkflow(WorkflowBase):
-        def __init__(self, domain, solver):
-            self.domain = domain
-            self.solver = solver
-            self.counter = 0
-
-        def run(self, steps):
-            for _ in range(steps):
-                self.counter += 1
-
-    wf = DummyWorkflow(single_variable_domain, counting_solver)
+    wf = CountingWorkflow(single_variable_domain, counting_solver)
     assert wf.counter == 0
     end_date = "2000-01-01 00:00:05"
     wf.run_until(end_date)
     assert wf.counter == 5
 
-    wf = DummyWorkflow(single_variable_domain, counting_solver)
+    wf = CountingWorkflow(single_variable_domain, counting_solver)
     assert wf.counter == 0
     end_date = "2000-01-01 00:00:05.5"
     wf.run_until(end_date)
@@ -154,15 +144,7 @@ def test_WorkflowBase_run_until_raises_on_end_date_in_past(
 ):
     """Test WorkflowBase runs until specified datetime64."""
 
-    class DummyWorkflow(WorkflowBase):
-        def __init__(self, domain, solver):
-            self.domain = domain
-            self.solver = solver
-
-        def run(self, steps):
-            ...
-
-    wf = DummyWorkflow(single_variable_domain, counting_solver)
+    wf = CountingWorkflow(single_variable_domain, counting_solver)
     end_date = single_variable_domain.state.v.time - np.timedelta64(5, "s")
     with pytest.raises(ValueError, match="End date is before present date.*"):
         wf.run_until(end_date)
@@ -179,6 +161,20 @@ def test_Workflow_run_runs_for_nsteps(single_variable_domain, counting_solver):
     assert (workflow.domain.state.v.data == 15).all()
 
 
+def test_Workflow_diagnoses_each_step(single_variable_domain, counting_solver):
+
+    workflow = Workflow(domain=single_variable_domain, solver=counting_solver)
+
+    buffer = np.zeros(single_variable_domain.state.v.grid.shape)
+
+    def diag(domain) -> None:
+        buffer[:] += domain.state.variables["v"].safe_data
+
+    n_steps = 10
+    workflow.run(steps=n_steps, diag=diag)
+    assert (buffer == sum(range(1, n_steps + 1))).all()
+
+
 def test_DaskWorkflow_initializes(
     single_variable_domain, counting_solver, regular_splitter
 ):
@@ -190,7 +186,6 @@ def test_DaskWorkflow_initializes(
         client=client,
     )
     assert workflow._domain_type is single_variable_domain.__class__
-    assert workflow._worker == tuple(client.scheduler_info()["workers"].keys())
     assert len(workflow.domain_stack) == len(workflow.border_stack) == 1
     assert (
         len(workflow.domain_stack[-1])
@@ -216,3 +211,24 @@ def test_DaskWorkflow_run_produces_correct_results(
     workflow.run(10)
 
     assert workflow.domain.state == expected.state
+
+
+def test_DaskWorkflow_diag_all_subdomains(
+    single_variable_domain, counting_solver, regular_splitter
+):
+    client = MockDaskClient(n_workers=3)
+    workflow = DaskWorkflow(
+        domain=single_variable_domain,
+        solver=counting_solver,
+        splitter=regular_splitter,
+        client=client,
+    )
+
+    buffer = tuple(np.zeros(s.state.v.grid.shape) for s in workflow.domain_stack[-1])
+
+    def diag(domain):
+        buffer[domain.id][:] += domain.state.v.safe_data
+
+    n_steps = 10
+    workflow.run(steps=n_steps, diag=diag)
+    assert all((b == sum(range(1, n_steps + 1))).all() for b in buffer)

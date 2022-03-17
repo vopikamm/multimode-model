@@ -607,10 +607,10 @@ class DomainBase(Splitable, Generic[StateType, ParameterType]):
                 state=s,
                 history=h,
                 parameter=p,
-                id=self.id,
+                id=i,
                 iteration=self.iteration,
             )
-            for s, h, p in zip(*splitted)
+            for i, (s, h, p) in enumerate(zip(*splitted))
         )
 
         return out
