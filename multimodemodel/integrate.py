@@ -351,7 +351,9 @@ class Solver(SolverBase[Domain]):
         """
         b_w = border.get_width()
         dim = border.dim
-        assert domain.state.u.grid.x.shape[dim] >= 2 * b_w
+        assert all(
+            v.grid.x.shape[dim] >= 2 * b_w for v in domain.state.variables.values()
+        )
 
         if direction:
             halo_slice = BorderDirection.RIGHT_HALO(b_w)  # type: ignore

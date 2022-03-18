@@ -108,8 +108,8 @@ def save_as_Dataset(state: State, params: MultimodeParameter):
     ds = state.variables["u"].as_dataarray.to_dataset(name="u_tilde")
     ds["v_tilde"] = state.variables["v"].as_dataarray
     ds["h_tilde"] = state.variables["eta"].as_dataarray
-    x = (["j", "i"], (state.u.grid.x + state.v.grid.x) / 2)
-    y = (["j", "i"], (state.u.grid.y + state.v.grid.y) / 2)
+    x = (["j", "i"], (state.variables["u"].grid.x + state.variables["v"].grid.x) / 2)
+    y = (["j", "i"], (state.variables["u"].grid.y + state.variables["v"].grid.y) / 2)
     ds.assign_coords({"x": x, "y": y})
     return ds
 
