@@ -157,15 +157,9 @@ class Grid(GridBase[np.ndarray]):
     @lru_cache(maxsize=config.lru_cache_maxsize)
     def split(self, splitter: SplitVisitorBase[np.ndarray]):
         """Split grid."""
-        mask = splitter.split_array(self.mask)
-
-        if len(self.z) == 0:
-            dim = splitter.dim
-        else:
-            dim = tuple(v - 1 for v in splitter.dim)
-
-        x, y, dx, dy = (
-            splitter.split_array(arr, dim) for arr in (self.x, self.y, self.dx, self.dy)
+        x, y, mask, dx, dy = (
+            splitter.split_array(arr)
+            for arr in (self.x, self.y, self.mask, self.dx, self.dy)
         )
         return tuple(
             self.__class__(
@@ -178,15 +172,11 @@ class Grid(GridBase[np.ndarray]):
     @lru_cache(maxsize=config.lru_cache_maxsize)
     def merge(cls, others: tuple["Grid"], merger: MergeVisitorBase):
         """Merge grids."""
+        x = merger.merge_array(tuple(o.x for o in others))
+        y = merger.merge_array(tuple(o.y for o in others))
         mask = merger.merge_array(tuple(o.mask for o in others))
-        if len(others[0].mask.shape) <= 2:
-            dim = merger.dim
-        else:
-            dim = tuple(v - 1 for v in merger.dim)
-        x = merger.merge_array(tuple(o.x for o in others), dim=dim)
-        y = merger.merge_array(tuple(o.y for o in others), dim=dim)
-        dx = merger.merge_array(tuple(o.dx for o in others), dim=dim)
-        dy = merger.merge_array(tuple(o.dy for o in others), dim=dim)
+        dx = merger.merge_array(tuple(o.dx for o in others))
+        dy = merger.merge_array(tuple(o.dy for o in others))
         return cls(x=x, y=y, z=others[0].z, mask=mask, dx=dx, dy=dy, dz=others[0].dz)
 
     @staticmethod

@@ -432,33 +432,6 @@ _laplacian_mixing_v_dispatch_table = _make_grid_iteration_dispatch_table(
 )
 
 
-def _vertical_mixing(
-    i: int,
-    j: int,
-    k: int,
-    ni: int,
-    nj: int,
-    nk: int,
-    var: np.ndarray,
-    mask: np.ndarray,
-    P: np.ndarray,
-) -> float:  # pragma: no cover
-    """
-    Compute the vertical mixing of dynamic variables.
-
-    The vertical structure of the mixing coefficient must be considered when
-    computing the double-mode-tensor P.
-    """
-    result = 0.0
-    for m in range(nk):
-        result += mask[m, j, i] * P[m, k] * var[m, j, i]
-
-    return -result
-
-
-_vertical_mixing_dispatch_table = _make_grid_iteration_dispatch_table(_vertical_mixing)
-
-
 def _linear_damping(
     i: int,
     j: int,
@@ -466,12 +439,12 @@ def _linear_damping(
     ni: int,
     nj: int,
     nk: int,
-    var: np.ndarray,
+    vel: np.ndarray,
     mask: np.ndarray,
     gamma: np.ndarray,
 ) -> float:  # pragma: no cover
-    """Compute linear damping of dynamic variables."""
-    return -gamma[k] * mask[k, j, i] * var[k, j, i]
+    """Compute linear damping of horizontal velocities."""
+    return -gamma[k] * mask[k, j, i] * vel[k, j, i]
 
 
 _linear_damping_dispatch_table = _make_grid_iteration_dispatch_table(_linear_damping)
@@ -572,7 +545,7 @@ def _advection_momentum_u(
                 )
                 - R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
             )
-    return -result
+    return result
 
 
 _advection_momentum_u_dispatch_table = _make_grid_iteration_dispatch_table(
@@ -675,7 +648,7 @@ def _advection_momentum_v(
                 )
                 - R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
             )
-    return -result
+    return result
 
 
 _advection_momentum_v_dispatch_table = _make_grid_iteration_dispatch_table(
@@ -751,7 +724,7 @@ def _advection_density(
                 )
                 - T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
             )
-    return -result
+    return result
 
 
 _advection_density_dispatch_table = _make_grid_iteration_dispatch_table(
@@ -1098,90 +1071,6 @@ def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
     )
 
 
-def constant_vertical_mixing_u(
-    state: StateType, params: MultimodeParameter
-) -> StateType:
-    """Compute constant vertical mixing of zonal velocities."""
-    grid = state.variables["u"].grid
-    shape = _shape_at_least_3D(grid.shape)
-    u, u_mask = _at_least_3D(
-        state.variables["u"].safe_data,
-        state.variables["u"].grid.mask,
-    )
-    func = _get_from_dispatch_table(grid, _vertical_mixing_dispatch_table)
-    args: tuple[Any, ...] = (
-        shape[grid.dim_x],
-        shape[grid.dim_y],
-        shape[grid.dim_z],
-        u,
-        u_mask,
-        params.gamma_h * params.P,
-    )
-    return state.__class__(
-        u=state.variables["u"].__class__(
-            func(*args).reshape(grid.shape),
-            grid,
-            state.variables["u"].time,
-        )
-    )
-
-
-def constant_vertical_mixing_v(
-    state: StateType, params: MultimodeParameter
-) -> StateType:
-    """Compute constant vertical mixing of meridional velocities."""
-    grid = state.variables["v"].grid
-    shape = _shape_at_least_3D(grid.shape)
-    v, v_mask = _at_least_3D(
-        state.variables["v"].safe_data,
-        state.variables["v"].grid.mask,
-    )
-    func = _get_from_dispatch_table(grid, _vertical_mixing_dispatch_table)
-    args: tuple[Any, ...] = (
-        shape[grid.dim_x],
-        shape[grid.dim_y],
-        shape[grid.dim_z],
-        v,
-        v_mask,
-        params.gamma_h * params.P,
-    )
-    return state.__class__(
-        v=state.variables["v"].__class__(
-            func(*args).reshape(grid.shape),
-            grid,
-            state.variables["v"].time,
-        )
-    )
-
-
-def constant_vertical_mixing_eta(
-    state: StateType, params: MultimodeParameter
-) -> StateType:
-    """Compute constant vertical mixing of density."""
-    grid = state.variables["eta"].grid
-    shape = _shape_at_least_3D(grid.shape)
-    eta, eta_mask = _at_least_3D(
-        state.variables["eta"].safe_data,
-        state.variables["eta"].grid.mask,
-    )
-    func = _get_from_dispatch_table(grid, _vertical_mixing_dispatch_table)
-    args: tuple[Any, ...] = (
-        shape[grid.dim_x],
-        shape[grid.dim_y],
-        shape[grid.dim_z],
-        eta,
-        eta_mask,
-        params.gamma_v * params.P,
-    )
-    return state.__class__(
-        eta=state.variables["eta"].__class__(
-            func(*args).reshape(grid.shape),
-            grid,
-            state.variables["eta"].time,
-        )
-    )
-
-
 def linear_damping_u(state: StateType, params: Parameter) -> StateType:
     """Compute linear damping of zonal velocities."""
     grid = state.variables["u"].grid
@@ -1235,7 +1124,7 @@ def linear_damping_v(state: StateType, params: Parameter) -> StateType:
 
 
 def linear_damping_eta(state: StateType, params: Parameter) -> StateType:
-    """Compute linear damping of isopycnal displacement."""
+    """Compute linear damping of meridional velocities."""
     grid = state.variables["eta"].grid
     shape = _shape_at_least_3D(grid.shape)
     eta, eta_mask = _at_least_3D(
