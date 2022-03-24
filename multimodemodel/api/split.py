@@ -1,6 +1,6 @@
 """Provide the basic API for spliting the domain."""
 from abc import ABC, abstractmethod
-from typing import Generic, Sequence, TypeVar, Type
+from typing import Generic, Sequence, TypeVar, Type, Optional
 from .typing import ArrayType
 
 
@@ -33,7 +33,7 @@ class SplitVisitorBase(Generic[ArrayType]):
 
     @abstractmethod
     def split_array(
-        self, array: ArrayType
+        self, array: ArrayType, dim: Optional[tuple[int]] = None
     ) -> tuple[ArrayType, ...]:  # pragma: no cover
         """Split numpy array in various parts."""
         ...
@@ -42,6 +42,12 @@ class SplitVisitorBase(Generic[ArrayType]):
     @abstractmethod
     def parts(self) -> int:  # pragma: no cover
         """Return number of splits."""
+        ...
+
+    @property
+    @abstractmethod
+    def dim(self) -> tuple:  # pragma: no cover
+        """Return dimensions along which to split."""
         ...
 
 
@@ -64,26 +70,39 @@ class MergeVisitorBase(Generic[ArrayType]):
         return 1
 
     @abstractmethod
-    def merge_array(self, arrays: Sequence[ArrayType]) -> ArrayType:  # pragma: no cover
+    def merge_array(
+        self, arrays: Sequence[ArrayType], dim: Optional[tuple[int]] = None
+    ) -> ArrayType:  # pragma: no cover
         """Merge numpy array in various parts."""
+        ...
+
+    @property
+    @abstractmethod
+    def dim(self) -> tuple:  # pragma: no cover
+        """Return dimensions along which to merge."""
         ...
 
 
 class RegularSplitMergerBase(SplitVisitorBase[ArrayType], MergeVisitorBase[ArrayType]):
     """Implements splitting and merging into regular grid along single dimension."""
 
-    __slots__ = ["dim", "_parts"]
+    __slots__ = ["_dim", "_parts"]
 
     def __init__(self, parts: int, dim: tuple[int]):
         """Initialize class instance."""
         self._validate_axis(dim[0])
         self._parts = parts
-        self.dim = dim
+        self._dim = dim
 
     @property
     def parts(self) -> int:
         """Return number of parts created by split."""
         return self._parts
+
+    @property
+    def dim(self) -> tuple:
+        """Return dimensions along which split acts."""
+        return self.dim
 
     def __hash__(self):
         """Return hash based on number of parts and dimension."""
