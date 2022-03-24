@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 from multimodemodel.api import WorkflowBase
 from multimodemodel.border import RegularSplitMerger
-from multimodemodel.datastructure import Domain, Parameter, Variable, State
+from multimodemodel.datastructure import (
+    Domain,
+    Parameter,
+    MultimodeParameter,
+    Variable,
+    State,
+)
 from multimodemodel.grid import Grid
 from multimodemodel.util import str_to_date
 from multimodemodel.integrate import Solver, euler_forward
@@ -35,6 +41,14 @@ def single_grid():
 
 
 @pytest.fixture()
+def single_grid_3D():
+    shape = (5, 20, 40)
+    return Grid.cartesian(
+        x=np.arange(shape[2]), y=np.arange(shape[1]), z=np.arange(shape[0])
+    )
+
+
+@pytest.fixture()
 def some_time():
     return str_to_date("2000-01-01")
 
@@ -45,8 +59,18 @@ def single_variable(single_grid, some_time):
 
 
 @pytest.fixture()
+def single_variable_3D(single_grid_3D, some_time):
+    return Variable(None, grid=single_grid_3D, time=some_time)
+
+
+@pytest.fixture()
 def single_variable_state(single_variable):
     return State(v=single_variable)
+
+
+@pytest.fixture()
+def single_variable_state_3D(single_variable_3D):
+    return State(v=single_variable_3D)
 
 
 @pytest.fixture()
@@ -54,9 +78,19 @@ def parameter():
     return Parameter()
 
 
+@pytest.fixture()
+def multimode_parameter():
+    return MultimodeParameter()
+
+
 @pytest.fixture
 def single_variable_domain(single_variable_state, parameter):
     return Domain(state=single_variable_state, parameter=parameter)
+
+
+@pytest.fixture
+def single_variable_domain_3D(single_variable_state_3D, multimode_parameter):
+    return Domain(state=single_variable_state_3D, parameter=multimode_parameter)
 
 
 @pytest.fixture
@@ -232,3 +266,16 @@ def test_DaskWorkflow_diag_all_subdomains(
     n_steps = 10
     workflow.run(steps=n_steps, diag=diag)
     assert all((b == sum(range(1, n_steps + 1))).all() for b in buffer)
+
+
+def test_DaskWorkflow_initializes_3D(
+    single_variable_domain_3D, counting_solver, regular_splitter
+):
+    client = MockDaskClient(n_workers=3)
+    workflow = DaskWorkflow(
+        domain=single_variable_domain_3D,
+        solver=counting_solver,
+        splitter=regular_splitter,
+        client=client,
+    )
+    assert workflow._domain_type is single_variable_domain_3D.__class__
