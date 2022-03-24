@@ -1,6 +1,6 @@
 """Implementation of border API."""
 import numpy as np
-from typing import Sequence, Type, Optional
+from typing import Sequence, Type
 
 from .api import (
     RegularSplitMergerBase,
@@ -21,9 +21,7 @@ from .datastructure import (
 class RegularSplitMerger(RegularSplitMergerBase[np.ndarray]):
     """Implements splitting and merging into regular grid."""
 
-    def split_array(
-        self, array: np.ndarray, dim: Optional[tuple[int]]
-    ) -> tuple[np.ndarray, ...]:
+    def split_array(self, array: np.ndarray) -> tuple[np.ndarray, ...]:
         """Split array.
 
         Parameter
@@ -35,14 +33,9 @@ class RegularSplitMerger(RegularSplitMergerBase[np.ndarray]):
         -------
         tuple[np.ndarray, ...]
         """
-        if dim is None:
-            dim = self.dim
+        return np.array_split(array, indices_or_sections=self.parts, axis=self.dim[0])
 
-        return np.array_split(array, indices_or_sections=self.parts, axis=dim[0])
-
-    def merge_array(
-        self, arrays: Sequence[np.ndarray], dim: Optional[tuple[int]]
-    ) -> np.ndarray:
+    def merge_array(self, arrays: Sequence[np.ndarray]) -> np.ndarray:
         """Merge array.
 
         Parameter
@@ -54,9 +47,7 @@ class RegularSplitMerger(RegularSplitMergerBase[np.ndarray]):
         -------
         np.ndarray
         """
-        if dim is None:
-            dim = self.dim
-        return np.concatenate(arrays, axis=dim[0])
+        return np.concatenate(arrays, axis=self.dim[0])
 
 
 class BorderSplitter(BorderSplitterBase[np.ndarray]):
