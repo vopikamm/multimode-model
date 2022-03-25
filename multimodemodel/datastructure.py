@@ -347,7 +347,7 @@ class MultimodeParameter(Parameter):
             _set_attr(super(), "psi", psi, np.array([]))
             _set_attr(super(), "dpsi_dz", dpsi_dz, np.array([]))
             _set_attr(super(), "c", c, np.array([]))
-            _set_attr(super(), "H_e", self.g / self.c**2, np.array([]))
+            _set_attr(super(), "H_e", self.c**2 / self.g)
 
             P = self.compute_P()
             Q = self.compute_Q()

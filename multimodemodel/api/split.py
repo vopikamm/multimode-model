@@ -1,6 +1,6 @@
 """Provide the basic API for spliting the domain."""
 from abc import ABC, abstractmethod
-from typing import Generic, Sequence, TypeVar, Type, Optional
+from typing import Generic, Sequence, TypeVar, Type
 from .typing import ArrayType
 
 
@@ -64,9 +64,7 @@ class MergeVisitorBase(Generic[ArrayType]):
         return 1
 
     @abstractmethod
-    def merge_array(
-        self, arrays: Sequence[ArrayType], dim: Optional[tuple[int]] = None
-    ) -> ArrayType:  # pragma: no cover
+    def merge_array(self, arrays: Sequence[ArrayType]) -> ArrayType:  # pragma: no cover
         """Merge numpy array in various parts."""
         ...
 
