@@ -289,7 +289,6 @@ class MultimodeParameter(Parameter):
     psi: np.ndarray = np.array([])
     dpsi_dz: np.ndarray = np.array([])
     c: np.ndarray = np.array([])
-    H_e: np.ndarray = np.array([])
     P: np.ndarray = np.array([])
     Q: np.ndarray = np.array([])
     R: np.ndarray = np.array([])
@@ -305,7 +304,6 @@ class MultimodeParameter(Parameter):
         psi: Optional[np.ndarray] = None,
         dpsi_dz: Optional[np.ndarray] = None,
         c: Optional[np.ndarray] = None,
-        H_e: Optional[np.ndarray] = None,
         P: Optional[np.ndarray] = None,
         Q: Optional[np.ndarray] = None,
         R: Optional[np.ndarray] = None,
@@ -322,7 +320,6 @@ class MultimodeParameter(Parameter):
         _set_attr(super(), "psi", psi, np.array([]))
         _set_attr(super(), "dpsi_dz", dpsi_dz, np.array([]))
         _set_attr(super(), "c", c, np.array([]))
-        _set_attr(super(), "H_e", H_e, np.array([]))
         _set_attr(super(), "P", P, np.array([]))
         _set_attr(super(), "Q", Q, np.array([]))
         _set_attr(super(), "R", R, np.array([]))
@@ -347,7 +344,7 @@ class MultimodeParameter(Parameter):
             _set_attr(super(), "psi", psi, np.array([]))
             _set_attr(super(), "dpsi_dz", dpsi_dz, np.array([]))
             _set_attr(super(), "c", c, np.array([]))
-            _set_attr(super(), "H_e", self.c**2 / self.g)
+            self.__class__.__mro__[-1].__setattr__(self, "H", self.c**2 / self.g)
 
             P = self.compute_P()
             Q = self.compute_Q()
@@ -360,6 +357,30 @@ class MultimodeParameter(Parameter):
             _set_attr(super(), "R", R, np.array([]))
             _set_attr(super(), "S", S, np.array([]))
             _set_attr(super(), "T", T, np.array([]))
+        self.__class__.__mro__[-1].__setattr__(self, "_id", id(self))
+
+    def __hash__(self):
+        """Return id of instance as hash."""
+        return self._id
+
+    def __eq__(self, other: Any) -> bool:
+        """Return true if other is identical or the same as self."""
+        if not isinstance(other, MultimodeParameter):
+            return NotImplemented
+        if self is other:
+            return True
+        equals = []
+        for f in fields(self):
+            if f.name == "_f":
+                equals.append(all((self._f[v] == other._f[v]).all() for v in self._f))
+            elif type(getattr(self, f.name)) == np.ndarray:
+                equals.append((getattr(self, f.name) == getattr(other, f.name)).all())
+            elif f.name == "_id":
+                pass
+            else:
+                equals.append(getattr(self, f.name) == getattr(other, f.name))
+
+        return all(equals)
 
     @property
     def as_dataset(self) -> xarray.Dataset:  # type: ignore
@@ -376,7 +397,7 @@ class MultimodeParameter(Parameter):
             psi=(["depth", "nmode"], self.psi),
             dpsi_dz=(["depth", "nmode"], self.dpsi_dz),
             c=("nmode", self.c),
-            H_e=("nmode", self.H_e),
+            H=("nmode", self.H),
             Nsq=("depth", self.Nsq),
             rho=("depth", self.rho),
         )
