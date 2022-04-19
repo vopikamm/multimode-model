@@ -94,7 +94,8 @@ class Parameter(ParameterBase):
     g: float = 9.81  # gravitational force m / s^2
     H: np.ndarray = np.array([1000.0])  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
-    a_h: float = 2000.0  # horizontal mixing coefficient in m^2 / s
+    a_h: float = 2000.0  # coefficient for laplacian mixing in m^2 / s
+    b_h: float = -2e10  # coefficient for biharmonic mixing in m^4 / s
     gamma_h: np.ndarray = np.array([0.0])  # horizontal damping coefficient in 1 / s
     gamma_v: np.ndarray = np.array([0.0])  # vertical damping coefficient in 1 / s
     free_slip: bool = True  # lateral boundary conditions
@@ -108,6 +109,7 @@ class Parameter(ParameterBase):
         H: np.ndarray = np.array([1000.0]),
         rho_0: float = 1024.0,
         a_h: float = 2000.0,  # horizontal mixing coefficient in m^2 / s
+        b_h: float = -2e10,  # coefficient for biharmonic mixing in m^4 / s
         gamma_h: Optional[np.ndarray] = None,  # horizontal damping coefficient in 1 / s
         gamma_v: Optional[np.ndarray] = None,  # vertical damping coefficient in 1 / s
         free_slip: bool = True,  # lateral boundary conditions
@@ -122,6 +124,7 @@ class Parameter(ParameterBase):
         _set_attr(super(), "H", np.atleast_1d(H))
         _set_attr(super(), "rho_0", rho_0)
         _set_attr(super(), "a_h", a_h)
+        _set_attr(super(), "b_h", b_h)
         _set_attr(super(), "gamma_h", gamma_h, np.array([0.0]))
         _set_attr(super(), "gamma_v", gamma_v, np.array([0.0]))
 

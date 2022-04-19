@@ -1098,6 +1098,117 @@ def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
     )
 
 
+def biharmonic_mixing_u(state: StateType, params: Parameter) -> StateType:
+    """Compute biharmonic diffusion of zonal velocities."""
+    grid = state.variables["u"].grid
+    shape = _shape_at_least_3D(grid.shape)
+    u, u_mask, q_mask = _at_least_3D(
+        state.variables["u"].safe_data,
+        state.variables["u"].grid.mask,
+        state.variables["q"].grid.mask,
+    )
+    lbc = 2 * params.no_slip
+    func = _get_from_dispatch_table(grid, _laplacian_mixing_u_dispatch_table)
+    args_1: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        u,
+        u_mask,
+        q_mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        lbc,
+        1.0,
+    )
+
+    laplacian_u = func(*args_1).reshape(grid.shape)
+
+    args_2: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        laplacian_u,
+        u_mask,
+        q_mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        0.0,
+        params.b_h,
+    )
+
+    return state.__class__(
+        u=state.variables["u"].__class__(
+            func(*args_2).reshape(grid.shape),
+            grid,
+            state.variables["u"].time,
+        )
+    )
+
+
+def biharmonic_mixing_v(state: StateType, params: Parameter) -> StateType:
+    """Compute biharmonic diffusion of meridional velocities."""
+    grid = state.variables["v"].grid
+    shape = _shape_at_least_3D(grid.shape)
+    v, v_mask, q_mask = _at_least_3D(
+        state.variables["v"].safe_data,
+        state.variables["v"].grid.mask,
+        state.variables["q"].grid.mask,
+    )
+    lbc = 2 * params.no_slip
+    func = _get_from_dispatch_table(grid, _laplacian_mixing_v_dispatch_table)
+    args_1: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        v,
+        v_mask,
+        q_mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        lbc,
+        1.0,
+    )
+
+    laplacian_v = func(*args_1).reshape(grid.shape)
+
+    args_2: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        laplacian_v,
+        v_mask,
+        q_mask,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        0.0,
+        params.b_h,
+    )
+    return state.__class__(
+        v=state.variables["v"].__class__(
+            func(*args_2).reshape(grid.shape),
+            grid,
+            state.variables["v"].time,
+        )
+    )
+
+
 def constant_vertical_mixing_u(
     state: StateType, params: MultimodeParameter
 ) -> StateType:

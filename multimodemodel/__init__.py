@@ -46,6 +46,8 @@ from .kernel import (
     linear_combination,
     laplacian_mixing_u,
     laplacian_mixing_v,
+    biharmonic_mixing_u,
+    biharmonic_mixing_v,
     constant_vertical_mixing_u,
     constant_vertical_mixing_v,
     constant_vertical_mixing_eta,
