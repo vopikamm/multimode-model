@@ -650,15 +650,15 @@ def _advection_momentum_v(
                 * (
                     mask_fac_Q
                     * (
-                        u_q_n_ij
-                        * (
-                            mask_v[m, j, im1] * v[m, j, im1]
-                            + lbc_i * mask_v[m, j, i] * v[m, j, i]
-                        )
-                        - u_q_n_ip1j
+                        u_q_n_ip1j
                         * (
                             lbc_ip1 * mask_v[m, j, i] * v[m, j, i]
                             + mask_v[m, j, ip1] * v[m, j, ip1]
+                        )
+                        - u_q_n_ij
+                        * (
+                            mask_v[m, j, im1] * v[m, j, im1]
+                            + lbc_i * mask_v[m, j, i] * v[m, j, i]
                         )
                         + v_eta_n_ij
                         * (
