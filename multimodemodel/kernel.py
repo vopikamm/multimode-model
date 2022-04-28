@@ -432,6 +432,76 @@ _laplacian_mixing_v_dispatch_table = _make_grid_iteration_dispatch_table(
 )
 
 
+def _laplacian_mixing_eta(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    eta: np.ndarray,
+    mask_eta: np.ndarray,
+    mask_q: np.ndarray,
+    dx_u: np.ndarray,
+    dy_u: np.ndarray,
+    dx_v: np.ndarray,
+    dy_v: np.ndarray,
+    dx_eta: np.ndarray,
+    dy_eta: np.ndarray,
+    a_h: float,
+) -> float:  # pragma: no cover
+    """
+    Compute laplacian diffusion of eta.
+
+    Free-slip boundary conditions are applied.
+    """
+    ip1 = _cyclic_shift(i, ni, 1)
+    im1 = _cyclic_shift(i, ni, -1)
+    jp1 = _cyclic_shift(j, nj, 1)
+    jm1 = _cyclic_shift(j, nj, -1)
+
+    if mask_q[k, j, i] == 0.0:
+        lbc_ij = 0.0
+    else:
+        lbc_ij = 1.0
+
+    if mask_q[k, jp1, i] == 0.0:
+        lbc_ijp1 = 0.0
+    else:
+        lbc_ijp1 = 1.0
+
+    if mask_q[k, j, ip1] == 0.0:
+        lbc_ip1j = 0.0
+    else:
+        lbc_ip1j = 1.0
+
+    return (
+        a_h
+        * mask_eta[k, j, i]
+        * (
+            (dy_u[j, ip1] / dx_u[j, ip1])
+            * lbc_ip1j
+            * (mask_eta[k, j, ip1] * eta[k, j, ip1] - mask_eta[k, j, i] * eta[k, j, i])
+            - (dy_u[j, i] / dx_u[j, i])
+            * lbc_ij
+            * (mask_eta[k, j, i] * eta[k, j, i] - mask_eta[k, j, im1] * eta[k, j, im1])
+            + (dx_v[jp1, i] / dy_v[jp1, i])
+            * lbc_ijp1
+            * (mask_eta[k, jp1, i] * eta[k, jp1, i] - mask_eta[k, j, i] * eta[k, j, i])
+            - (dx_v[j, i] / dx_v[j, i])
+            * lbc_ij
+            * (mask_eta[k, j, i] * eta[k, j, i] - mask_eta[k, jm1, i] * eta[k, jm1, i])
+        )
+        / dx_eta[j, i]
+        / dy_eta[j, i]
+    )
+
+
+_laplacian_mixing_eta_dispatch_table = _make_grid_iteration_dispatch_table(
+    _laplacian_mixing_eta
+)
+
+
 def _vertical_mixing(
     i: int,
     j: int,
@@ -1044,12 +1114,12 @@ def laplacian_mixing_u(state: StateType, params: Parameter) -> StateType:
         u,
         u_mask,
         q_mask,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
         state.variables["u"].grid.dy,
-        state.variables["v"].grid.dx,
-        state.variables["v"].grid.dy,
+        state.variables["q"].grid.dx,
+        state.variables["q"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
         lbc,
         params.a_h,
     )
@@ -1080,12 +1150,12 @@ def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
         v,
         v_mask,
         q_mask,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
-        state.variables["u"].grid.dx,
-        state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
         state.variables["v"].grid.dy,
+        state.variables["q"].grid.dx,
+        state.variables["q"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
         lbc,
         params.a_h,
     )
@@ -1094,6 +1164,40 @@ def laplacian_mixing_v(state: StateType, params: Parameter) -> StateType:
             func(*args).reshape(grid.shape),
             grid,
             state.variables["v"].time,
+        )
+    )
+
+
+def laplacian_mixing_eta(state: StateType, params: Parameter) -> StateType:
+    """Compute laplacian diffusion of isopycnal displacement."""
+    grid = state.variables["eta"].grid
+    shape = _shape_at_least_3D(grid.shape)
+    eta, eta_mask, q_mask = _at_least_3D(
+        state.variables["eta"].safe_data,
+        state.variables["eta"].grid.mask,
+        state.variables["q"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _laplacian_mixing_eta_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        eta,
+        eta_mask,
+        q_mask,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        params.a_h,
+    )
+    return state.__class__(
+        eta=state.variables["eta"].__class__(
+            func(*args).reshape(grid.shape),
+            grid,
+            state.variables["eta"].time,
         )
     )
 
@@ -1116,12 +1220,12 @@ def biharmonic_mixing_u(state: StateType, params: Parameter) -> StateType:
         u,
         u_mask,
         q_mask,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
         state.variables["u"].grid.dy,
-        state.variables["v"].grid.dx,
-        state.variables["v"].grid.dy,
+        state.variables["q"].grid.dx,
+        state.variables["q"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
         lbc,
         1.0,
     )
@@ -1135,12 +1239,12 @@ def biharmonic_mixing_u(state: StateType, params: Parameter) -> StateType:
         laplacian_u,
         u_mask,
         q_mask,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
         state.variables["u"].grid.dx,
         state.variables["u"].grid.dy,
-        state.variables["v"].grid.dx,
-        state.variables["v"].grid.dy,
+        state.variables["q"].grid.dx,
+        state.variables["q"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
         0.0,
         params.b_h,
     )
@@ -1172,12 +1276,12 @@ def biharmonic_mixing_v(state: StateType, params: Parameter) -> StateType:
         v,
         v_mask,
         q_mask,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
-        state.variables["u"].grid.dx,
-        state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
         state.variables["v"].grid.dy,
+        state.variables["q"].grid.dx,
+        state.variables["q"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
         lbc,
         1.0,
     )
@@ -1191,12 +1295,12 @@ def biharmonic_mixing_v(state: StateType, params: Parameter) -> StateType:
         laplacian_v,
         v_mask,
         q_mask,
-        state.variables["eta"].grid.dx,
-        state.variables["eta"].grid.dy,
-        state.variables["u"].grid.dx,
-        state.variables["u"].grid.dy,
         state.variables["v"].grid.dx,
         state.variables["v"].grid.dy,
+        state.variables["q"].grid.dx,
+        state.variables["q"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
         0.0,
         params.b_h,
     )
@@ -1205,6 +1309,58 @@ def biharmonic_mixing_v(state: StateType, params: Parameter) -> StateType:
             func(*args_2).reshape(grid.shape),
             grid,
             state.variables["v"].time,
+        )
+    )
+
+
+def biharmonic_mixing_eta(state: StateType, params: Parameter) -> StateType:
+    """Compute biharmonic diffusion of isopycnal displacement."""
+    grid = state.variables["eta"].grid
+    shape = _shape_at_least_3D(grid.shape)
+    eta, eta_mask, q_mask = _at_least_3D(
+        state.variables["eta"].safe_data,
+        state.variables["eta"].grid.mask,
+        state.variables["q"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _laplacian_mixing_eta_dispatch_table)
+    args_1: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        eta,
+        eta_mask,
+        q_mask,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        1.0,
+    )
+
+    laplacian_eta = func(*args_1).reshape(grid.shape)
+
+    args_2: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        laplacian_eta,
+        eta_mask,
+        q_mask,
+        state.variables["u"].grid.dx,
+        state.variables["u"].grid.dy,
+        state.variables["v"].grid.dx,
+        state.variables["v"].grid.dy,
+        state.variables["eta"].grid.dx,
+        state.variables["eta"].grid.dy,
+        params.b_h,
+    )
+    return state.__class__(
+        v=state.variables["eta"].__class__(
+            func(*args_2).reshape(grid.shape),
+            grid,
+            state.variables["eta"].time,
         )
     )
 
