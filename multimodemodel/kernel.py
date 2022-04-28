@@ -1357,7 +1357,7 @@ def biharmonic_mixing_eta(state: StateType, params: Parameter) -> StateType:
         params.b_h,
     )
     return state.__class__(
-        v=state.variables["eta"].__class__(
+        eta=state.variables["eta"].__class__(
             func(*args_2).reshape(grid.shape),
             grid,
             state.variables["eta"].time,
