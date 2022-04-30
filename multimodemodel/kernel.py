@@ -358,7 +358,7 @@ def _laplacian_mixing_u(
             + (dx_q[jp1, i] / dy_q[jp1, i])
             * lbc_jp1
             * (mask_u[k, jp1, i] * u[k, jp1, i] - mask_u[k, j, i] * u[k, j, i])
-            - (dx_q[j, i] / dx_q[j, i])
+            - (dx_q[j, i] / dy_q[j, i])
             * lbc_j
             * (mask_u[k, j, i] * u[k, j, i] - mask_u[k, jm1, i] * u[k, jm1, i])
         )
@@ -419,7 +419,7 @@ def _laplacian_mixing_v(
             * (mask_v[k, j, i] * v[k, j, i] - mask_v[k, j, im1] * v[k, j, im1])
             + (dx_eta[j, i] / dy_eta[j, i])
             * (mask_v[k, jp1, i] * v[k, jp1, i] - mask_v[k, j, i] * v[k, j, i])
-            - (dx_eta[jm1, i] / dx_eta[jm1, i])
+            - (dx_eta[jm1, i] / dy_eta[jm1, i])
             * (mask_v[k, j, i] * v[k, j, i] - mask_v[k, jm1, i] * v[k, jm1, i])
         )
         / dx_v[j, i]
@@ -488,7 +488,7 @@ def _laplacian_mixing_eta(
             + (dx_v[jp1, i] / dy_v[jp1, i])
             * lbc_ijp1
             * (mask_eta[k, jp1, i] * eta[k, jp1, i] - mask_eta[k, j, i] * eta[k, j, i])
-            - (dx_v[j, i] / dx_v[j, i])
+            - (dx_v[j, i] / dy_v[j, i])
             * lbc_ij
             * (mask_eta[k, j, i] * eta[k, j, i] - mask_eta[k, jm1, i] * eta[k, jm1, i])
         )
