@@ -448,7 +448,7 @@ def _laplacian_mixing_eta(
     dy_v: np.ndarray,
     dx_eta: np.ndarray,
     dy_eta: np.ndarray,
-    a_h: float,
+    k_h: float,
 ) -> float:  # pragma: no cover
     """
     Compute laplacian diffusion of eta.
@@ -476,7 +476,7 @@ def _laplacian_mixing_eta(
         lbc_ip1j = 1.0
 
     return (
-        a_h
+        k_h
         * mask_eta[k, j, i]
         * (
             (dy_u[j, ip1] / dx_u[j, ip1])
@@ -1191,7 +1191,7 @@ def laplacian_mixing_eta(state: StateType, params: Parameter) -> StateType:
         state.variables["v"].grid.dy,
         state.variables["eta"].grid.dx,
         state.variables["eta"].grid.dy,
-        params.a_h,
+        params.k_h,
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
@@ -1382,7 +1382,7 @@ def constant_vertical_mixing_u(
         shape[grid.dim_z],
         u,
         u_mask,
-        params.gamma_h * params.P,
+        params.a_v * params.P,
     )
     return state.__class__(
         u=state.variables["u"].__class__(
@@ -1410,7 +1410,7 @@ def constant_vertical_mixing_v(
         shape[grid.dim_z],
         v,
         v_mask,
-        params.gamma_h * params.P,
+        params.a_v * params.P,
     )
     return state.__class__(
         v=state.variables["v"].__class__(
@@ -1438,7 +1438,7 @@ def constant_vertical_mixing_eta(
         shape[grid.dim_z],
         eta,
         eta_mask,
-        params.gamma_v * params.P,
+        params.k_v * params.P,
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
@@ -1464,7 +1464,7 @@ def linear_damping_u(state: StateType, params: Parameter) -> StateType:
         shape[grid.dim_z],
         u,
         u_mask,
-        params.gamma_h,
+        params.a_v,
     )
     return state.__class__(
         u=state.variables["u"].__class__(
@@ -1490,7 +1490,7 @@ def linear_damping_v(state: StateType, params: Parameter) -> StateType:
         shape[grid.dim_z],
         v,
         v_mask,
-        params.gamma_h,
+        params.a_v,
     )
     return state.__class__(
         v=state.variables["v"].__class__(
@@ -1516,7 +1516,7 @@ def linear_damping_eta(state: StateType, params: Parameter) -> StateType:
         shape[grid.dim_z],
         eta,
         eta_mask,
-        params.gamma_v,
+        params.k_v,
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(
