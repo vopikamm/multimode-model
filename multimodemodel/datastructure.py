@@ -95,10 +95,15 @@ class Parameter(ParameterBase):
     H: np.ndarray = np.array([1000.0])  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
     a_h: float = 2000.0  # coefficient for horizontal eddie viscosity in m^2 / s
-    a_v: float = 1e3  # coefficient for vertical eddie viscosity in m^2 / s
+    a_v: Optional[np.ndarray] = np.array(
+        [0.0]
+    )  # coefficient for vertical eddie viscosity in m^2 / s
     b_h: float = -2e10  # coefficient for biharmonic mixing in m^4 / s
-    k_h: np.ndarray = np.array([0.0])  # horizontal thermal diffusivity in m^2 / s
-    k_v: np.ndarray = np.array([0.0])  # vertical thermal diffusivity in m^2 / s
+    k_h: float = 1000.0  # horizontal thermal diffusivity in m^2 / s
+    k_v: Optional[np.ndarray] = np.array(
+        [0.0]
+    )  # vertical thermal diffusivity in m^2 / s
+    k_0: float = 1e-5  # background thermal diffusivity in m^2 / s
     free_slip: bool = True  # lateral boundary conditions
     no_slip: bool = False  # lateral boundary conditions
     _f: dict[str, Array] = field(init=False)
@@ -110,10 +115,11 @@ class Parameter(ParameterBase):
         H: np.ndarray = np.array([1000.0]),
         rho_0: float = 1024.0,
         a_h: float = 2000.0,  # horizontal eddie viscosity in m^2 / s
-        a_v: float = 1e3,  # horizontal eddie viscosity in m^2 / s
+        a_v: Optional[np.ndarray] = None,  # horizontal eddie viscosity in m^2 / s
         b_h: float = -2e10,  # coefficient for biharmonic mixing in m^4 / s
-        k_h: Optional[np.ndarray] = None,  # horizontal thermal diffusivity in m^2 / s
+        k_h: float = 1000.0,  # horizontal thermal diffusivity in m^2 / s
         k_v: Optional[np.ndarray] = None,  # vertical thermal diffusivity in m^2 / s
+        k_0: float = 1e-5,  # background thermal diffusivity in m^2 / s
         free_slip: bool = True,  # lateral boundary conditions
         no_slip: bool = False,  # lateral boundary conditions
         coriolis_func: Optional[CoriolisFunc] = None,
@@ -130,6 +136,7 @@ class Parameter(ParameterBase):
         _set_attr(super(), "b_h", b_h)
         _set_attr(super(), "k_h", k_h, np.array([0.0]))
         _set_attr(super(), "k_v", k_v, np.array([0.0]))
+        _set_attr(super(), "k_v", k_0)
 
         if f is None:
             _set_attr(super(), "_f", self._compute_f(coriolis_func, on_grid))
@@ -300,6 +307,7 @@ class MultimodeParameter(Parameter):
     R: np.ndarray = np.array([])
     S: np.ndarray = np.array([])
     T: np.ndarray = np.array([])
+    U: np.ndarray = np.array([])
 
     def __init__(
         self,
@@ -315,6 +323,7 @@ class MultimodeParameter(Parameter):
         R: Optional[np.ndarray] = None,
         S: Optional[np.ndarray] = None,
         T: Optional[np.ndarray] = None,
+        U: Optional[np.ndarray] = None,
         **kwargs,
     ):
         """Initialize mode-dependent parameters from stratification."""
@@ -331,6 +340,7 @@ class MultimodeParameter(Parameter):
         _set_attr(super(), "R", R, np.array([]))
         _set_attr(super(), "S", S, np.array([]))
         _set_attr(super(), "T", T, np.array([]))
+        _set_attr(super(), "U", U, np.array([]))
 
         if z is None or rho is None or Nsq is None:
             print(
@@ -357,12 +367,14 @@ class MultimodeParameter(Parameter):
             R = self.compute_R()
             S = self.compute_S()
             T = self.compute_T()
+            U = self.compute_U()
 
             _set_attr(super(), "P", P, np.array([]))
             _set_attr(super(), "Q", Q, np.array([]))
             _set_attr(super(), "R", R, np.array([]))
             _set_attr(super(), "S", S, np.array([]))
             _set_attr(super(), "T", T, np.array([]))
+            _set_attr(super(), "U", T, np.array([]))
         self.__class__.__mro__[-1].__setattr__(self, "_id", id(self))
 
     def __hash__(self):
@@ -604,6 +616,24 @@ class MultimodeParameter(Parameter):
                         self.z,
                     )
         return tensor * self.g / abs(self.z[-1] - self.z[0])
+
+    def compute_U(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor dPdPP for the mixing of density.
+
+        The array elements correspond to:
+            (1 / g * H) * int_{-H}^{0} psi[k, :] * dpsi_dz[m, :] * dpsi_dz[n, :] dz.
+        """
+        if self.dpsi_dz is None or self.z is None or self.psi is None:
+            return None
+        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
+                    tensor[n, m, k] = -np.trapz(
+                        self.psi[:, k] * self.dpsi_dz[:, m] * self.dpsi_dz[:, n],
+                        self.z,
+                    )
+        return tensor / abs(self.z[-1] - self.z[0]) / self.g
 
 
 class Variable(VariableBase[np.ndarray, Grid]):

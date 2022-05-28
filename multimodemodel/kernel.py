@@ -529,6 +529,48 @@ def _vertical_mixing(
 _vertical_mixing_dispatch_table = _make_grid_iteration_dispatch_table(_vertical_mixing)
 
 
+def _vertical_mixing_density(
+    i: int,
+    j: int,
+    k: int,
+    ni: int,
+    nj: int,
+    nk: int,
+    u: np.ndarray,
+    v: np.ndarray,
+    mask_u: np.ndarray,
+    mask_v: np.ndarray,
+    k_0: float,
+    U: np.ndarray,
+) -> float:  # pragma: no cover
+    """Compute the vertical mixing of density."""
+    ip1 = _cyclic_shift(i, ni, 1)
+    jp1 = _cyclic_shift(j, nj, 1)
+
+    result = 0.0
+
+    for n in range(nk):
+        u_eta_n_ij = mask_u[n, j, i] * u[n, j, i] + mask_u[n, j, ip1] * u[n, j, ip1]
+        v_eta_n_ij = mask_v[n, j, i] * v[n, j, i] + mask_v[n, jp1, i] * v[n, jp1, i]
+        for m in range(nk):
+            result += (
+                U[n, m, k]
+                * (
+                    u_eta_n_ij
+                    * (mask_u[m, j, i] * u[m, j, i] + mask_u[m, j, ip1] * u[m, j, ip1])
+                    + v_eta_n_ij
+                    * (mask_v[m, j, i] * v[m, j, i] + mask_v[m, jp1, i] * v[m, jp1, i])
+                )
+                / 4.0
+            )
+    return k_0 * result
+
+
+_vertical_mixing_density_dispatch_table = _make_grid_iteration_dispatch_table(
+    _vertical_mixing_density
+)
+
+
 def _linear_damping(
     i: int,
     j: int,
@@ -1438,7 +1480,40 @@ def constant_vertical_mixing_eta(
         shape[grid.dim_z],
         eta,
         eta_mask,
-        params.k_v * params.P,
+        params.k_0 * params.P,
+    )
+    return state.__class__(
+        eta=state.variables["eta"].__class__(
+            func(*args).reshape(grid.shape),
+            grid,
+            state.variables["eta"].time,
+        )
+    )
+
+
+def ri_vertical_mixing_eta(state: StateType, params: MultimodeParameter) -> StateType:
+    """Compute vertical mixing of density."""
+    grid = state.variables["eta"].grid
+    shape = _shape_at_least_3D(grid.shape)
+    u, u_mask = _at_least_3D(
+        state.variables["u"].safe_data,
+        state.variables["u"].grid.mask,
+    )
+    v, v_mask = _at_least_3D(
+        state.variables["v"].safe_data,
+        state.variables["v"].grid.mask,
+    )
+    func = _get_from_dispatch_table(grid, _vertical_mixing_density_dispatch_table)
+    args: tuple[Any, ...] = (
+        shape[grid.dim_x],
+        shape[grid.dim_y],
+        shape[grid.dim_z],
+        u,
+        v,
+        u_mask,
+        v_mask,
+        params.k_v,
+        params.U,
     )
     return state.__class__(
         eta=state.variables["eta"].__class__(

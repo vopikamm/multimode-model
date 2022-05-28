@@ -53,6 +53,7 @@ from .kernel import (
     constant_vertical_mixing_u,
     constant_vertical_mixing_v,
     constant_vertical_mixing_eta,
+    ri_vertical_mixing_eta,
     linear_damping_u,
     linear_damping_v,
     linear_damping_eta,
