@@ -136,7 +136,7 @@ class Parameter(ParameterBase):
         _set_attr(super(), "b_h", b_h)
         _set_attr(super(), "k_h", k_h, np.array([0.0]))
         _set_attr(super(), "k_v", k_v, np.array([0.0]))
-        _set_attr(super(), "k_v", k_0)
+        _set_attr(super(), "k_0", k_0)
 
         if f is None:
             _set_attr(super(), "_f", self._compute_f(coriolis_func, on_grid))
@@ -544,7 +544,7 @@ class MultimodeParameter(Parameter):
         """Compute the triple-mode-tensor dPdPP for the nonlinear terms.
 
         The array elements correspond to:
-            (g / H) * int_{-H}^{0} psi[k, :] * dpsi_dz[m, :] * dpsi_dz[n, :] / Nsq dz.
+            (g / H) * int_{-H}^{0} dpsi_dz[k, :] * psi[m, :] * dpsi_dz[n, :] / Nsq dz.
         """
         if (
             self.Nsq is None
@@ -558,8 +558,8 @@ class MultimodeParameter(Parameter):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
                     tensor[n, m, k] = -np.trapz(
-                        self.psi[:, k]
-                        * self.dpsi_dz[:, m]
+                        self.dpsi_dz[:, k]
+                        * self.psi[:, m]
                         * self.dpsi_dz[:, n]
                         / self.Nsq,
                         self.z,
@@ -570,7 +570,7 @@ class MultimodeParameter(Parameter):
         """Compute the triple-mode-tensor dPdPP for the nonlinear terms.
 
         The array elements correspond to:
-            (1 / H) * int_{-H}^{0} dpsi_dz[k, :] * dpsi_dz[m, :] * psi[n, :] dz.
+            (g / H) * int_{-H}^{0} dpsi_dz[k, :] * dpsi_dz[m, :] * psi[n, :] / Nsq dz.
         """
         if (
             self.Nsq is None
@@ -579,38 +579,40 @@ class MultimodeParameter(Parameter):
             or self.psi is None
         ):
             return None
-        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
-        for n in range(self.nmodes):
-            for m in range(self.nmodes):
-                for k in range(self.nmodes):
-                    tensor[n, m, k] = -np.trapz(
-                        self.dpsi_dz[:, k] * self.dpsi_dz[:, m] * self.psi[:, n],
-                        self.z,
-                    )
-        return tensor / abs(self.z[-1] - self.z[0])
-
-    def compute_T(self) -> Optional[np.ndarray]:
-        """Compute the triple-mode-tensor WWW for the nonlinear terms.
-
-        The array elements correspond to:
-            (g / H) * int_{-H}^{0} dpsi_dz[k, :] * d2psi_dz[m, :] * dpsi_dz[n, :] / Nsq dz.
-        """
-        if (
-            self.Nsq is None
-            or self.dpsi_dz is None
-            or self.z is None
-            or self.psi is None
-        ):
-            return None
-
-        d2psi_dz = np.gradient(self.dpsi_dz, self.z, axis=0)
         tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
         for n in range(self.nmodes):
             for m in range(self.nmodes):
                 for k in range(self.nmodes):
                     tensor[n, m, k] = -np.trapz(
                         self.dpsi_dz[:, k]
-                        * d2psi_dz[:, m]
+                        * self.dpsi_dz[:, m]
+                        * self.psi[:, n]
+                        / self.Nsq,
+                        self.z,
+                    )
+        return tensor * self.g / abs(self.z[-1] - self.z[0])
+
+    def compute_T(self) -> Optional[np.ndarray]:
+        """Compute the triple-mode-tensor WWW for the nonlinear terms.
+
+        The array elements correspond to:
+            (g / H) * int_{-H}^{0} psi[k, :] * dpsi_dz[m, :] * dpsi_dz[n, :] / Nsq dz.
+        """
+        if (
+            self.Nsq is None
+            or self.dpsi_dz is None
+            or self.z is None
+            or self.psi is None
+        ):
+            return None
+
+        tensor = np.empty((self.nmodes, self.nmodes, self.nmodes))
+        for n in range(self.nmodes):
+            for m in range(self.nmodes):
+                for k in range(self.nmodes):
+                    tensor[n, m, k] = -np.trapz(
+                        self.psi[:, k]
+                        * self.dpsi_dz[:, m]
                         * self.dpsi_dz[:, n]
                         / self.Nsq,
                         self.z,

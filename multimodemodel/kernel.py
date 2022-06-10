@@ -608,7 +608,6 @@ def _advection_momentum_u(
     lbc: int,
     Q: np.ndarray,
     R: np.ndarray,
-    H: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the advection of zonal momentum."""
     if mask_u[k, j, i] == 0.0:
@@ -680,7 +679,6 @@ def _advection_momentum_u(
                             + mask_u[m, jm1, i] * u[m, jm1, i]
                         )
                     )
-                    + mask_fac_R * u[m, j, i] * w_u_n_ij / H[n]
                 )
                 - R[n, m, k] * mask_fac_R * u[m, j, i] * w_u_n_ij
             )
@@ -711,7 +709,6 @@ def _advection_momentum_v(
     lbc: int,
     Q: np.ndarray,
     R: np.ndarray,
-    H: np.ndarray,
 ) -> float:  # pragma: no cover
     """Compute the advection of zonal momentum."""
     if mask_v[k, j, i] == 0.0:
@@ -783,7 +780,6 @@ def _advection_momentum_v(
                             + mask_v[m, jm1, i] * v[m, jm1, i]
                         )
                     )
-                    + mask_fac_R * v[m, j, i] * w_v_n_ij / H[n]
                 )
                 - R[n, m, k] * mask_fac_R * v[m, j, i] * w_v_n_ij
             )
@@ -823,7 +819,7 @@ def _advection_density(
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    mask_fac_S = mask_v[k, j, i] / dx_eta[j, i] / dy_eta[j, i] / 2
+    mask_fac_S = H[k] * mask_v[k, j, i] / dx_eta[j, i] / dy_eta[j, i] / 2
 
     result = 0.0
 
@@ -859,9 +855,8 @@ def _advection_density(
                             + mask_eta[m, jm1, i] * eta[m, jm1, i]
                         )
                     )
-                    + mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i] / H[n]
                 )
-                - T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
+                + T[n, m, k] * mask_eta[m, j, i] * eta[m, j, i] * w[n, j, i]
             )
     return -result
 
@@ -1623,7 +1618,6 @@ def advection_momentum_u(state: StateType, params: MultimodeParameter) -> StateT
         lbc,
         params.Q,
         params.R,
-        params.H,
     )
     return state.__class__(
         u=state.variables["u"].__class__(
@@ -1655,7 +1649,6 @@ def advection_momentum_v(state: StateType, params: MultimodeParameter) -> StateT
         lbc,
         params.Q,
         params.R,
-        params.H,
     )
     return state.__class__(
         v=state.variables["v"].__class__(
