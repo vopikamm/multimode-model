@@ -819,7 +819,7 @@ def _advection_density(
     jp1 = _cyclic_shift(j, nj, 1)
     jm1 = _cyclic_shift(j, nj, -1)
 
-    mask_fac_S = H[k] * mask_v[k, j, i] / dx_eta[j, i] / dy_eta[j, i] / 2
+    mask_fac_S = H[k] * mask_v[k, j, i] / dx_eta[j, i] / dy_eta[j, i] / 4
 
     result = 0.0
 
