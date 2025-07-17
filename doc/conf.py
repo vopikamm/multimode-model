@@ -108,7 +108,7 @@ html_title = ""
 html_theme_options = dict(
     # analytics_id=''  this is configured in rtfd.io
     # canonical_url="",
-    repository_url="https://git.geomar.de/mcgroup/multimode-model",
+    repository_url="https://github.com/vopikamm/multimode-model",
     repository_branch="master",
     path_to_docs="doc",
     # use_edit_page_button=True,
@@ -124,10 +124,13 @@ html_theme_options = dict(
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "numpy": ("https://numpy.org/doc/stable", None),
-    "numba": ("https://numba.pydata.org/numba-doc/latest", None),
-    "xarray": ("http://xarray.pydata.org/en/latest", None),
+    # Update numba URL to the new docs location or remove if no stable URL available
+    "numba": ("https://numba.readthedocs.io/en/stable/", None),
+    # Update xarray URL
+    "xarray": ("https://docs.xarray.dev/en/latest", None),
     "dask": ("https://docs.dask.org/en/latest", None),
 }
+
 
 
 # Napoleon configurations
