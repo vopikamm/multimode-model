@@ -12,9 +12,22 @@
 #
 import os
 import sys
+print("DEBUG sys.path:", sys.path)
+try:
+    import multimodemodel
+    print("✅ multimodemodel import worked!")
+except ImportError as e:
+    print("❌ ImportError:", e)
 
 # sys.path.insert(0, os.path.abspath("../multimodemodel"))
 sys.path.insert(0, os.path.abspath(".."))
+
+print("DEBUG sys.path:", sys.path)
+try:
+    import multimodemodel
+    print("✅ multimodemodel import worked!")
+except ImportError as e:
+    print("❌ ImportError:", e)
 
 
 # -- Project information -----------------------------------------------------
