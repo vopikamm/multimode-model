@@ -92,11 +92,11 @@ class Parameter(ParameterBase):
     """
 
     g: float = 9.81  # gravitational force m / s^2
-    H: np.ndarray = np.array([1000.0])  # reference depth in m
+    H: np.ndarray = field(default_factory=lambda: np.array([1000.0]))  # reference depth in m
     rho_0: float = 1024.0  # reference density in kg / m^3
     a_h: float = 2000.0  # horizontal mixing coefficient in m^2 / s
-    gamma_h: np.ndarray = np.array([0.0])  # horizontal damping coefficient in 1 / s
-    gamma_v: np.ndarray = np.array([0.0])  # vertical damping coefficient in 1 / s
+    gamma_h: np.ndarray = field(default_factory=lambda: np.array([0.0]))  # horizontal damping coefficient in 1 / s
+    gamma_v: np.ndarray = field(default_factory=lambda: np.array([0.0]))  # vertical damping coefficient in 1 / s
     free_slip: bool = True  # lateral boundary conditions
     no_slip: bool = False  # lateral boundary conditions
     _f: dict[str, Array] = field(init=False)
@@ -282,17 +282,17 @@ class MultimodeParameter(Parameter):
       Gravity wave speed in [m/s].
     """
 
-    rho: np.ndarray = np.array([])
-    z: np.ndarray = np.array([])
+    rho: np.ndarray = field(default_factory=lambda: np.array([]))
+    z: np.ndarray = field(default_factory=lambda: np.array([]))
     nmodes: int = 1
-    Nsq: np.ndarray = np.array([])
-    psi: np.ndarray = np.array([])
-    dpsi_dz: np.ndarray = np.array([])
-    c: np.ndarray = np.array([])
-    Q: np.ndarray = np.array([])
-    R: np.ndarray = np.array([])
-    S: np.ndarray = np.array([])
-    T: np.ndarray = np.array([])
+    Nsq: np.ndarray = field(default_factory=lambda: np.array([]))
+    psi: np.ndarray = field(default_factory=lambda: np.array([]))
+    dpsi_dz: np.ndarray = field(default_factory=lambda: np.array([]))
+    c: np.ndarray = field(default_factory=lambda: np.array([]))
+    Q: np.ndarray = field(default_factory=lambda: np.array([]))
+    R: np.ndarray = field(default_factory=lambda: np.array([]))
+    S: np.ndarray = field(default_factory=lambda: np.array([]))
+    T: np.ndarray = field(default_factory=lambda: np.array([]))
 
     def __init__(
         self,
