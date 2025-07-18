@@ -22,7 +22,7 @@ Instructions
 
 First clone the repository::
 
-    $ git clone https://git.geomar.de/mcgroup/multimode-model.git
+    $ git clone https://github.com/vopikamm/multimode-model.git
 
 Switch to the directory and install multimodemodel with::
 
